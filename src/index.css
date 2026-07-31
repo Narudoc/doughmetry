@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-paper font-body text-ink antialiased;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brass ring-offset-2 ring-offset-paper;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast-enter {
+    animation: toast-in 160ms ease-out;
+  }
+}
+
+/* 인쇄: 레시피 한 장을 A4로 (fiche technique) */
+.print-only {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .bakers-table thead {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .bakers-table th,
+  .bakers-table td {
+    border-color: #000 !important;
+  }
+}
