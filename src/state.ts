@@ -28,16 +28,21 @@ export interface CalcState {
   pieces: number;
 }
 
+const defaultDoughInput = (): DoughInput => ({
+  flours: [{ id: newId(), name: 'T65', grams: 900 }],
+  water: 620,
+  bassinage: 0,
+  salt: 20,
+  levain: { type: 'liquide', hydration: 1, grams: 200 },
+  liquids: [],
+  yeast: { type: 'fresh', grams: 0 },
+  extras: [],
+});
+
 export const defaultCalcState = (): CalcState => ({
   mode: 'A',
   name: '캉파뉴',
-  input: {
-    flours: [{ id: newId(), name: 'T65', grams: 900 }],
-    water: 620,
-    salt: 20,
-    levain: { type: 'liquide', hydration: 1, grams: 200 },
-    extras: [],
-  },
+  input: defaultDoughInput(),
   target: {
     byPieces: false,
     doughWeight: 1740,
@@ -51,11 +56,29 @@ export const defaultCalcState = (): CalcState => ({
   pieces: 0,
 });
 
+/** 저장된 draft가 v1 형태여도 새 필드를 기본값으로 채워 살린다 */
+export function sanitizeDoughInput(x: unknown): DoughInput | null {
+  if (typeof x !== 'object' || x === null) return null;
+  const d = x as DoughInput;
+  if (!d.levain || !Array.isArray(d.flours)) return null;
+  return {
+    ...defaultDoughInput(),
+    ...d,
+    bassinage: typeof d.bassinage === 'number' ? d.bassinage : 0,
+    liquids: Array.isArray(d.liquids) ? d.liquids : [],
+    yeast:
+      d.yeast && typeof d.yeast.grams === 'number'
+        ? { type: d.yeast.type === 'instant' ? 'instant' : 'fresh', grams: d.yeast.grams }
+        : { type: 'fresh', grams: 0 },
+  };
+}
+
 export function sanitizeCalcState(loaded: unknown): CalcState | null {
   if (typeof loaded !== 'object' || loaded === null) return null;
   const s = loaded as CalcState;
-  if (!s.input || !s.input.levain || !Array.isArray(s.input.flours) || !s.target) return null;
-  return { ...defaultCalcState(), ...s };
+  const input = sanitizeDoughInput(s.input);
+  if (!input || !s.target) return null;
+  return { ...defaultCalcState(), ...s, input };
 }
 
 export function sanitizeSettings(loaded: unknown): Settings | null {
@@ -84,30 +107,26 @@ export function currentPieces(state: CalcState): number | undefined {
   return state.target.byPieces && state.target.pieces > 0 ? state.target.pieces : undefined;
 }
 
-export function calcStateFromRecipe(r: Recipe): CalcState {
-  const base = defaultCalcState();
-  return {
-    ...base,
-    mode: 'A',
-    name: r.name,
-    recipeId: r.id,
-    input: structuredClone({
-      flours: r.flours,
-      water: r.water,
-      salt: r.salt,
-      levain: r.levain,
-      extras: r.extras,
-    }),
-    pieces: r.pieces ?? 0,
-  };
-}
-
 export function doughInputFromRecipe(r: Recipe): DoughInput {
   return structuredClone({
     flours: r.flours,
     water: r.water,
+    bassinage: r.bassinage,
     salt: r.salt,
     levain: r.levain,
+    liquids: r.liquids,
+    yeast: r.yeast,
     extras: r.extras,
   });
+}
+
+export function calcStateFromRecipe(r: Recipe): CalcState {
+  return {
+    ...defaultCalcState(),
+    mode: 'A',
+    name: r.name,
+    recipeId: r.id,
+    input: doughInputFromRecipe(r),
+    pieces: r.pieces ?? 0,
+  };
 }

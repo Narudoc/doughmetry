@@ -1,4 +1,5 @@
 import type { DoughInput, DoughStats } from '../../lib/dough';
+import { convertYeast } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct } from '../../lib/format';
 
@@ -21,6 +22,8 @@ interface RowData {
 export function BakersTable({ input, stats, precision, pieces }: Props) {
   const pctOf = (g: number) => (stats.totalFlour > 0 ? (g / stats.totalFlour) * 100 : 0);
   const levainLabel = input.levain.type === 'liquide' ? '리퀴드 liquide' : '뒤흐 dur';
+  const yeastLabel = input.yeast.type === 'fresh' ? '생이스트' : '인스턴트 드라이';
+  const yeastOther = input.yeast.type === 'fresh' ? '인스턴트 드라이' : '생이스트';
 
   const rows: RowData[] = [
     ...input.flours.map((f, i) => ({
@@ -30,7 +33,24 @@ export function BakersTable({ input, stats, precision, pieces }: Props) {
       pct: pctOf(f.grams),
       note: '첨가 밀가루',
     })),
-    { key: 'water', name: '물', grams: input.water, pct: pctOf(input.water), note: '첨가 물' },
+    {
+      key: 'water',
+      name: '물 (본반죽)',
+      grams: input.water,
+      pct: pctOf(input.water),
+      note: '첨가 물',
+    },
+    ...(input.bassinage > 0
+      ? [
+          {
+            key: 'bassinage',
+            name: '바시나주',
+            grams: input.bassinage,
+            pct: pctOf(input.bassinage),
+            note: 'bassinage — 후반 급수',
+          },
+        ]
+      : []),
     { key: 'salt', name: '소금', grams: input.salt, pct: stats.saltPct, note: '' },
     {
       key: 'levain',
@@ -55,6 +75,24 @@ export function BakersTable({ input, stats, precision, pieces }: Props) {
       note: '',
       indent: true,
     },
+    ...input.liquids.map((l, i) => ({
+      key: `liquid-${l.id}`,
+      name: l.name || `액체 ${i + 1}`,
+      grams: l.grams,
+      pct: pctOf(l.grams),
+      note: `수분 ${(l.waterRatio * 100).toFixed(0)}% = ${fmtGrams(l.grams * l.waterRatio, precision)} g`,
+    })),
+    ...(input.yeast.grams > 0
+      ? [
+          {
+            key: 'yeast',
+            name: `이스트 (${yeastLabel})`,
+            grams: input.yeast.grams,
+            pct: stats.yeastPct,
+            note: `= ${yeastOther} ${fmtGrams(convertYeast(input.yeast.grams, input.yeast.type, input.yeast.type === 'fresh' ? 'instant' : 'fresh'), precision)} g`,
+          },
+        ]
+      : []),
     ...input.extras.map((e, i) => ({
       key: `extra-${e.id}`,
       name: e.name || `기타 ${i + 1}`,

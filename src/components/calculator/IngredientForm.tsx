@@ -2,6 +2,8 @@ import type { DoughInput, DoughStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { GramRows } from './GramRows';
 import { LevainControl } from './LevainControl';
+import { LiquidRows } from './LiquidRows';
+import { YeastControl } from './YeastControl';
 import { NumberField } from '../ui/fields';
 
 export function SectionTitle({ ko, fr }: { ko: string; fr: string }) {
@@ -22,6 +24,7 @@ interface Props {
 /** 모드 A 입력 폼 — 변환기의 '직접 입력'에서도 재사용 */
 export function IngredientForm({ input, onChange, stats, precision }: Props) {
   const flourPcts = new Map(stats.flourPcts.map((p) => [p.id, p.pct]));
+  const liquidPcts = new Map(stats.liquidPcts.map((p) => [p.id, p.pct]));
   const extraPcts = new Map(stats.extraPcts.map((p) => [p.id, p.pct]));
 
   return (
@@ -38,19 +41,31 @@ export function IngredientForm({ input, onChange, stats, precision }: Props) {
         />
       </section>
 
-      <section className="grid grid-cols-2 gap-3">
-        <NumberField
-          label="물 (eau)"
-          unit="g"
-          value={input.water}
-          onChange={(water) => onChange({ ...input, water })}
-        />
-        <NumberField
-          label="소금 (sel)"
-          unit="g"
-          value={input.salt}
-          onChange={(salt) => onChange({ ...input, salt })}
-        />
+      <section className="space-y-2">
+        <SectionTitle ko="물 · 소금" fr="eau & sel" />
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            label="본반죽 물"
+            unit="g"
+            value={input.water}
+            onChange={(water) => onChange({ ...input, water })}
+          />
+          <NumberField
+            label="바시나주 (bassinage)"
+            unit="g"
+            value={input.bassinage}
+            onChange={(bassinage) => onChange({ ...input, bassinage })}
+          />
+          <NumberField
+            label="소금 (sel)"
+            unit="g"
+            value={input.salt}
+            onChange={(salt) => onChange({ ...input, salt })}
+          />
+        </div>
+        <p className="text-xs text-ink/50">
+          바시나주는 반죽 후반에 추가하는 물로, 총 수분율에 합산됩니다.
+        </p>
       </section>
 
       <section className="space-y-2">
@@ -65,6 +80,28 @@ export function IngredientForm({ input, onChange, stats, precision }: Props) {
       </section>
 
       <section className="space-y-2">
+        <SectionTitle ko="액체 재료" fr="liquides" />
+        <LiquidRows
+          rows={input.liquids}
+          onChange={(liquids) => onChange({ ...input, liquids })}
+          precision={precision}
+          pcts={liquidPcts}
+        />
+        <p className="text-xs text-ink/50">
+          각 재료의 수분율만큼 총 수분율에 반영됩니다 (우유 88% · 계란 76%, USDA 기준).
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <SectionTitle ko="이스트" fr="levure" />
+        <YeastControl
+          yeast={input.yeast}
+          onChange={(yeast) => onChange({ ...input, yeast })}
+          pct={stats.yeastPct}
+        />
+      </section>
+
+      <section className="space-y-2">
         <SectionTitle ko="기타 재료" fr="garnitures" />
         <GramRows
           rows={input.extras}
@@ -73,7 +110,10 @@ export function IngredientForm({ input, onChange, stats, precision }: Props) {
           namePlaceholder="몰트, 씨앗…"
           pcts={extraPcts}
         />
-        <p className="text-xs text-ink/50">v1에서는 기타 재료의 수분을 계산에 반영하지 않습니다.</p>
+        <p className="text-xs text-ink/50">
+          기타 재료는 무게에만 합산되고 수분 계산에서 제외됩니다. 수분이 있는 재료는 위의 액체
+          재료에 입력하세요.
+        </p>
       </section>
     </div>
   );

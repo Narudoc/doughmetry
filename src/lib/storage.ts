@@ -1,4 +1,4 @@
-import type { Extra, Flour, Recipe } from '../types';
+import type { Extra, Flour, Liquid, Recipe, Yeast } from '../types';
 import { levainTypeFor } from './dough';
 import { newId } from './id';
 
@@ -38,14 +38,15 @@ export function saveJson(
   }
 }
 
-// ── 레시피 스키마 검증 ──────────────────────────────────────────────
-
-type Validated<T> = { ok: true; value: T } | { ok: false; reason: string };
+// ── 레시피 스키마 검증 (v1 → v2 마이그레이션 포함) ─────────────────
 
 const isNonNegNumber = (x: unknown): x is number =>
   typeof x === 'number' && Number.isFinite(x) && x >= 0;
 
-function parseRows(x: unknown, field: string): Validated<Flour[] | Extra[]> {
+function parseRows(
+  x: unknown,
+  field: string,
+): { ok: true; value: Flour[] | Extra[] } | { ok: false; reason: string } {
   if (x === undefined) return { ok: true, value: [] };
   if (!Array.isArray(x)) return { ok: false, reason: `${field}가 배열이 아닙니다` };
   const rows: Flour[] = [];
@@ -66,16 +67,63 @@ function parseRows(x: unknown, field: string): Validated<Flour[] | Extra[]> {
   return { ok: true, value: rows };
 }
 
-export function validateRecipe(x: unknown): { ok: true; recipe: Recipe } | { ok: false; reason: string } {
+function parseLiquids(
+  x: unknown,
+): { ok: true; value: Liquid[] } | { ok: false; reason: string } {
+  if (x === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(x)) return { ok: false, reason: 'liquids가 배열이 아닙니다' };
+  const rows: Liquid[] = [];
+  for (let i = 0; i < x.length; i++) {
+    const row = x[i] as Record<string, unknown>;
+    if (typeof row !== 'object' || row === null) {
+      return { ok: false, reason: `liquids[${i}]가 객체가 아닙니다` };
+    }
+    if (!isNonNegNumber(row.grams)) {
+      return { ok: false, reason: `liquids[${i}].grams가 0 이상의 숫자가 아닙니다` };
+    }
+    const ratio = row.waterRatio;
+    if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+      return {
+        ok: false,
+        reason: `liquids[${i}].waterRatio가 0~1 사이의 소수가 아닙니다 (예: 0.88)`,
+      };
+    }
+    rows.push({
+      id: typeof row.id === 'string' && row.id ? row.id : newId(),
+      name: typeof row.name === 'string' ? row.name : '',
+      grams: row.grams,
+      waterRatio: ratio,
+    });
+  }
+  return { ok: true, value: rows };
+}
+
+function parseYeast(x: unknown): { ok: true; value: Yeast } | { ok: false; reason: string } {
+  if (x === undefined) return { ok: true, value: { type: 'fresh', grams: 0 } };
+  const y = x as Record<string, unknown>;
+  if (typeof y !== 'object' || y === null) return { ok: false, reason: 'yeast가 객체가 아닙니다' };
+  if (!isNonNegNumber(y.grams)) {
+    return { ok: false, reason: 'yeast.grams가 0 이상의 숫자가 아닙니다' };
+  }
+  return {
+    ok: true,
+    value: { type: y.type === 'instant' ? 'instant' : 'fresh', grams: y.grams },
+  };
+}
+
+export function validateRecipe(
+  x: unknown,
+): { ok: true; recipe: Recipe } | { ok: false; reason: string } {
   if (typeof x !== 'object' || x === null || Array.isArray(x)) {
     return { ok: false, reason: '레시피가 객체가 아닙니다' };
   }
   const r = x as Record<string, unknown>;
 
-  if (r.schemaVersion !== 1) {
+  // v1 레시피는 v2로 마이그레이션 (bassinage 0, liquids [], yeast 0)
+  if (r.schemaVersion !== 1 && r.schemaVersion !== 2) {
     return {
       ok: false,
-      reason: `지원하지 않는 schemaVersion입니다 (기대: 1, 실제: ${JSON.stringify(r.schemaVersion)})`,
+      reason: `지원하지 않는 schemaVersion입니다 (기대: 1 또는 2, 실제: ${JSON.stringify(r.schemaVersion)})`,
     };
   }
   if (typeof r.name !== 'string' || r.name.trim() === '') {
@@ -86,8 +134,15 @@ export function validateRecipe(x: unknown): { ok: true; recipe: Recipe } | { ok:
   if (!flours.ok) return { ok: false, reason: flours.reason };
   const extras = parseRows(r.extras, 'extras');
   if (!extras.ok) return { ok: false, reason: extras.reason };
+  const liquids = parseLiquids(r.liquids);
+  if (!liquids.ok) return { ok: false, reason: liquids.reason };
+  const yeast = parseYeast(r.yeast);
+  if (!yeast.ok) return { ok: false, reason: yeast.reason };
 
   if (!isNonNegNumber(r.water)) return { ok: false, reason: 'water가 0 이상의 숫자가 아닙니다' };
+  if (r.bassinage !== undefined && !isNonNegNumber(r.bassinage)) {
+    return { ok: false, reason: 'bassinage가 0 이상의 숫자가 아닙니다' };
+  }
   if (!isNonNegNumber(r.salt)) return { ok: false, reason: 'salt가 0 이상의 숫자가 아닙니다' };
 
   const lev = r.levain as Record<string, unknown> | undefined;
@@ -107,7 +162,7 @@ export function validateRecipe(x: unknown): { ok: true; recipe: Recipe } | { ok:
 
   const recipe: Recipe = {
     id: typeof r.id === 'string' && r.id ? r.id : newId(),
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: r.name.trim(),
     note: typeof r.note === 'string' ? r.note : undefined,
     tags: tags && tags.length > 0 ? tags : undefined,
@@ -115,6 +170,7 @@ export function validateRecipe(x: unknown): { ok: true; recipe: Recipe } | { ok:
     updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : new Date().toISOString(),
     flours: flours.value,
     water: r.water,
+    bassinage: isNonNegNumber(r.bassinage) ? r.bassinage : 0,
     salt: r.salt,
     levain: {
       type: lev.type === 'liquide' || lev.type === 'dur' ? lev.type : levainTypeFor(lev.hydration),
@@ -122,6 +178,8 @@ export function validateRecipe(x: unknown): { ok: true; recipe: Recipe } | { ok:
       grams: lev.grams,
       flourName: typeof lev.flourName === 'string' ? lev.flourName : undefined,
     },
+    liquids: liquids.value,
+    yeast: yeast.value,
     extras: extras.value,
     targetDoughWeight: isNonNegNumber(r.targetDoughWeight) ? r.targetDoughWeight : undefined,
     pieces: isNonNegNumber(r.pieces) ? r.pieces : undefined,
@@ -150,7 +208,7 @@ export function persistRecipes(recipes: Recipe[], store: KeyValueStore | null = 
 
 export function exportJson(recipes: Recipe[]): string {
   return JSON.stringify(
-    { app: 'levain-calc', schemaVersion: 1, exportedAt: new Date().toISOString(), recipes },
+    { app: 'levain-calc', schemaVersion: 2, exportedAt: new Date().toISOString(), recipes },
     null,
     2,
   );

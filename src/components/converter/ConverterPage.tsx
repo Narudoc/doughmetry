@@ -11,7 +11,7 @@ import {
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct } from '../../lib/format';
 import { newId } from '../../lib/id';
-import { defaultCalcState } from '../../state';
+import { defaultCalcState, doughInputFromRecipe } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { IngredientForm } from '../calculator/IngredientForm';
 import { Button } from '../ui/Button';
@@ -88,7 +88,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
     const now = new Date().toISOString();
     const recipe: Recipe = {
       id: newId(),
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: data.name,
       note: data.note,
       tags: data.tags.length > 0 ? data.tags : undefined,
@@ -118,14 +118,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
               onChange={(e) => {
                 const r = api.recipes.find((x) => x.id === e.target.value);
                 setSelectedRecipeId(e.target.value);
-                if (r)
-                  adoptInput(r.name, {
-                    flours: structuredClone(r.flours),
-                    water: r.water,
-                    salt: r.salt,
-                    levain: structuredClone(r.levain),
-                    extras: structuredClone(r.extras),
-                  });
+                if (r) adoptInput(r.name, doughInputFromRecipe(r));
               }}
               className="min-h-[44px] w-full rounded border border-line bg-white px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
             >

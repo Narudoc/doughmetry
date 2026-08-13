@@ -25,19 +25,23 @@ npm run build    # tsc --noEmit && vite build
 
 ## 계산 규칙 (절대 원칙)
 
-- **수분율·소금·PFF는 전부 총 밀가루(`F_total`) 기준.** 첨가 밀가루 기준으로 계산하지 말 것 — 프랑스식 표기법의 기본이며 르방 변환 결과가 달라진다.
+- **수분율·소금·PFF·이스트%는 전부 총 밀가루(`F_total`) 기준.** 첨가 밀가루 기준으로 계산하지 말 것 — 프랑스식 표기법의 기본이며 르방 변환 결과가 달라진다.
 - 르방 분해: `F_lev = L / (1 + h)`, `W_lev = L − F_lev`
+- **총 물 `W_total` = 본반죽 물(water) + 바시나주(bassinage) + `W_lev` + 액체 수분(Σ grams × waterRatio).**
+- 액체 재료(liquids)는 `waterRatio`(소수)만큼 수분으로 계산. 프리셋: 우유 0.88, 계란(전란) 0.76 — USDA FoodData Central per 100g 기준 (`LIQUID_PRESETS`). 지방 함량은 반영하지 않음.
+- 이스트: `IDY = 생이스트 × 0.4` (`IDY_FACTOR`, 사용자 지정 비율). `yeast.grams`는 선택한 타입 기준 실제 투입량. 무게·%에만 반영, 수분율에는 미반영.
 - 내부 계산은 full precision, 반올림은 표시 계층([src/lib/format.ts](src/lib/format.ts))에서만 한다 (0.1g/1g 설정).
-- 르방 변환(질량 고정): `ΔF = L/(1+h_new) − L/(1+h_old)`를 첨가 밀가루에서 빼고 첨가 물에 더한다. → 총 밀가루·총 물·총 수분율·총 반죽 무게 보존, PFF는 변함.
-- 르방 변환(PFF 고정): `F_lev` 고정, `L_new = F_lev × (1+h_new)`, 첨가 물이 보정. → 르방 질량과 첨가 물만 변하고 나머지 지표는 보존.
-- 기타 재료(extras)는 v1에서 무게에만 합산하고 수분 계산에서 제외.
-- 르방에 쓴 밀가루 종류(`levain.flourName`)는 v1에서 표시용.
+- 르방 변환(질량 고정): `ΔF = L/(1+h_new) − L/(1+h_old)`를 첨가 밀가루에서 빼고 **본반죽 물**에 더한다. 바시나주·액체·이스트는 고정. → 총 밀가루·총 물·총 수분율·총 반죽 무게 보존, PFF는 변함. 물 쪽 변환 한도는 조정 가능 풀(본반죽 물 + `W_lev`) 기준.
+- 르방 변환(PFF 고정): `F_lev` 고정, `L_new = F_lev × (1+h_new)`, 본반죽 물이 보정. → 르방 질량과 본반죽 물만 변하고 나머지 지표는 보존.
+- 기타 재료(extras)는 무게에만 합산하고 수분 계산에서 제외 — 수분이 있는 재료는 liquids로.
+- 르방에 쓴 밀가루 종류(`levain.flourName`)는 표시용.
+- 모드 B(목표 역산)는 밀가루·물·소금·르방만 역산한다. 바시나주·액체·이스트는 모드 A 전용.
 
 ## 구조
 
 - [src/lib/dough.ts](src/lib/dough.ts) — 순수 계산 함수 전부. UI에서 직접 수식 계산 금지, 반드시 이 모듈을 거칠 것.
 - [src/lib/dough.test.ts](src/lib/dough.test.ts) — 스펙 케이스 1~5 (기본 계산·변환·왕복·property·경계). 계산 로직 수정 시 반드시 통과 확인.
-- [src/lib/storage.ts](src/lib/storage.ts) — localStorage CRUD + JSON 스키마 검증. 키: `levain-calc:recipes:v1`, `levain-calc:draft:v1`, `levain-calc:settings:v1`. `schemaVersion: 1` — 스키마가 바뀌면 버전을 올리고 마이그레이션을 추가할 것.
+- [src/lib/storage.ts](src/lib/storage.ts) — localStorage CRUD + JSON 스키마 검증. 키: `levain-calc:recipes:v1`, `levain-calc:draft:v1`, `levain-calc:settings:v1` (키 이름은 그대로 유지). 현재 `schemaVersion: 2` — v1 레시피는 로드/가져오기 시 자동 마이그레이션(bassinage 0, liquids [], yeast 0). 스키마가 바뀌면 버전을 올리고 마이그레이션을 추가할 것.
 - [src/state.ts](src/state.ts) — 계산기 상태(CalcState)와 레시피 ↔ 배합 변환 헬퍼.
 - 탭 전환은 hash 기반 (`#calc` / `#convert` / `#recipes`), 라우팅 라이브러리 없음.
 
@@ -54,5 +58,5 @@ npm run build    # tsc --noEmit && vite build
 
 - **르방 빌드 계산기** — 르방 200g이 필요할 때 종(chef) 20g + 밀가루 90g + 물 90g 식으로 리프레시 배합을 역산
 - **물 온도 계산기** — 목표 반죽 온도(DDT)에서 사용할 물 온도를 역산 (밀가루 온도, 실온, 르방 온도, 마찰계수 반영)
-- 기타 재료의 수분 함유율 반영 (버터, 우유, 달걀 등)
 - 타임라인 스케줄러 (오토리즈 → 벌크 → 분할 → 벤치 → 성형 → 최종발효 → 굽기)
+- 모드 B 역산에 바시나주·액체·이스트 반영

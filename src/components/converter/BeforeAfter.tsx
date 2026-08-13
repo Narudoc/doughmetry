@@ -45,8 +45,43 @@ export function BeforeAfter({ result, inputBefore, precision }: Props) {
         unit: 'g' as const,
       };
     }),
-    { key: 'water', label: '물', before: inputBefore.water, after: output.water, unit: 'g' },
+    {
+      key: 'water',
+      label: '물 (본반죽)',
+      before: inputBefore.water,
+      after: output.water,
+      unit: 'g',
+    },
+    ...(inputBefore.bassinage > 0 || output.bassinage > 0
+      ? [
+          {
+            key: 'bassinage',
+            label: '바시나주',
+            before: inputBefore.bassinage,
+            after: output.bassinage,
+            unit: 'g' as const,
+          },
+        ]
+      : []),
     { key: 'salt', label: '소금', before: inputBefore.salt, after: output.salt, unit: 'g' },
+    ...inputBefore.liquids.map((l, i) => ({
+      key: `liquid-${l.id}`,
+      label: `${l.name || `액체 ${i + 1}`} (수분 ${(l.waterRatio * 100).toFixed(0)}%)`,
+      before: l.grams,
+      after: output.liquids.find((x) => x.id === l.id)?.grams ?? l.grams,
+      unit: 'g' as const,
+    })),
+    ...(inputBefore.yeast.grams > 0
+      ? [
+          {
+            key: 'yeast',
+            label: `이스트 (${inputBefore.yeast.type === 'fresh' ? '생' : 'IDY'})`,
+            before: inputBefore.yeast.grams,
+            after: output.yeast.grams,
+            unit: 'g' as const,
+          },
+        ]
+      : []),
     {
       key: 'levain',
       label: `르방 (${levainLabel(inputBefore.levain.hydration)} ${(inputBefore.levain.hydration * 100).toFixed(0)}% → ${levainLabel(output.levain.hydration)} ${(output.levain.hydration * 100).toFixed(0)}%)`,

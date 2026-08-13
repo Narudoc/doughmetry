@@ -52,7 +52,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     const now = new Date().toISOString();
     const recipe: Recipe = {
       id,
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: data.name,
       note: data.note,
       tags: data.tags.length > 0 ? data.tags : undefined,
