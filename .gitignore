@@ -3,3 +3,9 @@ dist/
 *.local
 .DS_Store
 .claude/
+
+# iOS
+ios/LevainCore/.build/
+ios/**/xcuserdata/
+ios/**/*.xcworkspace/xcuserdata/
+ios/build/

@@ -1,0 +1,3 @@
+/* 홈 화면 앱 이름 (한국어) */
+"CFBundleDisplayName" = "사워도우 계산기";
+"CFBundleName" = "사워도우 계산기";

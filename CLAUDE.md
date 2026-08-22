@@ -54,6 +54,13 @@ npm run build    # tsc --noEmit && vite build
 - 인쇄는 `.print-only` / `.no-print` 클래스로 제어 — 계산기 탭에서 A4 한 장 fiche technique 출력.
 - GitHub Pages `base: '/levain-calc/'` — 저장소명 변경 시 vite.config.ts 수정 (README 참고).
 
+## iOS 네이티브 앱 (ios/)
+
+- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+, iPhone 전용.
+- 계산 코어는 [ios/LevainCore/Sources/LevainCore/Dough.swift](ios/LevainCore/Sources/LevainCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
+- 레시피 JSON 스키마는 웹과 완전 호환 (내보내기/가져오기 양방향). 스키마 변경 시 Codec.swift의 검증·마이그레이션도 함께.
+- 코어 검증: `cd ios/LevainCore && swift test` (Xcode 필요) 또는 `swift run levain-core-check` (CLT만으로 가능).
+
 ## 나중에 붙일 기능 (v1에서는 만들지 않음)
 
 - **르방 빌드 계산기** — 르방 200g이 필요할 때 종(chef) 20g + 밀가루 90g + 물 90g 식으로 리프레시 배합을 역산
