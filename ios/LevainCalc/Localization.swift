@@ -225,6 +225,25 @@ private let en: [String: String] = [
     "가져올 레시피가 없습니다": "No recipes to import",
     "%d번째 레시피: %@": "Recipe %d: %@",
 
+    // AI 가져오기
+    "AI로 가져오기": "Import with AI",
+    "사진에서 가져오기": "From photo",
+    "텍스트 붙여넣기": "Paste text",
+    "텍스트에서 가져오기": "Import from text",
+    "레시피 텍스트를 붙여넣으세요": "Paste your recipe text here",
+    "분석": "Analyze",
+    "인식 중…": "Recognizing…",
+    "가져오기 확인": "Review import",
+    "인식 결과를 확인·수정한 뒤 저장하세요.": "Review and edit the recognized recipe, then save.",
+    "Apple Intelligence로 분석했습니다.": "Parsed with Apple Intelligence.",
+    "규칙 기반으로 분석했습니다.": "Parsed with the built-in rule parser.",
+    "인식된 원본 텍스트": "Recognized text",
+    "가져온 레시피": "Imported recipe",
+    "이미지를 읽을 수 없습니다": "Could not read the image",
+    "이미지에서 텍스트를 찾지 못했습니다": "No text found in the image",
+    "재료를 인식하지 못했습니다. 더 선명한 사진이나 정리된 텍스트로 다시 시도해 주세요.":
+        "Could not recognize any ingredients. Try a clearer photo or tidier text.",
+
     // 설정
     "언어": "Language",
     "표시 자릿수": "Display precision",

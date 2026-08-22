@@ -1,4 +1,5 @@
 import LevainCore
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -9,6 +10,13 @@ struct RecipesView: View {
     @State private var importError: String?
     @State private var importedCount: Int?
     @State private var showSettings = false
+    @State private var showImportDialog = false
+    @State private var showPhotoPicker = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showTextSheet = false
+    @State private var importingAI = false
+    @State private var review: ImportedRecipe?
+    @State private var importSaved = false
 
     private var filtered: [Recipe] {
         let q = search.trimmingCharacters(in: .whitespaces)
@@ -58,6 +66,13 @@ struct RecipesView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showImportDialog = true
+                    } label: {
+                        Label(L("AI로 가져오기"), systemImage: "sparkles")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if !model.recipes.isEmpty, let url = exportFile() {
                             ShareLink(item: url) {
@@ -98,6 +113,69 @@ struct RecipesView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsSheet()
+            }
+            .confirmationDialog(
+                L("AI로 가져오기"), isPresented: $showImportDialog, titleVisibility: .visible
+            ) {
+                Button(L("사진에서 가져오기")) { showPhotoPicker = true }
+                Button(L("텍스트 붙여넣기")) { showTextSheet = true }
+                Button(L("취소"), role: .cancel) {}
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                photoItem = nil
+                runImport {
+                    guard let data = try await item.loadTransferable(type: Data.self),
+                        let image = UIImage(data: data)
+                    else { throw ImportError.unreadableImage }
+                    return try await RecipeImporter.importRecipe(from: image)
+                }
+            }
+            .sheet(isPresented: $showTextSheet) {
+                TextImportSheet { text in
+                    runImport { try await RecipeImporter.importRecipe(from: text) }
+                }
+            }
+            .sheet(item: $review) { imported in
+                ImportReviewSheet(imported: imported) { name, input in
+                    let now = isoNow()
+                    model.save(Recipe(name: name, createdAt: now, updatedAt: now, input: input))
+                    importSaved.toggle()
+                }
+            }
+            .overlay {
+                if importingAI {
+                    ZStack {
+                        Color.black.opacity(0.15).ignoresSafeArea()
+                        ProgressView(L("인식 중…"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+            }
+            .sensoryFeedback(.success, trigger: importSaved)
+        }
+    }
+
+    /// AI 인식 파이프라인 실행 — 결과는 확인 시트로, 실패는 알림으로
+    private func runImport(_ work: @escaping () async throws -> ImportedRecipe) {
+        importingAI = true
+        Task { @MainActor in
+            defer { importingAI = false }
+            do {
+                review = try await work()
+            } catch let error as ImportError {
+                switch error {
+                case .unreadableImage:
+                    importError = L("이미지를 읽을 수 없습니다")
+                case .noText:
+                    importError = L("이미지에서 텍스트를 찾지 못했습니다")
+                case .noIngredients:
+                    importError = L("재료를 인식하지 못했습니다. 더 선명한 사진이나 정리된 텍스트로 다시 시도해 주세요.")
+                }
+            } catch {
+                importError = error.localizedDescription
             }
         }
     }
