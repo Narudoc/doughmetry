@@ -50,6 +50,19 @@ struct CalculatorView: View {
                         Label(L("변환기로"), systemImage: "arrow.left.arrow.right")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    if !model.recipes.isEmpty {
+                        Menu {
+                            ForEach(model.recipes) { recipe in
+                                Button(recipe.name) {
+                                    model.loadIntoCalculator(recipe)
+                                }
+                            }
+                        } label: {
+                            Label(L("저장된 레시피 불러오기"), systemImage: "book.closed")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSave = true
