@@ -55,7 +55,7 @@ public enum RecipeTextParser {
     static func shouldSkip(_ line: String) -> Bool {
         let t = line.trimmingCharacters(in: .whitespaces)
         if t.isEmpty { return true }
-        if contains(t, ["합계", "총계", "총 ", "total", "재 료", "베이커", "baker", "수분율", "hydration", "온도", "°"]) {
+        if contains(t, ["합계", "총계", "총 ", "total", "재 료", "베이커", "baker", "수분율", "hydration", "온도"]) {
             return true
         }
         // "양 (g)" / "g" 같은 표 헤더
@@ -63,6 +63,19 @@ public enum RecipeTextParser {
             return true
         }
         return false
+    }
+
+    /// 온도 표기 제거 — "물 350g (30°C)" 같은 줄이 통째로 버려지지 않도록
+    /// 괄호 안 온도와 "30°C"/"30℃" 토큰만 걷어낸다
+    static func stripTemperatures(_ line: String) -> String {
+        var s = line
+        s = s.replacingOccurrences(
+            of: #"\([^)]*(?:°|℃|온도)[^)]*\)"#,
+            with: "", options: String.CompareOptions.regularExpression)
+        s = s.replacingOccurrences(
+            of: #"[0-9]+(?:[.,][0-9]+)?[ \t]*(?:°[CcFf]?|℃)"#,
+            with: "", options: String.CompareOptions.regularExpression)
+        return s
     }
 
     /// 숫자·단위를 걷어낸 재료 이름
@@ -99,7 +112,7 @@ public enum RecipeTextParser {
 
         for rawLine in text.components(separatedBy: .newlines) {
             // "G." "1)" 같은 머리 기호를 먼저 떼야 헤더("1. 재료")를 제대로 거른다
-            let line = cleanTitle(rawLine)
+            let line = stripTemperatures(cleanTitle(rawLine))
             if shouldSkip(line) { continue }
 
             let tokens = numberTokens(in: line)
@@ -143,7 +156,9 @@ public enum RecipeTextParser {
                 liquids.append(
                     Liquid(name: ingredientName(from: line), grams: grams,
                            waterRatio: LiquidPreset.egg.waterRatio))
-            } else if contains(line, ["물", "water", "eau"]) {
+            } else if contains(line, ["물", "water"]) && !contains(line, ["물엿", "시럽", "syrup"])
+                || line.range(of: #"(?i)\beau\b"#, options: String.CompareOptions.regularExpression) != nil
+            {
                 water += grams
             } else if matchesFlour(line) {
                 flours.append(Flour(name: ingredientName(from: line), grams: grams))

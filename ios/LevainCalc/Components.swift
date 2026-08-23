@@ -10,6 +10,8 @@ struct NumberField: View {
     var fractionDigits: Int = 1
 
     @State private var text = ""
+    /// 편집 중 자기 자신이 쓴 값 — 외부 변경(레시피 불러오기·이스트 환산 등)과 구분
+    @State private var selfWritten: Double?
     @FocusState private var focused: Bool
 
     private func format(_ v: Double) -> String {
@@ -34,16 +36,25 @@ struct NumberField: View {
                     guard focused else { return }
                     let normalized = newText.replacingOccurrences(of: ",", with: ".")
                     if let v = Double(normalized), v.isFinite, v >= 0 {
+                        selfWritten = v
                         value = v
                     } else if newText.isEmpty {
+                        selfWritten = 0
                         value = 0
                     }
                 }
                 .onChange(of: focused) { _, isFocused in
-                    if !isFocused { text = format(value) }
+                    if !isFocused {
+                        text = format(value)
+                        selfWritten = nil
+                    }
                 }
                 .onChange(of: value) { _, newValue in
-                    if !focused { text = format(newValue) }
+                    // 편집 중이라도 외부에서 값이 바뀌면(이스트 환산 등) 표시를 따라간다
+                    if !focused || newValue != selfWritten {
+                        text = format(newValue)
+                        selfWritten = focused ? newValue : nil
+                    }
                 }
                 .onAppear { text = format(value) }
             Text(unit)

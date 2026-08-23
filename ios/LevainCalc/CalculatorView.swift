@@ -6,12 +6,16 @@ struct CalculatorView: View {
     @State private var showTable = false
     @State private var showSave = false
     @State private var savedFeedback = false
+    @State private var showResetDialog = false
 
     var body: some View {
         @Bindable var model = model
         let dough = model.calc.currentDough
         let stats = computeStats(dough)
         let pieces = model.calc.currentPieces
+        // 모드 B에서 목표 조합이 물리적으로 불가능한 경우 — 저장도 막는다
+        let infeasible = model.calc.mode == .b
+            && (dough.water < -1e-9 || dough.flours.contains { $0.grams < -1e-9 })
 
         NavigationStack {
             Form {
@@ -44,13 +48,6 @@ struct CalculatorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        model.sendToConverter(name: model.calc.name, input: dough)
-                    } label: {
-                        Label(L("변환기로"), systemImage: "arrow.left.arrow.right")
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
                     if !model.recipes.isEmpty {
                         Menu {
                             ForEach(model.recipes) { recipe in
@@ -65,13 +62,33 @@ struct CalculatorView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        showResetDialog = true
+                    } label: {
+                        Label(L("새 배합"), systemImage: "square.and.pencil")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         showSave = true
                     } label: {
                         Label(L("저장"), systemImage: "square.and.arrow.down")
                     }
+                    .disabled(infeasible)
                 }
             }
             .keyboardDoneButton()
+            .confirmationDialog(
+                L("새 배합을 시작할까요? 저장하지 않은 입력은 지워집니다."),
+                isPresented: $showResetDialog, titleVisibility: .visible
+            ) {
+                Button(L("빈 배합으로 시작"), role: .destructive) {
+                    model.resetCalc(empty: true)
+                }
+                Button(L("예시 배합으로 시작 (캉파뉴)")) {
+                    model.resetCalc(empty: false)
+                }
+                Button(L("취소"), role: .cancel) {}
+            }
             .safeAreaInset(edge: .bottom) {
                 SummaryBar(stats: stats, pieces: pieces, precision: model.precision) {
                     showTable = true

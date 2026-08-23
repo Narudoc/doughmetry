@@ -31,13 +31,22 @@ struct TargetForm: Codable, Equatable {
 
 struct CalcState: Codable, Equatable {
     var mode: CalcMode = .a
-    var name = "캉파뉴"
+    var name = L("캉파뉴")
     /// 저장된 레시피에서 불러온 경우 — 덮어쓰기 저장에 사용
     var recipeId: String?
     var input: DoughInput = defaultDoughInput()
     var target = TargetForm()
     /// 모드 A의 분할 개수 (0 = 사용 안 함)
     var pieces: Double = 0
+
+    /// 새 배합용 빈 입력
+    static func emptyDoughInput() -> DoughInput {
+        DoughInput(
+            flours: [Flour(name: "", grams: 0)],
+            water: 0,
+            salt: 0,
+            levain: Levain(type: .liquide, hydration: 1, grams: 0))
+    }
 
     static func defaultDoughInput() -> DoughInput {
         DoughInput(
@@ -101,12 +110,12 @@ final class AppModel {
     }
 
     private func load() {
-        // 레시피: 웹 localStorage 형식과 같은 배열 JSON — 항목별 검증·마이그레이션
+        // 레시피: 항목별 검증·마이그레이션 — 불량 항목 하나 때문에
+        // 라이브러리 전체가 빈 것으로 로드되면 다음 저장에서 파일이 덮어써진다
         if let data = try? Data(contentsOf: Self.recipesURL),
-            let text = String(data: data, encoding: .utf8),
-            case .success(let loaded) = RecipeCodec.importJSON(text)
+            let text = String(data: data, encoding: .utf8)
         {
-            recipes = loaded
+            recipes = RecipeCodec.salvageRecipes(text)
         }
         if let data = try? Data(contentsOf: Self.draftURL),
             let draft = try? JSONDecoder().decode(CalcState.self, from: data)
@@ -160,6 +169,11 @@ final class AppModel {
         recipes.removeAll { $0.id == id }
     }
 
+    /// 여러 건 삭제 — 한 번의 변이로 처리 (필터된 목록 인덱스가 밀리는 것을 방지)
+    func delete(ids: Set<String>) {
+        recipes.removeAll { ids.contains($0.id) }
+    }
+
     func loadIntoCalculator(_ recipe: Recipe) {
         calc = CalcState(
             mode: .a,
@@ -168,6 +182,14 @@ final class AppModel {
             input: recipe.doughInput,
             pieces: recipe.pieces ?? 0)
         selectedTab = .calculator
+    }
+
+    /// 계산기 초기화 — 새 배합 시작 (recipeId 연결도 해제)
+    func resetCalc(empty: Bool) {
+        calc = CalcState(
+            mode: .a,
+            name: empty ? "" : L("캉파뉴"),
+            input: empty ? CalcState.emptyDoughInput() : CalcState.defaultDoughInput())
     }
 
     func sendToConverter(name: String, input: DoughInput) {

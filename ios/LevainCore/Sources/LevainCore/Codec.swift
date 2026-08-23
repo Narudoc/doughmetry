@@ -173,6 +173,27 @@ public enum RecipeCodec {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// 저장소 로드용 — 항목별 검증으로 불량 항목만 건너뛴다 (웹 loadRecipes와 동일한 태도).
+    /// 가져오기(importJSON)는 사용자에게 사유를 보여주기 위해 엄격한 채로 둔다.
+    public static func salvageRecipes(_ text: String) -> [Recipe] {
+        guard let parsed = try? JSONSerialization.jsonObject(with: Data(text.utf8)) else {
+            return []
+        }
+        let items: [Any]
+        if let arr = parsed as? [Any] {
+            items = arr
+        } else if let obj = parsed as? [String: Any], let rs = obj["recipes"] as? [Any] {
+            items = rs
+        } else {
+            return []
+        }
+        var recipes: [Recipe] = []
+        for item in items {
+            if case .ok(let recipe) = validate(item) { recipes.append(recipe) }
+        }
+        return recipes
+    }
+
     public static func importJSON(_ text: String) -> Result<[Recipe], CodecError> {
         let parsed: Any
         do {

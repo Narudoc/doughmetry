@@ -67,17 +67,37 @@ struct IngredientFormSections: View {
 
     // MARK: 르방
 
-    private var levainPreset: Binding<Int> {
-        Binding(
-            get: {
-                if input.levain.hydration == 1 { return 0 }
-                if input.levain.hydration == 0.5 { return 1 }
-                return 2
-            },
-            set: { newValue in
-                if newValue == 0 { setLevainHydration(1) }
-                if newValue == 1 { setLevainHydration(0.5) }
-            })
+    /// 프리셋 선택 — '직접'(2)도 실제 선택 가능하도록 @State로 유지하고
+    /// 수분율 변경(불러오기·직접 입력)과 동기화한다
+    @State private var levainPresetSel = 0
+
+    private func applyLevainPreset(_ sel: Int) {
+        if sel == 0 { setLevainHydration(1) }
+        if sel == 1 { setLevainHydration(0.5) }
+    }
+
+    private func syncLevainPreset(_ hydration: Double) {
+        let sel: Int
+        if hydration == 1 {
+            sel = 0
+        } else if hydration == 0.5 {
+            sel = 1
+        } else {
+            sel = 2
+        }
+        levainPresetSel = sel
+    }
+
+    private var levainPresetPicker: some View {
+        let picker = Picker(L("르방 종류"), selection: $levainPresetSel) {
+            Text(L("리퀴드 100%")).tag(0)
+            Text(L("뒤흐 50%")).tag(1)
+            Text(L("직접")).tag(2)
+        }
+        return picker
+            .pickerStyle(.segmented)
+            .onChange(of: levainPresetSel) { _, sel in applyLevainPreset(sel) }
+            .onChange(of: input.levain.hydration, initial: true) { _, h in syncLevainPreset(h) }
     }
 
     private func setLevainHydration(_ h: Double) {
@@ -87,12 +107,7 @@ struct IngredientFormSections: View {
 
     private var levainSection: some View {
         Section {
-            Picker(L("르방 종류"), selection: levainPreset) {
-                Text(L("리퀴드 100%")).tag(0)
-                Text(L("뒤흐 50%")).tag(1)
-                Text(L("직접")).tag(2)
-            }
-            .pickerStyle(.segmented)
+            levainPresetPicker
             HStack {
                 NumberField(label: L("르방 무게"), value: $input.levain.grams)
                 StatValue(value: fmtPct(stats.pffPct), size: 14)
@@ -179,14 +194,24 @@ struct IngredientFormSections: View {
 
     private var yeastSection: some View {
         Section {
-            Picker(L("이스트 종류"), selection: $input.yeast.type) {
+            // 환산은 사용자가 피커를 조작했을 때만 — 레시피 불러오기 등
+            // 상태가 통째로 바뀔 때 이미 타입 기준인 무게를 재환산하면 안 된다
+            Picker(
+                L("이스트 종류"),
+                selection: Binding(
+                    get: { input.yeast.type },
+                    set: { newType in
+                        let oldType = input.yeast.type
+                        guard newType != oldType else { return }
+                        input.yeast.grams = convertYeast(
+                            input.yeast.grams, from: oldType, to: newType)
+                        input.yeast.type = newType
+                    })
+            ) {
                 Text(L("생이스트")).tag(YeastType.fresh)
                 Text(L("인스턴트")).tag(YeastType.instant)
             }
             .pickerStyle(.segmented)
-            .onChange(of: input.yeast.type) { oldType, newType in
-                input.yeast.grams = convertYeast(input.yeast.grams, from: oldType, to: newType)
-            }
             HStack {
                 NumberField(label: L("투입량"), value: $input.yeast.grams)
                 StatValue(value: fmtPct(stats.yeastPct), size: 14)

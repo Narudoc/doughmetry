@@ -76,6 +76,34 @@ struct RecipeTextParserTests {
         #expect(abs(r.input.levain.hydration - 0.8) < 1e-9)
     }
 
+    @Test("온도 표기가 있어도 재료 줄이 살아남는다")
+    func temperatureAnnotations() {
+        let r = RecipeTextParser.parse(
+            """
+            T65 1000
+            물 680 (30°C)
+            소금 20 30℃
+            르방 리퀴드 200
+            """)
+        #expect(r.input.water == 680)
+        #expect(r.input.salt == 20)
+        #expect(r.input.flours[0].grams == 1000)
+        #expect(r.matchedLineCount == 4)
+    }
+
+    @Test("물엿·시럽은 물이 아니라 기타 재료로 분류된다")
+    func syrupNotWater() {
+        let r = RecipeTextParser.parse(
+            """
+            강력분 500
+            물 350
+            물엿 30
+            """)
+        #expect(r.input.water == 350)
+        #expect(r.input.extras.count == 1)
+        #expect(r.input.extras[0].grams == 30)
+    }
+
     @Test("재료가 없으면 matchedLineCount 0")
     func nothingMatched() {
         let r = RecipeTextParser.parse("오늘의 일기\n빵을 굽고 싶다")

@@ -57,6 +57,28 @@ struct CodecTests {
         #expect(error.message == "1번째 레시피: liquids[0].waterRatio가 0~1 사이의 소수가 아닙니다 (예: 0.88)")
     }
 
+    @Test("salvageRecipes — 불량 항목이 있어도 유효한 레시피는 살린다 (저장소 로드용)")
+    func salvage() {
+        let json = """
+            [{"schemaVersion":2,"name":"좋은것","flours":[{"grams":900}],"water":620,"salt":20,
+              "levain":{"type":"liquide","hydration":1,"grams":200}},
+             {"schemaVersion":2,"name":"불량","flours":[],"water":-5,"salt":0,
+              "levain":{"hydration":1,"grams":0}}]
+            """
+        // 엄격한 importJSON은 전체 실패
+        #expect((try? RecipeCodec.importJSON(json).get()) == nil)
+        // salvage는 유효한 1건을 살린다
+        let salvaged = RecipeCodec.salvageRecipes(json)
+        #expect(salvaged.count == 1)
+        #expect(salvaged[0].name == "좋은것")
+    }
+
+    @Test("fmtDate는 사용자 달력과 무관하게 그레고리력으로 표시된다")
+    func dateFormatting() {
+        #expect(fmtDate(iso: "2026-08-22T10:30:00.000Z").hasPrefix("2026."))
+        #expect(fmtDate(iso: "2026-08-22T00:00:00Z").hasPrefix("2026."))
+    }
+
     @Test("웹 내보내기 형식({app, recipes:[…]})을 읽는다")
     func webEnvelope() throws {
         let json = """

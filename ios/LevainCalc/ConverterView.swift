@@ -28,9 +28,12 @@ struct ConverterView: View {
     @State private var name = "캉파뉴"
     @State private var input = CalcState.defaultDoughInput()
     @State private var targetHydrationPct: Double = 50
+    /// 목표 프리셋 선택 — '직접'(2)도 실제 선택 가능
+    @State private var targetPresetSel = 0
     @State private var convMode: ConvMode = .fixedMass
     @State private var distFlourId = ""
     @State private var editingSource = false
+    @State private var showLoadSheet = false
     @State private var showSave = false
     @State private var savedFeedback = false
     @State private var appliedFeedback = false
@@ -56,6 +59,13 @@ struct ConverterView: View {
             .navigationBarTitleDisplayMode(.inline)
             .keyboardDoneButton()
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showLoadSheet = true
+                    } label: {
+                        Label(L("불러오기"), systemImage: "square.and.arrow.down.on.square")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSave = true
@@ -64,6 +74,14 @@ struct ConverterView: View {
                     }
                     .disabled(!isSuccess(result))
                 }
+            }
+            .sheet(isPresented: $showLoadSheet) {
+                ConverterLoadSheet(
+                    onPickCalc: {
+                        model.sendToConverter(
+                            name: model.calc.name, input: model.calc.currentDough)
+                    },
+                    onPickRecipe: { adopt($0) })
             }
             .sheet(isPresented: $showSave) {
                 SaveRecipeSheet(
@@ -97,6 +115,13 @@ struct ConverterView: View {
         return false
     }
 
+    private func adopt(_ recipe: Recipe) {
+        name = recipe.name
+        input = recipe.doughInput
+        targetHydrationPct = recipe.levain.hydration >= 0.75 ? 50 : 100
+        distFlourId = ""
+    }
+
     private func consumeSource() {
         guard let source = model.converterSource else { return }
         name = source.name
@@ -113,25 +138,12 @@ struct ConverterView: View {
     private func sourceSection(sourceStats: DoughStats) -> some View {
         Section {
             TextField(L("레시피 이름"), text: $name)
-            if !model.recipes.isEmpty {
-                Menu {
-                    ForEach(model.recipes) { r in
-                        Button(r.name) {
-                            name = r.name
-                            input = r.doughInput
-                            targetHydrationPct = r.levain.hydration >= 0.75 ? 50 : 100
-                            distFlourId = ""
-                        }
-                    }
-                } label: {
-                    Label(L("저장된 레시피 불러오기"), systemImage: "book.closed")
-                }
-            }
             LabeledContent {
-                StatValue(
-                    value:
-                        "\(L(input.levain.hydration >= 0.75 ? "리퀴드" : "뒤흐")) \(Int((input.levain.hydration * 100).rounded()))% · \(fmtGrams(input.levain.grams, model.precision)) g"
+                Text(
+                    "\(L(input.levain.hydration >= 0.75 ? "리퀴드" : "뒤흐")) \(Int((input.levain.hydration * 100).rounded()))% · \(fmtGrams(input.levain.grams, model.precision)) g"
                 )
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
             } label: {
                 Text(L("현재 르방"))
             }
@@ -154,6 +166,35 @@ struct ConverterView: View {
 
     // MARK: 변환 설정
 
+    private func applyTargetPreset(_ sel: Int) {
+        if sel == 0 { targetHydrationPct = 50 }
+        if sel == 1 { targetHydrationPct = 100 }
+    }
+
+    private func syncTargetPreset(_ pct: Double) {
+        let sel: Int
+        if pct == 50 {
+            sel = 0
+        } else if pct == 100 {
+            sel = 1
+        } else {
+            sel = 2
+        }
+        targetPresetSel = sel
+    }
+
+    private var targetPresetPicker: some View {
+        let picker = Picker(L("목표"), selection: $targetPresetSel) {
+            Text(L("뒤흐 50%")).tag(0)
+            Text(L("리퀴드 100%")).tag(1)
+            Text(L("직접")).tag(2)
+        }
+        return picker
+            .pickerStyle(.segmented)
+            .onChange(of: targetPresetSel) { _, sel in applyTargetPreset(sel) }
+            .onChange(of: targetHydrationPct, initial: true) { _, pct in syncTargetPreset(pct) }
+    }
+
     private var settingsSection: some View {
         Section {
             Picker(L("변환 모드"), selection: $convMode) {
@@ -162,22 +203,7 @@ struct ConverterView: View {
                 }
             }
             .pickerStyle(.segmented)
-            Picker(
-                L("목표"),
-                selection: Binding(
-                    get: {
-                        targetHydrationPct == 50 ? 0 : targetHydrationPct == 100 ? 1 : 2
-                    },
-                    set: { (v: Int) in
-                        if v == 0 { targetHydrationPct = 50 }
-                        if v == 1 { targetHydrationPct = 100 }
-                    })
-            ) {
-                Text(L("뒤흐 50%")).tag(0)
-                Text(L("리퀴드 100%")).tag(1)
-                Text(L("직접")).tag(2)
-            }
-            .pickerStyle(.segmented)
+            targetPresetPicker
             NumberField(
                 label: L("목표 르방 수분율"), value: $targetHydrationPct, unit: "%", fractionDigits: 0)
             if convMode == .fixedMass && input.flours.count > 1 {
@@ -243,5 +269,51 @@ struct ConverterView: View {
                 Text(LF("최대 르방 질량 적용 — %@ g", fmtGrams(maxGrams, model.precision)))
             }
         }
+    }
+}
+
+/// 변환기 소스 불러오기 시트 — 계산기 배합 또는 저장된 레시피
+struct ConverterLoadSheet: View {
+    let onPickCalc: () -> Void
+    let onPickRecipe: (Recipe) -> Void
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        onPickCalc()
+                        dismiss()
+                    } label: {
+                        Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
+                    }
+                }
+                if !model.recipes.isEmpty {
+                    Section(L("저장된 레시피")) {
+                        ForEach(model.recipes) { recipe in
+                            Button {
+                                onPickRecipe(recipe)
+                                dismiss()
+                            } label: {
+                                RecipeRow(recipe: recipe, precision: model.precision)
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
+                        }
+                    }
+                }
+            }
+            .navigationTitle(L("불러오기"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(L("취소")) { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

@@ -111,7 +111,12 @@ private let en: [String: String] = [
     "분할": "Dividing",
     "분할 개수 (0 = 사용 안 함)": "Pieces (0 = off)",
     "개": "pcs",
-    "변환기로": "To converter",
+    "캉파뉴": "Campagne",
+    "새 배합": "New recipe",
+    "새 배합을 시작할까요? 저장하지 않은 입력은 지워집니다.":
+        "Start a new recipe? Unsaved input will be cleared.",
+    "빈 배합으로 시작": "Start empty",
+    "예시 배합으로 시작 (캉파뉴)": "Start from example (campagne)",
     "입력 모드": "Input mode",
 
     // 모드 B
@@ -159,6 +164,9 @@ private let en: [String: String] = [
     "르방 변환": "Levain conversion",
     "원본 배합": "Source recipe",
     "저장된 레시피 불러오기": "Load saved recipe",
+    "계산기 배합 가져오기": "Use calculator dough",
+    "불러오기": "Load",
+    "저장된 레시피": "Saved recipes",
     "현재 르방": "Current levain",
     "원본 직접 편집": "Edit source",
     "변환 설정": "Conversion settings",

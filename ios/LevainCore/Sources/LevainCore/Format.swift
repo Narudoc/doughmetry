@@ -39,6 +39,9 @@ public func fmtDate(iso: String) -> String {
     let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
     guard let d else { return "" }
     let out = DateFormatter()
+    // 고정 포맷은 사용자 달력(불교력·일본력 등)의 영향을 받지 않도록 반드시 고정할 것
+    out.locale = Locale(identifier: "en_US_POSIX")
+    out.calendar = Calendar(identifier: .gregorian)
     out.dateFormat = "yyyy.MM.dd"
     return out.string(from: d)
 }

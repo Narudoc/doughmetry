@@ -1,3 +1,4 @@
+import CoreTransferable
 import LevainCore
 import PhotosUI
 import SwiftUI
@@ -43,9 +44,9 @@ struct RecipesView: View {
                             }
                         }
                         .onDelete { offsets in
-                            for idx in offsets {
-                                model.delete(filtered[idx].id)
-                            }
+                            // 삭제로 filtered가 재계산되기 전에 id를 먼저 확정한다
+                            let ids = Set(offsets.map { filtered[$0].id })
+                            model.delete(ids: ids)
                         }
                     }
                     .searchable(text: $search, prompt: L("이름·태그 검색"))
@@ -74,8 +75,11 @@ struct RecipesView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        if !model.recipes.isEmpty, let url = exportFile() {
-                            ShareLink(item: url) {
+                        if !model.recipes.isEmpty {
+                            ShareLink(
+                                item: RecipesExport(recipes: model.recipes),
+                                preview: SharePreview("levain-calc-recipes.json")
+                            ) {
                                 Label(L("JSON 내보내기"), systemImage: "square.and.arrow.up")
                             }
                         }
@@ -178,15 +182,6 @@ struct RecipesView: View {
                 importError = error.localizedDescription
             }
         }
-    }
-
-    /// 웹앱과 호환되는 내보내기 파일 생성
-    private func exportFile() -> URL? {
-        guard let json = try? RecipeCodec.exportJSON(model.recipes) else { return nil }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("levain-calc-recipes.json")
-        try? json.write(to: url, atomically: true, encoding: .utf8)
-        return url
     }
 
     private func handleImport(_ result: Result<URL, Error>) {
@@ -362,5 +357,17 @@ struct SettingsSheet: View {
             }
         }
         .presentationDetents([.medium])
+    }
+}
+
+/// 웹앱과 호환되는 레시피 내보내기 — 공유 시점에만 인코딩한다
+struct RecipesExport: Transferable {
+    let recipes: [Recipe]
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { export in
+            Data(try RecipeCodec.exportJSON(export.recipes).utf8)
+        }
+        .suggestedFileName("levain-calc-recipes.json")
     }
 }
