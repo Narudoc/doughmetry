@@ -4,6 +4,22 @@ import LevainCore
 /// CLT 전용 스모크 체크 — Xcode 없이 `swift run levain-core-check`로 핵심 스펙을 검증한다.
 /// 전체 스펙 테스트는 Tests/LevainCoreTests (Xcode 설치 후 `swift test`).
 
+// `levain-core-check parse "<레시피 텍스트>"` — 파서 결과를 즉석 확인 (디버깅·검증용)
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "parse" {
+    let r = RecipeTextParser.parse(CommandLine.arguments[2])
+    print("name: \(r.name ?? "(없음)")")
+    for f in r.input.flours { print("flour: '\(f.name)' \(f.grams)g") }
+    print("water: \(r.input.water)g  bassinage: \(r.input.bassinage)g  salt: \(r.input.salt)g")
+    print("levain: \(r.input.levain.grams)g h=\(r.input.levain.hydration) (\(r.input.levain.type))")
+    print("yeast: \(r.input.yeast.grams)g (\(r.input.yeast.type))")
+    for l in r.input.liquids { print("liquid: '\(l.name)' \(l.grams)g ratio=\(l.waterRatio)") }
+    for e in r.input.extras { print("extra: '\(e.name)' \(e.grams)g") }
+    print("matchedLines: \(r.matchedLineCount)")
+    let st = computeStats(r.input)
+    print("stats: H=\(st.hydrationPct)% dough=\(st.doughWeight)g PFF=\(st.pffPct)%")
+    exit(0)
+}
+
 var failures = 0
 
 @MainActor func check(_ label: String, _ cond: Bool) {

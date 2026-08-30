@@ -95,6 +95,8 @@ enum RecipeImporter {
     }
 
     static func importRecipe(from text: String) async throws -> ImportedRecipe {
+        // @멘션·#해시태그는 어느 경로에서도 재료 정보가 아니다
+        let text = RecipeTextParser.cleanForParsing(text)
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             if case .available = SystemLanguageModel.default.availability,
@@ -173,20 +175,30 @@ enum RecipeImporter {
                 - 무게 단위는 전부 g. 표기가 kg이면 g로 환산한다.
                 - 확실하지 않은 재료는 extras에 넣는다.
 
-                예시 입력:
+                예시 입력 1:
                 캉파뉴
                 T65 800
                 호밀 200
                 물 700
                 르방 리퀴드 250
                 소금 18
-                예시 출력: name="캉파뉴", flours=[T65 800g, 호밀 200g], waterGrams=700,
+                예시 출력 1: name="캉파뉴", flours=[T65 800g, 호밀 200g], waterGrams=700,
                 levainGrams=250, levainHydrationPct=100, saltGrams=18, bassinageGrams=0
+
+                예시 입력 2 (숫자가 앞에 오는 SNS 스타일):
+                1kg flour
+                350 ferment ( starter stiff )
+                730 water
+                10 yeast fresh
+                20 sea salt
+                예시 출력 2: flours=[flour 1000g], levainGrams=350, levainHydrationPct=50
+                (stiff/dur는 50), waterGrams=730, yeastGrams=10 + yeastType="fresh",
+                saltGrams=20, bassinageGrams=0
                 """)
         let draft = try await session.respond(to: text, generating: AIDraft.self).content
 
         let hydration = max(0.01, draft.levainHydrationPct / 100)
-        let input = DoughInput(
+        var input = DoughInput(
             flours: draft.flours
                 .filter { $0.grams > 0 }
                 .map { Flour(name: $0.name, grams: $0.grams) },
@@ -230,6 +242,14 @@ enum RecipeImporter {
             if abs(aiWeight - ruleWeight) > max(50, ruleWeight * 0.1) {
                 throw ImportError.noIngredients(recognizedText: text)
             }
+        }
+        // 규칙 파서가 명시적 키워드(뒤흐/stiff/%)로 확정한 수분율(≠기본값 1.0)은
+        // 온디바이스 모델의 오답보다 신뢰한다
+        if rules.input.levain.grams > 0, rules.input.levain.hydration != 1.0,
+            abs(input.levain.hydration - rules.input.levain.hydration) > 1e-9
+        {
+            input.levain.hydration = rules.input.levain.hydration
+            input.levain.type = rules.input.levain.type
         }
         return ImportedRecipe(
             name: draft.name, input: input, engine: .appleIntelligence, recognizedText: text)
