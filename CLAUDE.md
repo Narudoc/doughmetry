@@ -43,6 +43,9 @@ npm run build    # tsc --noEmit && vite build
 - [src/lib/dough.test.ts](src/lib/dough.test.ts) — 스펙 케이스 1~5 (기본 계산·변환·왕복·property·경계). 계산 로직 수정 시 반드시 통과 확인.
 - [src/lib/storage.ts](src/lib/storage.ts) — localStorage CRUD + JSON 스키마 검증. 키: `levain-calc:recipes:v1`, `levain-calc:draft:v1`, `levain-calc:settings:v1` (키 이름은 그대로 유지). 현재 `schemaVersion: 2` — v1 레시피는 로드/가져오기 시 자동 마이그레이션(bassinage 0, liquids [], yeast 0). 스키마가 바뀌면 버전을 올리고 마이그레이션을 추가할 것.
 - [src/state.ts](src/state.ts) — 계산기 상태(CalcState)와 레시피 ↔ 배합 변환 헬퍼.
+- [src/lib/recipeParser.ts](src/lib/recipeParser.ts) — 레시피 텍스트 → 배합 규칙 기반 파서. **iOS [RecipeTextParser.swift](ios/LevainCore/Sources/LevainCore/RecipeTextParser.swift)의 이식본 — 파서 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트([recipeParser.test.ts](src/lib/recipeParser.test.ts) ↔ RecipeTextParserTests.swift)를 동일하게 유지할 것.**
+- [src/lib/ocr.ts](src/lib/ocr.ts) — 사진 OCR. tesseract.js를 **사용 시점에만 동적 import** (초기 번들에 포함 금지). 언어 데이터(kor+eng+fra, iOS Vision과 동일)는 CDN에서 지연 로드. iOS는 Vision + Apple Intelligence를 쓰지만 웹은 OCR + 규칙 파서만. 파서의 정규식은 Swift(ICU) 의미에 맞춰 유니코드 단어 경계(lookaround + u 플래그)를 쓴다 — JS `\b`(ASCII)를 쓰지 말 것.
+- AI 가져오기 흐름(저장된 레시피 탭): 사진/텍스트 → `cleanForParsing` → `parseRecipeText` → 확인 다이얼로그([ImportReviewDialog](src/components/recipes/ImportReviewDialog.tsx), 수정 가능) → 저장. 확인 없이 바로 저장하지 말 것.
 - 탭 전환은 hash 기반 (`#calc` / `#convert` / `#recipes`), 라우팅 라이브러리 없음.
 
 ## 컨벤션
@@ -52,6 +55,7 @@ npm run build    # tsc --noEmit && vite build
 - 색 토큰(tailwind.config.ts): `paper #F5F2EA` 배경 / `ink #22271F` 본문 / `bottle #1E4034` 구조색 / `brass #9A6B32` **계산 결과값 전용** / `line #D9D3C4` 괘선 / `danger #9E3B2F` 오류.
 - 폰트: 본문·숫자 Pretendard Variable, 디스플레이 Archivo Variable (제목·표 캡션에만).
 - 인쇄는 `.print-only` / `.no-print` 클래스로 제어 — 계산기 탭에서 A4 한 장 fiche technique 출력.
+- **% 표기 기준 설정(`Settings.pctBasis`)은 표시 전용** — `uiPct`/`rebasePct`([src/lib/format.ts](src/lib/format.ts))로 분모만 바꾼다. 계산 코어와 총 수분율·PFF는 항상 총 밀가루 기준 (iOS의 PctBasis와 동일 규칙).
 - GitHub Pages `base: '/levain-calc/'` — 저장소명 변경 시 vite.config.ts 수정 (README 참고).
 
 ## iOS 네이티브 앱 (ios/)

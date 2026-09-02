@@ -1,14 +1,19 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RecipesApi } from '../../hooks/useRecipes';
+import type { DoughInput } from '../../lib/dough';
 import { computeStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtDate, fmtGrams, fmtPct } from '../../lib/format';
+import { newId } from '../../lib/id';
+import { OcrError, recognizeImage } from '../../lib/ocr';
+import { cleanForParsing, parseRecipeText } from '../../lib/recipeParser';
 import { exportJson, importJson } from '../../lib/storage';
 import { doughInputFromRecipe } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { Button } from '../ui/Button';
-import { ConfirmDialog, PromptDialog } from '../ui/Dialog';
+import { ConfirmDialog, Dialog, PromptDialog } from '../ui/Dialog';
 import { TextField } from '../ui/fields';
+import { ImportReviewDialog, type ImportedDraft } from './ImportReviewDialog';
 
 interface Props {
   api: RecipesApi;
@@ -36,6 +41,16 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
   const [importError, setImportError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // AI 레시피 가져오기 (사진·텍스트 → 규칙 기반 파서 → 확인 후 저장)
+  const imageRef = useRef<HTMLInputElement>(null);
+  const [textImportOpen, setTextImportOpen] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState<ImportedDraft | null>(null);
+  const [aiImportFail, setAiImportFail] = useState<{
+    message: string;
+    recognizedText?: string;
+  } | null>(null);
+  const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+
   const allTags = useMemo(
     () => [...new Set(api.recipes.flatMap((r) => r.tags ?? []))].sort(),
     [api.recipes],
@@ -54,7 +69,13 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
   }, [api.recipes, query, activeTag]);
 
   const handleImportFile = async (file: File) => {
-    const text = await file.text();
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setImportError('파일을 읽을 수 없습니다');
+      return;
+    }
     const res = importJson(text);
     if (res.ok) {
       api.importAll(res.recipes);
@@ -63,6 +84,57 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
     } else {
       setImportError(res.reason);
     }
+  };
+
+  /** 텍스트 → 파서 → 확인 다이얼로그 (사진·텍스트 공통 경로) */
+  const handleRecognizedText = (raw: string) => {
+    const text = cleanForParsing(raw);
+    const parsed = parseRecipeText(text);
+    if (parsed.matchedLineCount === 0) {
+      setAiImportFail({
+        message: '재료를 인식하지 못했습니다. 재료와 g 수량이 줄 단위로 적힌 텍스트가 필요합니다.',
+        recognizedText: text.trim() || undefined,
+      });
+      return;
+    }
+    setAiImportFail(null);
+    setReviewDraft({ name: parsed.name ?? '', input: parsed.input, recognizedText: text });
+  };
+
+  const handleImageFile = async (file: File) => {
+    setOcrProgress(0);
+    try {
+      const text = await recognizeImage(file, (p) => setOcrProgress(p));
+      // iOS와 동일하게 '글자 없음'은 사진 경로에서만 판정한다
+      if (text.trim() === '') {
+        setAiImportFail({ message: '사진에서 글자를 찾지 못했습니다.' });
+        return;
+      }
+      handleRecognizedText(text);
+    } catch (e) {
+      setAiImportFail({
+        message:
+          e instanceof OcrError && e.kind === 'unreadable-image'
+            ? '이미지를 읽을 수 없습니다. 다른 사진으로 다시 시도하세요.'
+            : '문자 인식(OCR) 모듈을 불러오지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.',
+      });
+    } finally {
+      setOcrProgress(null);
+    }
+  };
+
+  const handleReviewSave = (name: string, input: DoughInput) => {
+    const now = new Date().toISOString();
+    const recipe: Recipe = {
+      id: newId(),
+      schemaVersion: 2,
+      name,
+      createdAt: now,
+      updatedAt: now,
+      ...structuredClone(input),
+    };
+    api.save(recipe);
+    toast(`'${name}' 레시피를 가져왔습니다`);
   };
 
   return (
@@ -75,7 +147,17 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
           ariaLabel="레시피 검색"
           className="min-w-[200px] flex-1"
         />
-        <Button onClick={() => fileRef.current?.click()}>JSON 가져오기</Button>
+        <Button disabled={ocrProgress !== null} onClick={() => imageRef.current?.click()}>
+          {ocrProgress !== null
+            ? `사진 인식 중… ${Math.round(ocrProgress * 100)}%`
+            : '사진에서 가져오기'}
+        </Button>
+        <Button disabled={ocrProgress !== null} onClick={() => setTextImportOpen(true)}>
+          텍스트에서 가져오기
+        </Button>
+        <Button disabled={ocrProgress !== null} onClick={() => fileRef.current?.click()}>
+          JSON 가져오기
+        </Button>
         <Button
           disabled={api.recipes.length === 0}
           onClick={() => {
@@ -96,11 +178,39 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
             e.target.value = '';
           }}
         />
+        <input
+          ref={imageRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleImageFile(f);
+            e.target.value = '';
+          }}
+        />
       </div>
 
       {importError && (
         <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
           가져오기 실패: {importError}
+        </div>
+      )}
+
+      {aiImportFail && (
+        <div className="space-y-2 rounded border border-danger/40 bg-danger/5 p-3 text-sm">
+          <p className="font-medium text-danger">{aiImportFail.message}</p>
+          {aiImportFail.recognizedText && (
+            <details>
+              <summary className="cursor-pointer text-xs text-ink/60">인식된 원본 텍스트</summary>
+              <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-white p-2 text-xs text-ink/60">
+                {aiImportFail.recognizedText}
+              </pre>
+            </details>
+          )}
+          <Button small onClick={() => setAiImportFail(null)}>
+            닫기
+          </Button>
         </div>
       )}
 
@@ -171,7 +281,68 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
           }
         }}
       />
+      <TextImportDialog
+        open={textImportOpen}
+        onClose={() => setTextImportOpen(false)}
+        onSubmit={handleRecognizedText}
+      />
+      {reviewDraft !== null && (
+        <ImportReviewDialog
+          onClose={() => setReviewDraft(null)}
+          draft={reviewDraft}
+          settings={settings}
+          onSave={handleReviewSave}
+        />
+      )}
     </div>
+  );
+}
+
+/** 텍스트 붙여넣기 입력 다이얼로그 */
+function TextImportDialog({
+  open,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    if (open) setText('');
+  }, [open]);
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="텍스트에서 가져오기"
+      footer={
+        <>
+          <Button onClick={onClose}>취소</Button>
+          <Button
+            variant="primary"
+            disabled={text.trim() === ''}
+            onClick={() => {
+              onClose();
+              onSubmit(text);
+            }}
+          >
+            분석
+          </Button>
+        </>
+      }
+    >
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={10}
+        autoFocus
+        placeholder={'레시피 텍스트를 붙여넣으세요\n\n예)\n캉파뉴\nT65 900g\n물 620g\n소금 20g\n르방 리퀴드 200g'}
+        className="w-full rounded border border-line bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+      />
+    </Dialog>
   );
 }
 

@@ -37,7 +37,7 @@ export default function App() {
   const api = useRecipes();
   const [settings, setSettings] = usePersistedState<Settings>(
     SETTINGS_KEY,
-    () => ({ precision: 0.1 }),
+    () => ({ precision: 0.1, pctBasis: 'total' }),
     sanitizeSettings,
   );
   const [calc, setCalc] = usePersistedState<CalcState>(
@@ -79,25 +79,53 @@ export default function App() {
                 사워도우 레시피 계산기 · <span className="italic">pain au levain</span>
               </p>
             </div>
-            <div
-              role="radiogroup"
-              aria-label="표시 자릿수"
-              className="mt-1 inline-flex rounded border border-paper/30 p-0.5 text-xs"
-            >
-              {([0.1, 1] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  role="radio"
-                  aria-checked={settings.precision === p}
-                  onClick={() => setSettings({ precision: p })}
-                  className={`min-h-[32px] rounded px-2.5 font-medium tabular-nums transition-colors motion-reduce:transition-none ${
-                    settings.precision === p ? 'bg-paper text-bottle' : 'text-paper/70 hover:text-paper'
-                  }`}
-                >
-                  {p === 0.1 ? '0.1 g' : '1 g'}
-                </button>
-              ))}
+            <div className="mt-1 flex flex-col items-end gap-1">
+              <div
+                role="radiogroup"
+                aria-label="표시 자릿수"
+                className="inline-flex rounded border border-paper/30 p-0.5 text-xs"
+              >
+                {([0.1, 1] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={settings.precision === p}
+                    onClick={() => setSettings({ ...settings, precision: p })}
+                    className={`min-h-[32px] rounded px-2.5 font-medium tabular-nums transition-colors motion-reduce:transition-none ${
+                      settings.precision === p ? 'bg-paper text-bottle' : 'text-paper/70 hover:text-paper'
+                    }`}
+                  >
+                    {p === 0.1 ? '0.1 g' : '1 g'}
+                  </button>
+                ))}
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="% 표기 기준"
+                title="표시만 바뀝니다 — 계산과 총 수분율·PFF는 항상 총 밀가루 기준입니다."
+                className="inline-flex rounded border border-paper/30 p-0.5 text-xs"
+              >
+                {(
+                  [
+                    ['total', '총 밀가루 %'],
+                    ['added', '베이커스 %'],
+                  ] as const
+                ).map(([b, label]) => (
+                  <button
+                    key={b}
+                    type="button"
+                    role="radio"
+                    aria-checked={settings.pctBasis === b}
+                    onClick={() => setSettings({ ...settings, pctBasis: b })}
+                    className={`min-h-[32px] rounded px-2.5 font-medium transition-colors motion-reduce:transition-none ${
+                      settings.pctBasis === b ? 'bg-paper text-bottle' : 'text-paper/70 hover:text-paper'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <nav className="mt-4 flex gap-1 overflow-x-auto" aria-label="주요 탭">

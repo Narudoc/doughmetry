@@ -12,12 +12,14 @@ const LABEL: Record<YeastType, string> = {
 interface Props {
   yeast: Yeast;
   onChange: (y: Yeast) => void;
-  /** 총 밀가루 대비 % */
+  /** 표시 기준(설정)에 따라 계산된 % */
   pct: number;
+  /** "총 밀가루 대비" 또는 "첨가 밀가루 대비" */
+  pctLabel?: string;
 }
 
 /** 이스트 — 생이스트 기본, 인스턴트 드라이 전환 시 40% 비율로 자동 환산 */
-export function YeastControl({ yeast, onChange, pct }: Props) {
+export function YeastControl({ yeast, onChange, pct, pctLabel = '총 밀가루 대비' }: Props) {
   const other: YeastType = yeast.type === 'fresh' ? 'instant' : 'fresh';
 
   return (
@@ -43,7 +45,7 @@ export function YeastControl({ yeast, onChange, pct }: Props) {
       {yeast.grams > 0 && (
         <p className="text-xs tabular-nums text-ink/60">
           = {LABEL[other]} {fmtGrams(convertYeast(yeast.grams, yeast.type, other), 0.1)} g (환산
-          비율 40%) · 총 밀가루 대비 {fmtPct(pct, 2)}
+          비율 40%) · {pctLabel} {fmtPct(pct, 2)}
         </p>
       )}
     </div>

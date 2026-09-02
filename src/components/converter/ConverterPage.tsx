@@ -80,8 +80,11 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
     [input, newHydration, convMode, distFlourId],
   );
 
-  const presetValue =
-    targetHydrationPct === 50 ? 'dur' : targetHydrationPct === 100 ? 'liquide' : 'custom';
+  // '직접 입력'도 실제로 선택 가능하도록 파생값이 아니라 상태로 들고, 수분율 변경 시 동기화한다
+  const [presetSel, setPresetSel] = useState<'dur' | 'liquide' | 'custom'>('dur');
+  useEffect(() => {
+    setPresetSel(targetHydrationPct === 50 ? 'dur' : targetHydrationPct === 100 ? 'liquide' : 'custom');
+  }, [targetHydrationPct]);
 
   const handleSave = (data: { name: string; tags: string[]; note?: string }) => {
     if (!result.ok) return;
@@ -143,6 +146,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
               onChange={setInput}
               stats={sourceStats}
               precision={precision}
+              basis={settings.pctBasis}
             />
           </div>
         )}
@@ -153,8 +157,9 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
             <div className="flex items-center gap-2">
               <Segmented<'dur' | 'liquide' | 'custom'>
                 ariaLabel="목표 르방 수분율 프리셋"
-                value={presetValue}
+                value={presetSel}
                 onChange={(v) => {
+                  setPresetSel(v);
                   if (v === 'dur') setTargetHydrationPct(50);
                   else if (v === 'liquide') setTargetHydrationPct(100);
                 }}

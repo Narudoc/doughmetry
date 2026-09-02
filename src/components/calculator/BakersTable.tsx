@@ -1,13 +1,15 @@
 import type { DoughInput, DoughStats } from '../../lib/dough';
 import { convertYeast } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
-import { fmtGrams, fmtPct } from '../../lib/format';
+import { fmtGrams, fmtPct, uiPct } from '../../lib/format';
+import type { PctBasis } from '../../types';
 
 interface Props {
   input: DoughInput;
   stats: DoughStats;
   precision: Precision;
   pieces?: number;
+  basis?: PctBasis;
 }
 
 interface RowData {
@@ -19,8 +21,10 @@ interface RowData {
   indent?: boolean;
 }
 
-export function BakersTable({ input, stats, precision, pieces }: Props) {
-  const pctOf = (g: number) => (stats.totalFlour > 0 ? (g / stats.totalFlour) * 100 : 0);
+export function BakersTable({ input, stats, precision, pieces, basis = 'total' }: Props) {
+  // 표시 기준(설정)에 따른 % — PFF와 르방 분해 행은 항상 총 밀가루 기준
+  const pctOf = (g: number) => uiPct(stats, g, basis);
+  const pctTotal = (g: number) => (stats.totalFlour > 0 ? (g / stats.totalFlour) * 100 : 0);
   const levainLabel = input.levain.type === 'liquide' ? '리퀴드 liquide' : '뒤흐 dur';
   const yeastLabel = input.yeast.type === 'fresh' ? '생이스트' : '인스턴트 드라이';
   const yeastOther = input.yeast.type === 'fresh' ? '인스턴트 드라이' : '생이스트';
@@ -51,7 +55,7 @@ export function BakersTable({ input, stats, precision, pieces }: Props) {
           },
         ]
       : []),
-    { key: 'salt', name: '소금', grams: input.salt, pct: stats.saltPct, note: '' },
+    { key: 'salt', name: '소금', grams: input.salt, pct: pctOf(input.salt), note: '' },
     {
       key: 'levain',
       name: `르방 (${levainLabel})`,
@@ -71,7 +75,7 @@ export function BakersTable({ input, stats, precision, pieces }: Props) {
       key: 'levain-water',
       name: '↳ 속 물',
       grams: stats.levainWater,
-      pct: pctOf(stats.levainWater),
+      pct: pctTotal(stats.levainWater),
       note: '',
       indent: true,
     },
@@ -88,7 +92,7 @@ export function BakersTable({ input, stats, precision, pieces }: Props) {
             key: 'yeast',
             name: `이스트 (${yeastLabel})`,
             grams: input.yeast.grams,
-            pct: stats.yeastPct,
+            pct: pctOf(input.yeast.grams),
             note: `= ${yeastOther} ${fmtGrams(convertYeast(input.yeast.grams, input.yeast.type, input.yeast.type === 'fresh' ? 'instant' : 'fresh'), precision)} g`,
           },
         ]
@@ -108,7 +112,9 @@ export function BakersTable({ input, stats, precision, pieces }: Props) {
         <caption className="mb-2 text-left font-display text-sm font-semibold uppercase tracking-widest text-bottle">
           베이커스 퍼센트{' '}
           <span className="font-normal normal-case italic text-bottle/60">
-            — %는 총 밀가루(첨가 + 르방 속) 대비
+            {basis === 'added'
+              ? '— %는 첨가 밀가루 대비 (베이커스 퍼센트)'
+              : '— %는 총 밀가루(첨가 + 르방 속) 대비'}
           </span>
         </caption>
         <thead>

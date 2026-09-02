@@ -10,10 +10,21 @@ interface Props {
   onChange: (l: Levain) => void;
   breakdown: { flour: number; water: number };
   pff: number;
+  /** 표시 기준에 따른 르방 행 % — total이면 PFF, added면 르방 무게/첨가 밀가루 */
+  levainPct: number;
+  basisAdded: boolean;
   precision: Precision;
 }
 
-export function LevainControl({ levain, onChange, breakdown, pff, precision }: Props) {
+export function LevainControl({
+  levain,
+  onChange,
+  breakdown,
+  pff,
+  levainPct,
+  basisAdded,
+  precision,
+}: Props) {
   return (
     <div className="space-y-3">
       <Segmented<LevainType>
@@ -65,8 +76,18 @@ export function LevainControl({ levain, onChange, breakdown, pff, precision }: P
         placeholder="T65"
       />
       <p className="text-xs tabular-nums text-ink/60">
-        속 밀가루 {fmtGrams(breakdown.flour, precision)} g (PFF {fmtPct(pff)}) · 속 물{' '}
-        {fmtGrams(breakdown.water, precision)} g
+        {basisAdded ? (
+          <>
+            속 밀가루 {fmtGrams(breakdown.flour, precision)} g · 속 물{' '}
+            {fmtGrams(breakdown.water, precision)} g · 첨가 밀가루 대비 르방 {fmtPct(levainPct)}{' '}
+            (PFF {fmtPct(pff)})
+          </>
+        ) : (
+          <>
+            속 밀가루 {fmtGrams(breakdown.flour, precision)} g (PFF {fmtPct(pff)}) · 속 물{' '}
+            {fmtGrams(breakdown.water, precision)} g
+          </>
+        )}
       </p>
     </div>
   );

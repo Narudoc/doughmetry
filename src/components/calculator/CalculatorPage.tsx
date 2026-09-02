@@ -5,7 +5,12 @@ import { computeStats } from '../../lib/dough';
 import { fmtGrams } from '../../lib/format';
 import { newId } from '../../lib/id';
 import type { CalcState } from '../../state';
-import { currentDoughInput, currentPieces, targetSpecFromForm } from '../../state';
+import {
+  calcStateFromRecipe,
+  currentDoughInput,
+  currentPieces,
+  targetSpecFromForm,
+} from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { Button } from '../ui/Button';
 import { SaveRecipeDialog } from '../ui/Dialog';
@@ -31,6 +36,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
   const stats = useMemo(() => computeStats(dough), [dough]);
   const pieces = currentPieces(state);
   const precision = settings.precision;
+  const basis = settings.pctBasis;
   const [saveOpen, setSaveOpen] = useState(false);
 
   const loadedRecipe = state.recipeId
@@ -72,15 +78,46 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="no-print space-y-5">
-          <Segmented<'A' | 'B'>
-            ariaLabel="입력 모드"
-            value={state.mode}
-            onChange={(mode) => onChange({ ...state, mode })}
-            options={[
-              { value: 'A', label: '재료 입력 (모드 A)' },
-              { value: 'B', label: '목표 역산 (모드 B)' },
-            ]}
-          />
+          <div className="flex flex-wrap items-end gap-3">
+            <Segmented<'A' | 'B'>
+              ariaLabel="입력 모드"
+              value={state.mode}
+              onChange={(mode) => onChange({ ...state, mode })}
+              options={[
+                { value: 'A', label: '재료 입력 (모드 A)' },
+                { value: 'B', label: '목표 역산 (모드 B)' },
+              ]}
+            />
+            {api.recipes.length > 0 && (
+              <label className="block min-w-[180px] flex-1 sm:max-w-[240px]">
+                <span className="mb-1 block text-xs font-medium text-ink/70">
+                  저장된 레시피 불러오기
+                </span>
+                <select
+                  value={
+                    state.recipeId && api.recipes.some((r) => r.id === state.recipeId)
+                      ? state.recipeId
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const r = api.recipes.find((x) => x.id === e.target.value);
+                    if (r) {
+                      onChange(calcStateFromRecipe(r));
+                      toast(`'${r.name}' 레시피를 불러왔습니다`);
+                    }
+                  }}
+                  className="min-h-[44px] w-full rounded border border-line bg-white px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                >
+                  <option value="">선택…</option>
+                  {api.recipes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
           <TextField
             label="레시피 이름"
             value={state.name}
@@ -94,6 +131,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
                 onChange={(input) => onChange({ ...state, input })}
                 stats={stats}
                 precision={precision}
+                basis={basis}
               />
               <NumberField
                 label="분할 개수 (0 = 사용 안 함)"
@@ -112,7 +150,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
         </div>
 
         <div className="no-print space-y-4 lg:sticky lg:top-4 lg:self-start">
-          <ResultSummary stats={stats} pieces={pieces} precision={precision} />
+          <ResultSummary stats={stats} pieces={pieces} precision={precision} basis={basis} />
           {(negativeWater || negativeFlour) && (
             <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
               {negativeWater && (
@@ -125,7 +163,11 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" onClick={() => setSaveOpen(true)}>
+            <Button
+              variant="primary"
+              disabled={negativeWater || negativeFlour}
+              onClick={() => setSaveOpen(true)}
+            >
               레시피 저장
             </Button>
             <Button onClick={() => onSendToConverter(state.name, structuredClone(dough))}>
@@ -137,10 +179,17 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
       </div>
 
       <div className="no-print">
-        <BakersTable input={dough} stats={stats} precision={precision} pieces={pieces} />
+        <BakersTable input={dough} stats={stats} precision={precision} pieces={pieces} basis={basis} />
       </div>
 
-      <PrintFiche name={state.name} input={dough} stats={stats} pieces={pieces} precision={precision} />
+      <PrintFiche
+        name={state.name}
+        input={dough}
+        stats={stats}
+        pieces={pieces}
+        precision={precision}
+        basis={basis}
+      />
 
       <SaveRecipeDialog
         open={saveOpen}

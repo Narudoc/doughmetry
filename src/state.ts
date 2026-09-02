@@ -83,8 +83,12 @@ export function sanitizeCalcState(loaded: unknown): CalcState | null {
 
 export function sanitizeSettings(loaded: unknown): Settings | null {
   if (typeof loaded !== 'object' || loaded === null) return null;
-  const p = (loaded as Settings).precision;
-  return p === 1 || p === 0.1 ? { precision: p } : null;
+  const s = loaded as Settings;
+  if (s.precision !== 1 && s.precision !== 0.1) return null;
+  return {
+    precision: s.precision,
+    pctBasis: s.pctBasis === 'added' ? 'added' : 'total',
+  };
 }
 
 export function targetSpecFromForm(t: TargetForm): TargetSpec {

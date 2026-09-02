@@ -1,11 +1,13 @@
 import type { DoughStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
-import { fmtGrams, fmtPct } from '../../lib/format';
+import { fmtGrams, fmtPct, rebasePct } from '../../lib/format';
+import type { PctBasis } from '../../types';
 
 interface Props {
   stats: DoughStats;
   pieces?: number;
   precision: Precision;
+  basis?: PctBasis;
 }
 
 function Item({ label, value }: { label: string; value: string }) {
@@ -17,15 +19,16 @@ function Item({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultSummary({ stats, pieces, precision }: Props) {
+export function ResultSummary({ stats, pieces, precision, basis = 'total' }: Props) {
+  // 소금·이스트 %만 표시 기준을 따르고, 총 수분율·PFF는 항상 총 밀가루 기준
   const items: Array<[string, string]> = [
     ['총 밀가루', `${fmtGrams(stats.totalFlour, precision)} g`],
     ['총 반죽 무게', `${fmtGrams(stats.doughWeight, precision)} g`],
     ['총 물', `${fmtGrams(stats.totalWater, precision)} g`],
-    ['소금', fmtPct(stats.saltPct)],
+    ['소금', fmtPct(rebasePct(stats, stats.saltPct, basis))],
     ['발효종 밀가루 (PFF)', fmtPct(stats.pffPct)],
   ];
-  if (stats.yeastPct > 0) items.push(['이스트', fmtPct(stats.yeastPct, 2)]);
+  if (stats.yeastPct > 0) items.push(['이스트', fmtPct(rebasePct(stats, stats.yeastPct, basis), 2)]);
   items.push([
     '분할',
     pieces && pieces > 0

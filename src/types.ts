@@ -57,7 +57,12 @@ export interface Recipe {
   pieces?: number;
 }
 
+/** % 표기 기준 — 계산은 항상 총 밀가루 기준이고, 재료 옆 % 표시만 전환한다 */
+export type PctBasis = 'total' | 'added';
+
 export interface Settings {
   /** 표시 자릿수: 0.1g 또는 1g */
   precision: 0.1 | 1;
+  /** total: 총 밀가루 기준(프랑스식, 기본) / added: 첨가 밀가루 = 100% (베이커스 퍼센트) */
+  pctBasis: PctBasis;
 }

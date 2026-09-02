@@ -9,9 +9,11 @@ interface DialogProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** 넓은 콘텐츠(가져오기 확인 등)용 */
+  wide?: boolean;
 }
 
-export function Dialog({ open, onClose, title, children, footer }: DialogProps) {
+export function Dialog({ open, onClose, title, children, footer, wide = false }: DialogProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -31,7 +33,7 @@ export function Dialog({ open, onClose, title, children, footer }: DialogProps) 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-lg bg-paper p-5 shadow-xl"
+        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-lg bg-paper p-5 shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-display text-lg font-semibold text-bottle">{title}</h2>

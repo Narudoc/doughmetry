@@ -1,5 +1,7 @@
 import type { DoughInput, DoughStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
+import { uiLevainPct, uiPct } from '../../lib/format';
+import type { PctBasis } from '../../types';
 import { GramRows } from './GramRows';
 import { LevainControl } from './LevainControl';
 import { LiquidRows } from './LiquidRows';
@@ -19,13 +21,14 @@ interface Props {
   onChange: (input: DoughInput) => void;
   stats: DoughStats;
   precision: Precision;
+  basis: PctBasis;
 }
 
 /** 모드 A 입력 폼 — 변환기의 '직접 입력'에서도 재사용 */
-export function IngredientForm({ input, onChange, stats, precision }: Props) {
-  const flourPcts = new Map(stats.flourPcts.map((p) => [p.id, p.pct]));
-  const liquidPcts = new Map(stats.liquidPcts.map((p) => [p.id, p.pct]));
-  const extraPcts = new Map(stats.extraPcts.map((p) => [p.id, p.pct]));
+export function IngredientForm({ input, onChange, stats, precision, basis }: Props) {
+  const flourPcts = new Map(input.flours.map((f) => [f.id, uiPct(stats, f.grams, basis)]));
+  const liquidPcts = new Map(input.liquids.map((l) => [l.id, uiPct(stats, l.grams, basis)]));
+  const extraPcts = new Map(input.extras.map((e) => [e.id, uiPct(stats, e.grams, basis)]));
 
   return (
     <div className="space-y-5">
@@ -39,6 +42,11 @@ export function IngredientForm({ input, onChange, stats, precision }: Props) {
           pcts={flourPcts}
           minRows={1}
         />
+        <p className="text-xs text-ink/50">
+          {basis === 'added'
+            ? '%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.'
+            : '%는 총 밀가루(첨가 + 르방 속) 기준입니다.'}
+        </p>
       </section>
 
       <section className="space-y-2">
@@ -75,6 +83,8 @@ export function IngredientForm({ input, onChange, stats, precision }: Props) {
           onChange={(levain) => onChange({ ...input, levain })}
           breakdown={{ flour: stats.levainFlour, water: stats.levainWater }}
           pff={stats.pffPct}
+          levainPct={uiLevainPct(stats, input.levain.grams, basis)}
+          basisAdded={basis === 'added'}
           precision={precision}
         />
       </section>
@@ -97,7 +107,8 @@ export function IngredientForm({ input, onChange, stats, precision }: Props) {
         <YeastControl
           yeast={input.yeast}
           onChange={(yeast) => onChange({ ...input, yeast })}
-          pct={stats.yeastPct}
+          pct={uiPct(stats, input.yeast.grams, basis)}
+          pctLabel={basis === 'added' ? '첨가 밀가루 대비' : '총 밀가루 대비'}
         />
       </section>
 
