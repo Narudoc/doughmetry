@@ -44,6 +44,7 @@ struct BakersTableSheet: View {
     let stats: DoughStats
     let pieces: Double?
     let precision: Precision
+    let basis: PctBasis
 
     @Environment(\.dismiss) private var dismiss
 
@@ -55,7 +56,7 @@ struct BakersTableSheet: View {
                         TableRow(
                             name: f.name.isEmpty ? L("밀가루") : f.name,
                             grams: fmtGrams(f.grams, precision),
-                            pct: fmtPct(stats.pct(f.id)))
+                            pct: fmtPct(stats.uiPct(grams: f.grams, basis: basis)))
                     }
                     TableRow(name: L("본반죽 물"), grams: fmtGrams(input.water, precision), pct: nil)
                     if input.bassinage > 0 {
@@ -64,28 +65,28 @@ struct BakersTableSheet: View {
                     }
                     TableRow(
                         name: L("소금"), grams: fmtGrams(input.salt, precision),
-                        pct: fmtPct(stats.saltPct))
+                        pct: fmtPct(stats.uiPct(grams: input.salt, basis: basis)))
                     TableRow(
                         name: levainLabel,
                         grams: fmtGrams(input.levain.grams, precision),
-                        pct: fmtPct(stats.pffPct))
+                        pct: fmtPct(stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis)))
                     ForEach(input.liquids) { l in
                         TableRow(
                             name: l.name.isEmpty ? L("액체") : l.name,
                             grams: fmtGrams(l.grams, precision),
-                            pct: fmtPct(stats.pct(l.id)))
+                            pct: fmtPct(stats.uiPct(grams: l.grams, basis: basis)))
                     }
                     if input.yeast.grams > 0 {
                         TableRow(
                             name: input.yeast.type == .fresh ? L("생이스트") : L("인스턴트 이스트"),
                             grams: fmtGrams(input.yeast.grams, precision),
-                            pct: fmtPct(stats.yeastPct))
+                            pct: fmtPct(stats.uiPct(grams: input.yeast.grams, basis: basis)))
                     }
                     ForEach(input.extras) { e in
                         TableRow(
                             name: e.name.isEmpty ? L("기타") : e.name,
                             grams: fmtGrams(e.grams, precision),
-                            pct: fmtPct(stats.pct(e.id)))
+                            pct: fmtPct(stats.uiPct(grams: e.grams, basis: basis)))
                     }
                 }
                 Section(L("합계")) {
@@ -141,15 +142,15 @@ struct BakersTableSheet: View {
         lines.append("")
         for f in input.flours {
             lines.append(
-                "\(f.name.isEmpty ? L("밀가루") : f.name)  \(fmtGrams(f.grams, precision)) g  (\(fmtPct(stats.pct(f.id))))")
+                "\(f.name.isEmpty ? L("밀가루") : f.name)  \(fmtGrams(f.grams, precision)) g  (\(fmtPct(stats.uiPct(grams: f.grams, basis: basis))))")
         }
         lines.append("\(L("본반죽 물"))  \(fmtGrams(input.water, precision)) g")
         if input.bassinage > 0 {
             lines.append("\(L("바시나주"))  \(fmtGrams(input.bassinage, precision)) g")
         }
-        lines.append("\(L("소금"))  \(fmtGrams(input.salt, precision)) g  (\(fmtPct(stats.saltPct)))")
+        lines.append("\(L("소금"))  \(fmtGrams(input.salt, precision)) g  (\(fmtPct(stats.uiPct(grams: input.salt, basis: basis))))")
         lines.append(
-            "\(levainLabel)  \(fmtGrams(input.levain.grams, precision)) g  (PFF \(fmtPct(stats.pffPct)))")
+            "\(levainLabel)  \(fmtGrams(input.levain.grams, precision)) g  (\(basis == .addedFlour ? "" : "PFF ")\(fmtPct(stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis))))")
         for l in input.liquids {
             lines.append("\(l.name.isEmpty ? L("액체") : l.name)  \(fmtGrams(l.grams, precision)) g")
         }

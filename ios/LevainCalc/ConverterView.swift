@@ -160,7 +160,8 @@ struct ConverterView: View {
         }
         if editingSource {
             IngredientFormSections(
-                input: $input, stats: sourceStats, precision: model.precision)
+                input: $input, stats: sourceStats, precision: model.precision,
+                basis: model.pctBasis)
         }
     }
 

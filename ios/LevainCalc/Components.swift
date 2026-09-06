@@ -137,3 +137,19 @@ extension View {
         }
     }
 }
+
+/// 표시 계층의 % 계산 — 설정(PctBasis)에 따라 분모만 달라진다.
+/// 계산 코어의 지표(총 수분율·PFF)는 항상 총 밀가루 기준으로 유지된다.
+extension DoughStats {
+    var addedFlourTotalForDisplay: Double { totalFlour - levainFlour }
+
+    func uiPct(grams: Double, basis: PctBasis) -> Double {
+        let denom = basis == .addedFlour ? addedFlourTotalForDisplay : totalFlour
+        return denom > 1e-9 ? grams / denom * 100 : 0
+    }
+
+    /// 르방 행의 % — 총 밀가루 기준일 땐 PFF, 베이커스 퍼센트일 땐 르방 무게/첨가 밀가루
+    func uiLevainPct(levainGrams: Double, basis: PctBasis) -> Double {
+        basis == .addedFlour ? uiPct(grams: levainGrams, basis: basis) : pffPct
+    }
+}

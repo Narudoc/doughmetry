@@ -32,7 +32,8 @@ struct ImportReviewSheet: View {
                     TextField(L("레시피 이름"), text: $name)
                 }
                 IngredientFormSections(
-                    input: $input, stats: stats, precision: model.precision)
+                    input: $input, stats: stats, precision: model.precision,
+                    basis: model.pctBasis)
                 Section(L("지표")) {
                     LabeledContent(L("총 수분율")) {
                         StatValue(value: fmtPct(stats.hydrationPct))

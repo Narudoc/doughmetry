@@ -254,6 +254,13 @@ private let en: [String: String] = [
 
     // 설정
     "언어": "Language",
+    "% 표기": "Percent display",
+    "총 밀가루 기준": "Of total flour",
+    "베이커스 퍼센트": "Baker's %",
+    "표시만 바뀝니다 — 계산과 총 수분율·PFF는 항상 총 밀가루 기준입니다.":
+        "Display only — calculations, total hydration, and PFF always use total flour.",
+    "%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.": "Percentages are baker's % — of added flour.",
+    "%는 첨가 밀가루 대비 르방 무게입니다.": "% is levain weight relative to added flour.",
     "표시 자릿수": "Display precision",
     "내부 계산은 항상 full precision — 반올림은 표시에만 적용됩니다.":
         "Internal math is always full precision — rounding applies to display only.",

@@ -7,6 +7,7 @@ struct IngredientFormSections: View {
     @Binding var input: DoughInput
     let stats: DoughStats
     let precision: Precision
+    let basis: PctBasis
 
     var body: some View {
         floursSection
@@ -27,7 +28,8 @@ struct IngredientFormSections: View {
                         .font(.subheadline)
                     HStack {
                         NumberField(label: "", value: $flour.grams)
-                        StatValue(value: fmtPct(stats.pct(flour.id)), size: 14)
+                        StatValue(
+                            value: fmtPct(stats.uiPct(grams: flour.grams, basis: basis)), size: 14)
                             .frame(width: 60, alignment: .trailing)
                     }
                 }
@@ -41,7 +43,10 @@ struct IngredientFormSections: View {
         } header: {
             Text(L("밀가루 (첨가)"))
         } footer: {
-            Text(L("%는 총 밀가루(첨가 + 르방 속) 기준입니다."))
+            Text(
+                basis == .addedFlour
+                    ? L("%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.")
+                    : L("%는 총 밀가루(첨가 + 르방 속) 기준입니다."))
         }
     }
 
@@ -59,7 +64,8 @@ struct IngredientFormSections: View {
             }
             HStack {
                 NumberField(label: L("소금"), value: $input.salt)
-                StatValue(value: fmtPct(stats.saltPct), size: 14)
+                StatValue(
+                    value: fmtPct(stats.uiPct(grams: input.salt, basis: basis)), size: 14)
                     .frame(width: 60, alignment: .trailing)
             }
         }
@@ -110,7 +116,10 @@ struct IngredientFormSections: View {
             levainPresetPicker
             HStack {
                 NumberField(label: L("르방 무게"), value: $input.levain.grams)
-                StatValue(value: fmtPct(stats.pffPct), size: 14)
+                StatValue(
+                    value: fmtPct(
+                        stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis)),
+                    size: 14)
                     .frame(width: 60, alignment: .trailing)
             }
             NumberField(
@@ -140,7 +149,10 @@ struct IngredientFormSections: View {
                 L("르방"),
                 fr: input.levain.hydration >= 0.75 ? "levain liquide" : "levain dur")
         } footer: {
-            Text(L("%는 PFF — 총 밀가루 중 르방 속 밀가루의 비율."))
+            Text(
+                basis == .addedFlour
+                    ? L("%는 첨가 밀가루 대비 르방 무게입니다.")
+                    : L("%는 PFF — 총 밀가루 중 르방 속 밀가루의 비율."))
         }
     }
 
@@ -214,7 +226,8 @@ struct IngredientFormSections: View {
             .pickerStyle(.segmented)
             HStack {
                 NumberField(label: L("투입량"), value: $input.yeast.grams)
-                StatValue(value: fmtPct(stats.yeastPct), size: 14)
+                StatValue(
+                    value: fmtPct(stats.uiPct(grams: input.yeast.grams, basis: basis)), size: 14)
                     .frame(width: 60, alignment: .trailing)
             }
             if input.yeast.grams > 0 {
@@ -247,7 +260,8 @@ struct IngredientFormSections: View {
                         .font(.subheadline)
                     HStack {
                         NumberField(label: "", value: $extra.grams)
-                        StatValue(value: fmtPct(stats.pct(extra.id)), size: 14)
+                        StatValue(
+                            value: fmtPct(stats.uiPct(grams: extra.grams, basis: basis)), size: 14)
                             .frame(width: 60, alignment: .trailing)
                     }
                 }

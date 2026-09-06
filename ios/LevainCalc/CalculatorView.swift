@@ -30,7 +30,8 @@ struct CalculatorView: View {
 
                 if model.calc.mode == .a {
                     IngredientFormSections(
-                        input: $model.calc.input, stats: stats, precision: model.precision)
+                        input: $model.calc.input, stats: stats, precision: model.precision,
+                        basis: model.pctBasis)
                     Section(L("분할")) {
                         NumberField(
                             label: L("분할 개수 (0 = 사용 안 함)"), value: $model.calc.pieces,
@@ -97,7 +98,7 @@ struct CalculatorView: View {
             .sheet(isPresented: $showTable) {
                 BakersTableSheet(
                     name: model.calc.name, input: dough, stats: stats, pieces: pieces,
-                    precision: model.precision)
+                    precision: model.precision, basis: model.pctBasis)
             }
             .sheet(isPresented: $showSave) {
                 let loaded = model.calc.recipeId.flatMap { id in

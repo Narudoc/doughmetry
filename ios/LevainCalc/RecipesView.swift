@@ -262,7 +262,7 @@ struct RecipeDetailView: View {
                     TableRow(
                         name: f.name.isEmpty ? L("밀가루") : f.name,
                         grams: fmtGrams(f.grams, model.precision),
-                        pct: fmtPct(stats.pct(f.id)))
+                        pct: fmtPct(stats.uiPct(grams: f.grams, basis: model.pctBasis)))
                 }
                 TableRow(name: L("본반죽 물"), grams: fmtGrams(input.water, model.precision), pct: nil)
                 if input.bassinage > 0 {
@@ -271,28 +271,30 @@ struct RecipeDetailView: View {
                 }
                 TableRow(
                     name: L("소금"), grams: fmtGrams(input.salt, model.precision),
-                    pct: fmtPct(stats.saltPct))
+                    pct: fmtPct(stats.uiPct(grams: input.salt, basis: model.pctBasis)))
                 TableRow(
                     name: recipe.levain.hydration >= 0.75 ? L("르방 리퀴드") : L("르방 뒤흐"),
                     grams: fmtGrams(recipe.levain.grams, model.precision),
-                    pct: fmtPct(stats.pffPct))
+                    pct: fmtPct(
+                        stats.uiLevainPct(
+                            levainGrams: recipe.levain.grams, basis: model.pctBasis)))
                 ForEach(input.liquids) { l in
                     TableRow(
                         name: l.name.isEmpty ? L("액체") : l.name,
                         grams: fmtGrams(l.grams, model.precision),
-                        pct: fmtPct(stats.pct(l.id)))
+                        pct: fmtPct(stats.uiPct(grams: l.grams, basis: model.pctBasis)))
                 }
                 if input.yeast.grams > 0 {
                     TableRow(
                         name: input.yeast.type == .fresh ? L("생이스트") : L("인스턴트 이스트"),
                         grams: fmtGrams(input.yeast.grams, model.precision),
-                        pct: fmtPct(stats.yeastPct))
+                        pct: fmtPct(stats.uiPct(grams: input.yeast.grams, basis: model.pctBasis)))
                 }
                 ForEach(input.extras) { e in
                     TableRow(
                         name: e.name.isEmpty ? L("기타") : e.name,
                         grams: fmtGrams(e.grams, model.precision),
-                        pct: fmtPct(stats.pct(e.id)))
+                        pct: fmtPct(stats.uiPct(grams: e.grams, basis: model.pctBasis)))
                 }
             }
             Section(L("지표")) {
@@ -337,6 +339,14 @@ struct SettingsSheet: View {
                             Text(lang.label).tag(lang)
                         }
                     }
+                }
+                Section {
+                    Picker(L("% 표기"), selection: $model.pctBasis) {
+                        Text(L("총 밀가루 기준")).tag(PctBasis.totalFlour)
+                        Text(L("베이커스 퍼센트")).tag(PctBasis.addedFlour)
+                    }
+                } footer: {
+                    Text(L("표시만 바뀝니다 — 계산과 총 수분율·PFF는 항상 총 밀가루 기준입니다."))
                 }
                 Section {
                     Picker(L("표시 자릿수"), selection: $model.precision) {

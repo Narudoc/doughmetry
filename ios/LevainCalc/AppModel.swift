@@ -2,6 +2,12 @@ import Foundation
 import LevainCore
 import Observation
 
+/// % 표기 기준 — 계산은 항상 총 밀가루 기준이고, 재료 옆 % 표시만 전환한다
+enum PctBasis: String, CaseIterable {
+    case totalFlour  // 총 밀가루 (프랑스식, 기본)
+    case addedFlour  // 첨가 밀가루 = 100% (베이커스 퍼센트)
+}
+
 /// 계산기 입력 모드
 enum CalcMode: String, Codable {
     case a // 재료 입력
@@ -80,6 +86,9 @@ final class AppModel {
     var precision: Precision = .tenth {
         didSet { UserDefaults.standard.set(precision.rawValue, forKey: "precision") }
     }
+    var pctBasis: PctBasis = .totalFlour {
+        didSet { UserDefaults.standard.set(pctBasis.rawValue, forKey: "pctBasis") }
+    }
     /// 변환기로 보낸 배합 (탭 전환 시 적용)
     var converterSource: (name: String, input: DoughInput)?
     var selectedTab: Tab = .calculator
@@ -105,6 +114,11 @@ final class AppModel {
             let p = Precision(rawValue: raw)
         {
             precision = p
+        }
+        if let raw = UserDefaults.standard.string(forKey: "pctBasis"),
+            let b = PctBasis(rawValue: raw)
+        {
+            pctBasis = b
         }
         load()
     }
