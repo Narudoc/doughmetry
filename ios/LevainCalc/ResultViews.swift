@@ -211,7 +211,8 @@ struct SaveRecipeSheet: View {
                             .map { $0.trimmingCharacters(in: .whitespaces) }
                             .filter { !$0.isEmpty }
                         onSave(
-                            name, tags, note.isEmpty ? nil : note,
+                            name.trimmingCharacters(in: .whitespacesAndNewlines), tags,
+                            note.isEmpty ? nil : note,
                             allowOverwrite && overwrite)
                         dismiss()
                     }

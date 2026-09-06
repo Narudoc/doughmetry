@@ -30,14 +30,23 @@ public func fmtSigned(_ g: Double, _ precision: Precision = .tenth) -> String {
 }
 
 public func isoNow() -> String {
-    ISO8601DateFormatter().string(from: Date())
+    isoString(from: Date())
+}
+
+public func isoString(from date: Date) -> String {
+    ISO8601DateFormatter().string(from: date)
+}
+
+/// 웹(밀리초 포함)과 iOS(초 단위) ISO 8601을 모두 파싱
+public func parseISO(_ s: String) -> Date? {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = f.date(from: s) { return d }
+    return ISO8601DateFormatter().date(from: s)
 }
 
 public func fmtDate(iso: String) -> String {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-    guard let d else { return "" }
+    guard let d = parseISO(iso) else { return "" }
     let out = DateFormatter()
     // 고정 포맷은 사용자 달력(불교력·일본력 등)의 영향을 받지 않도록 반드시 고정할 것
     out.locale = Locale(identifier: "en_US_POSIX")

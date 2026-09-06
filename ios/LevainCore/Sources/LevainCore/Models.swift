@@ -172,3 +172,71 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
 public func newId() -> String {
     UUID().uuidString.lowercased()
 }
+
+// MARK: - 베이킹 로그 · 라이브러리 문서 (iOS 전용, 웹 레시피 스키마와 별개)
+
+/// 레시피별 "구운 기록" — 날짜·별점·메모
+public struct BakeLog: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var recipeId: String
+    public var bakedAt: String // ISO 8601
+    /// 1...5, 없으면 nil
+    public var rating: Int?
+    public var note: String
+    public var createdAt: String
+    public var updatedAt: String
+
+    public init(
+        id: String = newId(),
+        recipeId: String,
+        bakedAt: String,
+        rating: Int? = nil,
+        note: String = "",
+        createdAt: String,
+        updatedAt: String
+    ) {
+        self.id = id
+        self.recipeId = recipeId
+        self.bakedAt = bakedAt
+        self.rating = rating
+        self.note = note
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+/// 삭제 기록 — 기기 간 동기화에서 "지운 것이 되살아나는" 문제를 막는다
+public struct Tombstone: Codable, Equatable, Sendable {
+    public var id: String
+    public var deletedAt: String
+
+    public init(id: String, deletedAt: String) {
+        self.id = id
+        self.deletedAt = deletedAt
+    }
+}
+
+/// 저장소 봉투 — 로컬 library.json과 iCloud 사본이 같은 형식을 쓴다.
+/// `recipes` 키를 그대로 두어 웹 가져오기(importJSON)에서도 읽힌다.
+public struct LibraryDocument: Codable, Equatable, Sendable {
+    public static let currentSchemaVersion = 1
+
+    public var schemaVersion: Int
+    public var recipes: [Recipe]
+    public var logs: [BakeLog]
+    public var deleted: [Tombstone]
+
+    public init(
+        schemaVersion: Int = LibraryDocument.currentSchemaVersion,
+        recipes: [Recipe] = [],
+        logs: [BakeLog] = [],
+        deleted: [Tombstone] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.recipes = recipes
+        self.logs = logs
+        self.deleted = deleted
+    }
+
+    public var isEmpty: Bool { recipes.isEmpty && logs.isEmpty && deleted.isEmpty }
+}

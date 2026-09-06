@@ -56,6 +56,11 @@ struct RecipesView: View {
             .navigationDestination(for: String.self) { id in
                 if let recipe = model.recipes.first(where: { $0.id == id }) {
                     RecipeDetailView(recipe: recipe)
+                } else {
+                    // 다른 기기에서 삭제된 레시피가 동기화로 사라진 경우
+                    ContentUnavailableView(
+                        L("삭제된 레시피"), systemImage: "trash",
+                        description: Text(L("이 레시피는 다른 기기에서 삭제되었습니다.")))
                 }
             }
             .toolbar {
@@ -201,7 +206,7 @@ struct RecipesView: View {
             case .success(let imported):
                 // 같은 id는 덮어쓰기, 새 레시피는 앞에 추가 (웹과 동일)
                 for recipe in imported.reversed() {
-                    model.save(recipe)
+                    model.save(recipe, touch: false)  // 백업의 updatedAt 보존
                 }
                 importedCount = imported.count
             }
@@ -210,11 +215,13 @@ struct RecipesView: View {
 }
 
 struct RecipeRow: View {
+    @Environment(AppModel.self) private var model
     let recipe: Recipe
     let precision: Precision
 
     var body: some View {
         let stats = computeStats(recipe.doughInput)
+        let logs = model.logs(for: recipe.id)
         VStack(alignment: .leading, spacing: 4) {
             Text(recipe.name)
                 .font(.headline)
@@ -236,9 +243,16 @@ struct RecipeRow: View {
                         .lineLimit(1)
                 }
             }
-            Text(fmtDate(iso: recipe.updatedAt))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            HStack(spacing: 6) {
+                Text(fmtDate(iso: recipe.updatedAt))
+                if let last = logs.first {
+                    Text("·")
+                    Image(systemName: "flame")
+                    Text(LF("%d회 구움 · 최근 %@", logs.count, fmtDate(iso: last.bakedAt)))
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
     }
@@ -248,13 +262,61 @@ struct RecipeDetailView: View {
     @Environment(AppModel.self) private var model
     let recipe: Recipe
 
+    @State private var showNoteEdit = false
+    @State private var showNewLog = false
+    @State private var editingLog: BakeLog?
+
+    /// 목록에서 넘어온 값이 아니라 모델의 최신 사본 (노트·로그 편집 즉시 반영)
+    private var current: Recipe {
+        model.recipes.first { $0.id == recipe.id } ?? recipe
+    }
+
     var body: some View {
+        let recipe = current
         let input = recipe.doughInput
         let stats = computeStats(input)
+        let logs = model.logs(for: recipe.id)
         List {
-            if let note = recipe.note, !note.isEmpty {
-                Section(L("노트")) {
-                    Text(note).font(.callout)
+            Section {
+                Button {
+                    showNoteEdit = true
+                } label: {
+                    if let note = recipe.note, !note.isEmpty {
+                        Text(note)
+                            .font(.callout)
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Label(L("노트 추가"), systemImage: "square.and.pencil")
+                    }
+                }
+            } header: {
+                Text(L("노트"))
+            }
+            Section {
+                ForEach(logs) { log in
+                    Button {
+                        editingLog = log
+                    } label: {
+                        BakeLogRow(log: log)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                }
+                .onDelete { offsets in
+                    let ids = offsets.map { logs[$0].id }
+                    for id in ids { model.deleteLog(id) }
+                }
+                Button {
+                    showNewLog = true
+                } label: {
+                    Label(L("기록 추가"), systemImage: "plus.circle")
+                }
+            } header: {
+                Text(L("베이킹 로그"))
+            } footer: {
+                if logs.isEmpty {
+                    Text(L("이 레시피로 구운 날짜·별점·메모를 남겨 다음 굽기에 참고하세요."))
                 }
             }
             Section(L("재료")) {
@@ -322,6 +384,17 @@ struct RecipeDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showNoteEdit) {
+            NoteEditSheet(initial: recipe.note ?? "") { text in
+                model.updateNote(recipeId: recipe.id, note: text)
+            }
+        }
+        .sheet(isPresented: $showNewLog) {
+            BakeLogSheet(recipeId: recipe.id, existing: nil) { model.saveLog($0) }
+        }
+        .sheet(item: $editingLog) { log in
+            BakeLogSheet(recipeId: recipe.id, existing: log) { model.saveLog($0) }
+        }
     }
 }
 
@@ -329,10 +402,38 @@ struct SettingsSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
+    private var cloudStatusText: String {
+        switch model.cloud.status {
+        case .checking: return L("확인 중…")
+        case .unavailable: return L("사용 불가 — iCloud 로그인 또는 앱 권한 필요")
+        case .disabled: return L("꺼짐")
+        case .syncing: return L("동기화 중…")
+        case .error(let message): return message
+        case .idle:
+            if let at = model.cloud.lastSyncAt {
+                return LF("마지막 동기화 %@", at.formatted(date: .omitted, time: .shortened))
+            }
+            return L("대기 중")
+        }
+    }
+
     var body: some View {
         @Bindable var model = model
+        @Bindable var cloud = model.cloud
         NavigationStack {
             Form {
+                Section {
+                    Toggle(L("iCloud 동기화"), isOn: $cloud.enabled)
+                        .disabled(!cloud.isAvailable)
+                    LabeledContent(L("상태")) {
+                        Text(cloudStatusText)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("iCloud")
+                } footer: {
+                    Text(L("레시피·베이킹 로그를 iCloud로 기기 간 동기화합니다. 충돌 시 최신 수정본이 유지됩니다."))
+                }
                 Section {
                     Picker(L("언어"), selection: Bindable(Lang.shared).current) {
                         ForEach(AppLanguage.allCases, id: \.self) { lang in
