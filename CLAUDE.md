@@ -64,10 +64,17 @@ npm run build    # tsc --noEmit && vite build
 - 계산 코어는 [ios/LevainCore/Sources/LevainCore/Dough.swift](ios/LevainCore/Sources/LevainCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
 - 레시피 JSON 스키마는 웹과 완전 호환 (내보내기/가져오기 양방향). 스키마 변경 시 Codec.swift의 검증·마이그레이션도 함께.
 - 코어 검증: `cd ios/LevainCore && swift test` (Xcode 필요) 또는 `swift run levain-core-check` (CLT만으로 가능).
+- 저장소는 단일 `library.json`(`LibraryDocument`: recipes + logs(베이킹 로그) + deleted(묘비)). iCloud 동기화 병합은 [LibrarySync.swift](ios/LevainCore/Sources/LevainCore/LibrarySync.swift) — **모든 변이는 `updatedAt`을 갱신하고 삭제는 묘비를 남길 것** (안 그러면 다른 기기에서 되살아나거나 편집이 밀린다). 베이킹 로그는 iOS 전용 기능 (웹 미포팅).
 
-## 나중에 붙일 기능 (v1에서는 만들지 않음)
+## iOS 전용 기능 (웹 미포팅 — 웹에 옮길 때 iOS 코어 규칙을 그대로 이식)
 
-- **르방 빌드 계산기** — 르방 200g이 필요할 때 종(chef) 20g + 밀가루 90g + 물 90g 식으로 리프레시 배합을 역산
-- **물 온도 계산기** — 목표 반죽 온도(DDT)에서 사용할 물 온도를 역산 (밀가루 온도, 실온, 르방 온도, 마찰계수 반영)
-- 타임라인 스케줄러 (오토리즈 → 벌크 → 분할 → 벤치 → 성형 → 최종발효 → 굽기)
+- **베이킹 로그** (`BakeLog`, library.json의 `logs`) — 레시피별 날짜·별점·메모
+- **르방 빌드 계산기** — [Tools.swift](ios/LevainCore/Sources/LevainCore/Tools.swift) `solveLevainBuild`: 종 20g + 밀가루 90g + 물 90g → 르방 200g(100%)
+- **물 온도 계산기** — `solveWaterTemperature`: 물 = DDT × N − (밀가루 + 실온 + [르방] + 마찰계수)
+- **타임라인 스케줄러** — [Timeline.swift](ios/LevainCore/Sources/LevainCore/Timeline.swift) + 로컬 알림
+- **iCloud 동기화** — library.json 병합 (LibrarySync)
+
+## 나중에 붙일 기능
+
 - 모드 B 역산에 바시나주·액체·이스트 반영
+- 베이킹 로그 사진 첨부, 타임라인 Live Activity/위젯

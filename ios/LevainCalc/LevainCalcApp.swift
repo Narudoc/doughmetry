@@ -15,6 +15,7 @@ struct LevainCalcApp: App {
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         @Bindable var model = model
@@ -28,6 +29,12 @@ struct RootView: View {
             RecipesView()
                 .tabItem { Label(L("레시피"), systemImage: "book.closed") }
                 .tag(AppModel.Tab.recipes)
+            ToolsView()
+                .tabItem { Label(L("도구"), systemImage: "wrench.and.screwdriver") }
+                .tag(AppModel.Tab.tools)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.requestSync() }
         }
     }
 }
