@@ -224,6 +224,12 @@ struct SaveRecipeSheet: View {
                 tagsText = initialTags.joined(separator: ", ")
                 note = initialNote
             }
+            // 이름을 바꾸면 새 레시피로 저장하려는 것으로 보고 덮어쓰기를 해제한다 (다시 켤 수는 있음)
+            .onChange(of: name) { _, newName in
+                if allowOverwrite, newName.trimmingCharacters(in: .whitespaces) != initialName {
+                    overwrite = false
+                }
+            }
         }
         .presentationDetents([.medium])
     }

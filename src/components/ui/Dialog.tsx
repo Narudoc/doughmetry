@@ -210,7 +210,16 @@ export function SaveRecipeDialog({
       }
     >
       <div className="space-y-3">
-        <TextField label="이름" value={name} onChange={setName} autoFocus />
+        <TextField
+          label="이름"
+          value={name}
+          onChange={(v) => {
+            setName(v);
+            // 이름을 바꾸면 새 레시피로 저장하려는 것으로 보고 덮어쓰기를 해제한다 (다시 켤 수는 있음)
+            if (allowOverwrite && v.trim() !== initialName) setOverwrite(false);
+          }}
+          autoFocus
+        />
         <TextField
           label="태그 (쉼표로 구분)"
           value={tags}
