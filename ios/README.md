@@ -1,6 +1,6 @@
-# levain-calc iOS (SwiftUI 네이티브)
+# Doughmetry iOS (SwiftUI 네이티브)
 
-웹앱(levain-calc)의 iPhone 네이티브 버전. 계산 로직·JSON 스키마는 웹과 완전 호환.
+웹앱(Doughmetry, 저장소 `doughmetry`)의 iPhone 네이티브 버전. 계산 로직·JSON 스키마는 웹과 완전 호환.
 
 ## 구조
 
@@ -32,7 +32,7 @@ cd ios/LevainCore && swift run levain-core-check  # 스모크 체크 (CLT만으�
 - 로컬: Application Support/levain-calc/`library.json` — `LibraryDocument`(레시피 + 베이킹 로그 + 삭제 묘비). 옛 `recipes.json`(레시피 배열)은 최초 실행 시 자동 이전.
 - iCloud: 같은 문서를 iCloud Documents 컨테이너(`Documents/library.json`)에 두고 [CloudSync.swift](LevainCalc/CloudSync.swift)가 NSFileCoordinator/NSMetadataQuery로 읽고 쓴다. 병합 규칙은 코어 [LibrarySync.swift](LevainCore/Sources/LevainCore/LibrarySync.swift) — `updatedAt` 최신 우선, 묘비로 삭제 전파, 삭제 뒤 편집은 되살림 (테스트 `LibrarySyncTests`).
 - entitlement가 없거나 iCloud 미로그인이면 컨테이너 URL이 nil → 자동으로 로컬 전용 동작.
-- **iCloud 켜기 (개발자 프로그램 승인 후 1회)**: Xcode → TARGETS LevainCalc → Signing & Capabilities → + iCloud → iCloud Documents 체크 → 컨테이너 `iCloud.com.narudoc.levaincalc`. 준비된 [LevainCalc.entitlements](LevainCalc/LevainCalc.entitlements)를 그대로 쓰면 된다.
+- **iCloud (설정 완료)**: Signing & Capabilities에 iCloud Documents가 켜져 있고(2026-09-06, 팀 G46DT9WHWV), 컨테이너는 개명에 맞춰 `iCloud.com.narudoc.doughmetry`로 바뀌었다. 새 App ID·컨테이너 모두 포털 등록 완료 — 2026-09-11 08:28 발급된 Xcode 관리 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`의 엔타이틀먼트에 이 컨테이너가 들어 있다. 다른 Mac에서 열 때: 같은 팀(G46DT9WHWV)이면 컨테이너가 이미 포털에 있으므로 `Signing & Capabilities > iCloud > Containers`의 새로고침(원형 화살표)으로 목록을 다시 읽으면 된다. 프로젝트가 열려 있고 자동 서명이 켜져 있으면 번들 ID·[LevainCalc.entitlements](LevainCalc/LevainCalc.entitlements) 변경만으로도 Xcode가 App ID와 컨테이너를 포털에 만들고 프로파일을 발급한다(2026-09-11 08:28이 그 경우 — 빌드 없이, `+` 없이; DerivedData의 `Logs/Update Signing` 로그에 `POST /v1/cloudContainers`가 남아 있다). iCloud 컨테이너는 포털에서 지울 수 없으므로 같은 팀에서 `+`를 쓸 일은 없다 — 목록이 비거나 빨간색이면 새로고침, 그래도 남으면 `Automatically manage signing`을 껐다 켠다. **다른 팀**에서는 이 프로젝트를 그대로 서명할 수 없다: App ID `com.narudoc.doughmetry`와 컨테이너 ID `iCloud.com.narudoc.doughmetry`는 Apple 전체에서 유일하고 이미 G46DT9WHWV 소유라 거부된다 — 번들 ID와 entitlements의 컨테이너 ID를 둘 다 그 팀 것으로 바꿔야 한다. 시뮬레이터 빌드는 프로비저닝 프로파일이 필요 없고 ad-hoc(`-`) 서명만 하므로 등록을 트리거하지 않는다.
 
 ## 도구 탭 (Phase 2)
 
@@ -44,5 +44,5 @@ cd ios/LevainCore && swift run levain-core-check  # 스모크 체크 (CLT만으�
 ## 웹앱과의 호환
 
 - 레시피 JSON: 레시피 탭 → 내보내기/가져오기가 웹의 내보내기 파일과 양방향 호환
-- 저장 위치: Application Support/levain-calc/*.json (recipes / draft)
+- 저장 위치: Application Support/levain-calc/ — `library.json`(레시피 + 베이킹 로그 + 삭제 묘비)과 `draft.json`(계산기 작성 중 상태). 옛 `recipes.json`은 최초 실행 시 `library.json`으로 이전된 뒤 쓰이지 않는다. (폴더 이름 `levain-calc`는 호환성 때문에 그대로)
 - 색 토큰·용어·계산 규칙은 루트 CLAUDE.md의 원칙을 그대로 따른다

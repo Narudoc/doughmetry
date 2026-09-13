@@ -1,6 +1,6 @@
 import Foundation
 
-/// 사워도우 도메인 모델 — 웹앱(levain-calc)의 JSON 스키마 v2와 완전 호환.
+/// 사워도우 도메인 모델 — 웹앱(Doughmetry, 저장소 `doughmetry`)의 JSON 스키마 v2와 완전 호환.
 /// 인코딩/디코딩 키·값이 웹의 localStorage/내보내기 형식과 일치해야 한다.
 
 public enum LevainType: String, Codable, Sendable, CaseIterable {

@@ -73,10 +73,10 @@ export default function App() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h1 className="font-display text-2xl font-bold uppercase tracking-[0.2em]">
-                Levain·Calc
+                Doughmetry
               </h1>
               <p className="mt-0.5 text-xs text-paper/70">
-                사워도우 레시피 계산기 · <span className="italic">pain au levain</span>
+                도우메트리 — 사워도우 레시피 계산기 · <span className="italic">pain au levain</span>
               </p>
             </div>
             <div className="mt-1 flex flex-col items-end gap-1">

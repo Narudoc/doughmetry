@@ -161,7 +161,7 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
         <Button
           disabled={api.recipes.length === 0}
           onClick={() => {
-            downloadText('levain-calc-recipes.json', exportJson(api.recipes));
+            downloadText('doughmetry-recipes.json', exportJson(api.recipes));
             toast('전체 레시피를 JSON으로 내보냈습니다');
           }}
         >

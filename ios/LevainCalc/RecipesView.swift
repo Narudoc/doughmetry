@@ -83,7 +83,7 @@ struct RecipesView: View {
                         if !model.recipes.isEmpty {
                             ShareLink(
                                 item: RecipesExport(recipes: model.recipes),
-                                preview: SharePreview("levain-calc-recipes.json")
+                                preview: SharePreview("doughmetry-recipes.json")
                             ) {
                                 Label(L("JSON 내보내기"), systemImage: "square.and.arrow.up")
                             }
@@ -479,6 +479,6 @@ struct RecipesExport: Transferable {
         DataRepresentation(exportedContentType: .json) { export in
             Data(try RecipeCodec.exportJSON(export.recipes).utf8)
         }
-        .suggestedFileName("levain-calc-recipes.json")
+        .suggestedFileName("doughmetry-recipes.json")
     }
 }

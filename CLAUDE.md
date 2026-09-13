@@ -1,11 +1,11 @@
-# levain-calc
+# Doughmetry (도우메트리)
 
-사워도우(팽 오 르방) 레시피 계산기 + 르방 변환기. Vite + React 18 + TypeScript + Tailwind v3 + Vitest, GitHub Pages 정적 배포 (백엔드 없음).
+사워도우(팽 오 르방) 레시피 계산기 + 르방 변환기. 브랜드명 Doughmetry / 도우메트리 (2026-09-11 개명; 저장소 `doughmetry`, iOS 번들 ID `com.narudoc.doughmetry`). **호환성 때문에 바꾸지 않은 내부 식별자**: localStorage 키·내보내기 JSON의 `app: "levain-calc"`·iOS Application Support/levain-calc 폴더·Xcode 타깃 `LevainCalc`·패키지 `LevainCore` — 이름을 새로 붙이지 말 것. Vite + React 18 + TypeScript + Tailwind v3 + Vitest, GitHub Pages 정적 배포 (백엔드 없음).
 
 ## 명령어
 
 ```bash
-npm run dev      # 개발 서버 (base 때문에 /levain-calc/ 경로)
+npm run dev      # 개발 서버 (base 때문에 /doughmetry/ 경로)
 npm test         # Vitest 유닛 테스트
 npm run build    # tsc --noEmit && vite build
 ```
@@ -56,7 +56,7 @@ npm run build    # tsc --noEmit && vite build
 - 폰트: 본문·숫자 Pretendard Variable, 디스플레이 Archivo Variable (제목·표 캡션에만).
 - 인쇄는 `.print-only` / `.no-print` 클래스로 제어 — 계산기 탭에서 A4 한 장 fiche technique 출력.
 - **% 표기 기준 설정(`Settings.pctBasis`)은 표시 전용** — `uiPct`/`rebasePct`([src/lib/format.ts](src/lib/format.ts))로 분모만 바꾼다. 계산 코어와 총 수분율·PFF는 항상 총 밀가루 기준 (iOS의 PctBasis와 동일 규칙).
-- GitHub Pages `base: '/levain-calc/'` — 저장소명 변경 시 vite.config.ts 수정 (README 참고).
+- GitHub Pages `base: '/doughmetry/'` — 저장소명 변경 시 vite.config.ts 수정 (README 참고).
 
 ## iOS 네이티브 앱 (ios/)
 

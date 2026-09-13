@@ -1,3 +1,3 @@
-/* 홈 화면 앱 이름 (한국어) */
-"CFBundleDisplayName" = "사워도우 계산기";
-"CFBundleName" = "사워도우 계산기";
+/* 홈 화면 앱 이름 (한국어) — 브랜드명만. 스토어 제목은 "도우메트리: 사워도우 계산기" (AppStore/listing.md) */
+"CFBundleDisplayName" = "도우메트리";
+"CFBundleName" = "도우메트리";
