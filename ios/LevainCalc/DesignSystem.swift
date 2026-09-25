@@ -25,10 +25,34 @@ extension Color {
     }
 }
 
-extension Font {
-    /// 결과 수치용 — tabular figures
-    static func stat(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .default)
+extension View {
+    /// 결과 수치용 글꼴 — size는 기본 글자 크기에서의 pt이고 가장 가까운 텍스트 스타일 비율로 Dynamic Type을 따라간다.
+    /// 고정 크기로 두면 옆 라벨만 커져 숫자가 상대적으로 작아지고 줄바꿈이 어긋난다
+    func statFont(_ size: CGFloat, weight: Font.Weight = .semibold) -> some View {
+        modifier(StatFont(size: size, weight: weight))
+    }
+}
+
+private struct StatFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    let weight: Font.Weight
+
+    init(size: CGFloat, weight: Font.Weight) {
+        let style: Font.TextStyle =
+            switch size {
+            case ..<14: .footnote
+            case ..<16: .subheadline
+            case ..<17: .callout
+            case ..<19: .body
+            case ..<21: .title3
+            default: .title2
+            }
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight))
     }
 }
 

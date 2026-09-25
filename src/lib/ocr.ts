@@ -16,16 +16,21 @@ export class OcrError extends Error {
   }
 }
 
+/** 'loading' = 인식 엔진·언어 데이터 준비(첫 사용 시 내려받기), 'recognizing' = 글자 인식 */
+export type OcrPhase = 'loading' | 'recognizing';
+
 export async function recognizeImage(
   file: File,
-  onProgress?: (progress: number) => void,
+  onProgress?: (progress: number, phase: OcrPhase) => void,
 ): Promise<string> {
   let worker;
   try {
     const { createWorker } = await import('tesseract.js');
     worker = await createWorker(['kor', 'eng', 'fra'], 1, {
       logger: (m: { status: string; progress: number }) => {
-        if (m.status === 'recognizing text') onProgress?.(m.progress);
+        if (m.status === 'recognizing text') onProgress?.(m.progress, 'recognizing');
+        // 언어 데이터는 파일 단위로만 진행률을 알려 준다 (바이트 단위 아님)
+        else if (m.status === 'loading language traineddata') onProgress?.(m.progress, 'loading');
       },
     });
   } catch (e) {

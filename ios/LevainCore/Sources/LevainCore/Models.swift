@@ -113,6 +113,9 @@ public struct DoughInput: Codable, Equatable, Sendable {
 
 /// 저장 레시피 — 웹 스키마 v2와 JSON 호환 (내보내기/가져오기 왕복 가능)
 public struct Recipe: Codable, Equatable, Identifiable, Sendable {
+    /// 이 버전이 읽고 쓰는 레시피 스키마. 더 큰 값은 새 버전 앱이 쓴 것 (LibrarySync.decodeReport 참고)
+    public static let currentSchemaVersion = 2
+
     public var id: String
     public var schemaVersion: Int
     public var name: String
@@ -143,7 +146,7 @@ public struct Recipe: Codable, Equatable, Identifiable, Sendable {
         pieces: Double? = nil
     ) {
         self.id = id
-        self.schemaVersion = 2
+        self.schemaVersion = Recipe.currentSchemaVersion
         self.name = name
         self.note = note
         self.tags = tags
@@ -219,6 +222,9 @@ public struct Tombstone: Codable, Equatable, Sendable {
 /// 저장소 봉투 — 로컬 library.json과 iCloud 사본이 같은 형식을 쓴다.
 /// `recipes` 키를 그대로 두어 웹 가져오기(importJSON)에서도 읽힌다.
 public struct LibraryDocument: Codable, Equatable, Sendable {
+    /// Recipe·BakeLog·Tombstone 또는 LibraryDocument 자신에 필드(키)가 생기면 반드시 올린다 —
+    /// 옛 버전 앱은 이 값이 자기보다 큰 iCloud 문서를 보면 쓰기를 멈춘다.
+    /// 올리지 않으면 옛 앱이 모르는 필드를 버린 채 덮어쓴다.
     public static let currentSchemaVersion = 1
 
     public var schemaVersion: Int

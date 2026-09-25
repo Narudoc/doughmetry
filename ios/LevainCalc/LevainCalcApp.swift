@@ -4,6 +4,10 @@ import SwiftUI
 struct LevainCalcApp: App {
     @State private var model = AppModel()
 
+    init() {
+        TimelineNotifier.presentInForeground()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -36,5 +40,7 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.requestSync() }
         }
+        // L()은 문자열만 바꾼다 — DatePicker와 환경 로캘을 읽는 서식도 앱 언어를 따르게
+        .environment(\.locale, Lang.shared.current.locale)
     }
 }

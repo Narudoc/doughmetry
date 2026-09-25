@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeStats } from './dough';
-import { parseRecipeText } from './recipeParser';
+import { cleanForParsing, parseRecipeText } from './recipeParser';
 
 /** iOS RecipeTextParserTests.swift의 이식본 — 케이스·기대값을 동일하게 유지할 것 */
 describe('레시피 텍스트 파서 (규칙 기반)', () => {
@@ -261,7 +261,7 @@ describe('플랫폼 패리티 회귀', () => {
   });
 
   it('U+2028·단독 \\r 개행도 줄로 분리된다', () => {
-    const a = parseRecipeText('강력분 500 물 350g 소금 10g');
+    const a = parseRecipeText('강력분 500\u2028물 350g\u2028소금 10g');
     expect(a.input.flours[0]?.grams).toBe(500);
     expect(a.input.water).toBe(350);
     expect(a.input.salt).toBe(10);
@@ -316,5 +316,374 @@ describe('플랫폼 패리티 회귀', () => {
     const r = parseRecipeText('강력분 500\n물 350'.normalize('NFD'));
     expect(r.input.water).toBe(350);
     expect(r.input.flours[0]?.grams).toBe(500);
+  });
+
+  it('CRLF는 줄바꿈 하나로 정리된다', () => {
+    expect(cleanForParsing('강력분 500\r\n물 350')).toBe('강력분 500\n물 350');
+    const r = parseRecipeText('강력분 500\r\n물 350\r\n소금 10');
+    expect(r.matchedLineCount).toBe(3);
+  });
+
+  it("르방 빌드 섹션의 'gâteau'는 물(eau)이 아니다", () => {
+    const r = parseRecipeText('르방 만들기\n밀가루 100\n물 100\ngâteau 50');
+    expect(r.input.levain.grams).toBe(250);
+    expect(r.input.levain.hydration).toBe(1.0);
+  });
+});
+
+/** 가져오기 오인식 회귀 — 리뷰에서 재현된 실사용 입력들 */
+describe('가져오기 오인식 회귀', () => {
+  it('베이커스 % 표의 르방 %는 수분율이 아니다', () => {
+    const a = parseRecipeText(
+      'Bread flour 450g (90%) / Whole wheat 50g (10%) / Water 375g (75%) / Starter 100g (20%) / Salt 10g (2%)',
+    );
+    expect(a.input.levain.grams).toBe(100);
+    expect(a.input.levain.hydration).toBe(1.0);
+    expect(a.input.levain.type).toBe('liquide');
+    expect(a.levainHydrationExplicit).toBe(false);
+    expect(Math.abs(computeStats(a.input).hydrationPct - (425 / 550) * 100)).toBeLessThan(1e-9);
+    const b = parseRecipeText('강력분 1000g 100% / 물 700g 70% / 르방 200g 20% / 소금 20g 2%');
+    expect(b.input.levain.hydration).toBe(1.0);
+    expect(Math.abs(computeStats(b.input).hydrationPct - (800 / 1100) * 100)).toBeLessThan(1e-9);
+    const c = parseRecipeText('강력분 500\n물 350\n르방 20% 100g');
+    expect(c.input.levain.grams).toBe(100);
+    expect(c.input.levain.hydration).toBe(1.0);
+  });
+
+  it('levainHydrationExplicit — 텍스트가 밝힌 르방 수분율만 true', () => {
+    expect(parseRecipeText('강력분 500\n물 350\n르방 리퀴드 200').levainHydrationExplicit).toBe(true);
+    expect(parseRecipeText('강력분 500\n물 350\n르방 뒤흐 200').levainHydrationExplicit).toBe(true);
+    expect(parseRecipeText('강력분 500\n물 350\n르방 80% 300').levainHydrationExplicit).toBe(true);
+    expect(parseRecipeText('강력분 500\n물 350\n르방 200').levainHydrationExplicit).toBe(false);
+    const build = parseRecipeText('르방 만들기\n스타터 20g\n밀가루 100g\n물 50g');
+    expect(build.input.levain.hydration).toBe(0.5);
+    expect(build.levainHydrationExplicit).toBe(false);
+  });
+
+  it("'만드는 방법'·'순서'·'Steps' 헤더도 서술부 파싱을 멈춘다", () => {
+    const steps = [
+      '1. 물 350g에 르방 100g을 넣고 섞어줍니다',
+      '2. 강력분 500g을 넣고 섞어요',
+      '3. 소금 10g을 넣고 30분 뒤 폴딩',
+    ];
+    for (const header of ['만드는 방법', '순서']) {
+      const r = parseRecipeText(
+        ['깜빠뉴', '강력분 500g', '물 350g', '르방 100g', '소금 10g', '', header, ...steps].join('\n'),
+      );
+      expect(r.input.flours).toHaveLength(1);
+      expect(r.input.salt).toBe(10);
+      expect(r.input.levain.grams).toBe(100);
+      expect(computeStats(r.input).doughWeight).toBe(960);
+    }
+    const en = parseRecipeText(
+      [
+        'Country loaf',
+        'Bread flour 500g',
+        'Water 350g',
+        'Levain 100g',
+        'Salt 10g',
+        '',
+        'Steps',
+        '1. Mix water 350g with levain 100g',
+        '2. Add bread flour 500g and mix',
+      ].join('\n'),
+    );
+    expect(computeStats(en.input).doughWeight).toBe(960);
+  });
+
+  it('합계·분할 줄은 유령 재료가 되지 않는다', () => {
+    for (const total of [
+      '총반죽무게 960g',
+      '반죽 무게 960g',
+      '전체 반죽 960g',
+      '계 960',
+      '총량 960g',
+      '분할 480g x 2',
+      '반죽 4분할 240g',
+      '- 총량 960g',
+      '• 총반죽무게 960g',
+      '반죽 총 무게 960g',
+      '반죽 총량 960g',
+      '반죽총중량 960g',
+      '밀가루 총 500g',
+      '(합계 960g)',
+      '(Total 960g)',
+      '(총 반죽 960g)',
+      '재료 (총 960g)',
+      '재료 (합계 960g)',
+      'Ingredients (total 960g)',
+      '반죽 (총 960g)',
+    ]) {
+      const r = parseRecipeText(`강력분 500g\n물 350g\n르방 100g\n소금 10g\n${total}`);
+      expect(r.input.extras).toHaveLength(0);
+      expect(r.matchedLineCount).toBe(4);
+      expect(computeStats(r.input).doughWeight).toBe(960);
+    }
+  });
+
+  it("괄호 안 '총' 부연은 재료 줄을 지우지 않는다", () => {
+    const a = parseRecipeText('강력분 1000g\n물 700g (총 수분율 75%)\n소금 20g');
+    expect(a.input.water).toBe(700);
+    expect(a.matchedLineCount).toBe(3);
+    const b = parseRecipeText('강력분 1000g\n물 700g\n소금 20g (총 밀가루 대비 2%)');
+    expect(b.input.salt).toBe(20);
+    const c = parseRecipeText('강력분 500g\n물 350g\n르방 100g (총 수분율 75%)\n소금 10g');
+    expect(c.input.levain.grams).toBe(100);
+    expect(c.input.levain.hydration).toBe(1.0); // 반죽 전체의 %는 르방 수분율이 아니다
+    expect(c.levainHydrationExplicit).toBe(false);
+    expect(c.matchedLineCount).toBe(4);
+    for (const note of ['(total hydration 75%)', '(hydratation totale 75%)']) {
+      const d = parseRecipeText(`강력분 500g\n물 350g\n르방 100g ${note}\n소금 10g`);
+      expect(d.input.levain.grams).toBe(100);
+      expect(d.input.levain.hydration).toBe(1.0);
+      expect(d.levainHydrationExplicit).toBe(false);
+    }
+  });
+
+  it('컵·스푼 표기는 괄호 안 그램을 쓴다', () => {
+    const r = parseRecipeText(
+      '3 3/4 cups (450g) bread flour / 1 1/2 cups (340g) water / 1/2 cup (113g) starter / 2 tsp (12g) salt',
+    );
+    expect(r.input.flours).toHaveLength(1);
+    expect(r.input.flours[0].grams).toBe(450);
+    expect(r.input.flours[0].name).toBe('bread flour');
+    expect(r.input.water).toBe(340);
+    expect(r.input.levain.grams).toBe(113);
+    expect(r.input.salt).toBe(12);
+    expect(r.matchedLineCount).toBe(4);
+  });
+
+  it('개수·oz·분수·ml 단위를 그램으로 오독하지 않는다', () => {
+    const eggs = parseRecipeText('강력분 500g\n물 350g\n2 large eggs (100g)');
+    expect(eggs.input.liquids).toHaveLength(1);
+    expect(eggs.input.liquids[0].grams).toBe(100);
+    expect(eggs.input.liquids[0].name).toBe('eggs');
+    const oz = parseRecipeText('Bread flour 17.6 oz\nWater 350g');
+    expect(Math.abs(oz.input.flours[0].grams - 17.6 * 28.349523125)).toBeLessThan(1e-9);
+    expect(oz.input.flours[0].name).toBe('Bread flour');
+    const half = parseRecipeText('강력분 500g\n물 350g\n이스트 1/2');
+    expect(half.input.yeast.grams).toBe(0.5);
+    const milk = parseRecipeText('강력분 500g\n물 350g\n우유 200ml');
+    expect(milk.input.liquids[0].name).toBe('우유');
+    expect(milk.input.liquids[0].grams).toBe(200);
+    const times = parseRecipeText('강력분 500g x 2\n물 350g');
+    expect(times.input.flours[0].grams).toBe(500);
+    // 개수만 있는 줄은 그램이 아니다
+    const count = parseRecipeText('강력분 500g\n물 350g\n계란 2개');
+    expect(count.input.liquids).toHaveLength(0);
+    expect(count.matchedLineCount).toBe(2);
+  });
+
+  it("범위·두 배합 표기('350/370g')는 분수가 아니다", () => {
+    expect(parseRecipeText('강력분 500g\n물 350/370g').input.water).toBe(370);
+    const fr = parseRecipeText('Eau 350/370 g\nFarine T65 500 g');
+    expect(fr.input.water).toBe(370);
+    expect(fr.input.flours[0].grams).toBe(500);
+    expect(parseRecipeText('강력분 250/500g\n물 350g').input.flours[0].grams).toBe(500);
+    expect(parseRecipeText('강력분 500g\n물 350g\n이스트 1/2').input.yeast.grams).toBe(0.5);
+  });
+
+  it("파운드·온스 복합 표기('1 lb 2 oz')는 한 수량", () => {
+    const expected = 453.59237 + 2 * 28.349523125;
+    const a = parseRecipeText('Bread flour 1 lb 2 oz (510g)\nWater 350g');
+    expect(Math.abs(a.input.flours[0].grams - expected)).toBeLessThan(1e-9);
+    expect(a.input.flours[0].name).toBe('Bread flour');
+    const b = parseRecipeText('Bread flour 1 pound 2 ounces\nWater 350g');
+    expect(Math.abs(b.input.flours[0].grams - expected)).toBeLessThan(1e-9);
+  });
+
+  it("프랑스식 kg 소수 쉼표 — '0,700 kg'은 700g", () => {
+    const r = parseRecipeText(
+      'Farine T65 1,000 kg\nEau 0,700 kg\nLevain liquide 0,200 kg\nSel 0,020 kg',
+    );
+    expect(r.input.flours[0].grams).toBe(1000);
+    expect(r.input.water).toBe(700);
+    expect(r.input.levain.grams).toBe(200);
+    expect(r.input.salt).toBe(20);
+  });
+
+  it("공백 천 단위 구분 — '1 000 g'", () => {
+    for (const sep of [' ', '\u00A0', '\u202F']) {
+      const r = parseRecipeText(`Farine T65 1${sep}000 g\nEau 700 g`);
+      expect(r.input.flours[0].grams).toBe(1000);
+      expect(r.input.flours[0].name).toBe('Farine T65');
+      expect(r.input.water).toBe(700);
+    }
+    const gr = parseRecipeText('Farine T65 1 000 gr\nEau 700 gr\nSel 20 gr');
+    expect(gr.input.flours[0]?.grams).toBe(1000);
+    expect(gr.input.salt).toBe(20);
+    expect(gr.matchedLineCount).toBe(3);
+    expect(parseRecipeText('Farine 1 000 grammes\nEau 700 grammes').input.flours[0]?.grams).toBe(1000);
+    expect(parseRecipeText('Eau 1 000 ml\nFarine 1 500 g').input.water).toBe(1000);
+  });
+
+  it('공백 천 단위는 앞의 형번·% 열 수를 붙이지 않는다', () => {
+    const type = parseRecipeText('Farine type 65 500 g\nEau 350 g');
+    expect(type.input.flours[0]?.grams).toBe(500);
+    const table = parseRecipeText('Farine 100 500 g\nEau 70 350 g\nLevain 20 100 g\nSel 2 10 g');
+    expect(table.input.flours[0]?.grams).toBe(500);
+    expect(table.input.water).toBe(350);
+    expect(table.input.levain.grams).toBe(100);
+    expect(table.input.salt).toBe(10);
+  });
+
+  it("kg 열 표의 단위 없는 소수 쉼표 — '0,700'은 '1,000'과 같은 배율", () => {
+    const r = parseRecipeText(
+      'Ingrédients Quantité (kg)\nFarine T65 1,000\nEau 0,700\nLevain liquide 0,200\nSel 0,020',
+    );
+    expect(r.input.flours[0]?.grams).toBe(1000);
+    expect(r.input.water).toBe(700);
+    expect(r.input.levain.grams).toBe(200);
+    expect(r.input.salt).toBe(20);
+  });
+
+  it('컵·스푼·개수만 있는 줄은 섹션 헤더가 되지 않는다', () => {
+    const starter = parseRecipeText('스타터 2큰술 (리프레시 후 사용)\n강력분 500g\n물 350g\n소금 10g');
+    expect(starter.input.flours[0]?.grams).toBe(500);
+    expect(starter.input.water).toBe(350);
+    expect(starter.input.salt).toBe(10);
+    expect(starter.input.levain.grams).toBe(0);
+    const order = parseRecipeText('강력분 500\n물 350\n소금 1작은술 (넣는 순서 주의)\n르방 100');
+    expect(order.input.levain.grams).toBe(100);
+    // 괄호 속 개수는 분량 표기 — 섹션 머리글은 그대로 인식한다
+    const servings = parseRecipeText(
+      '르방 만들기\n르방 20g\n밀가루 50g\n물 50g\n본반죽 (빵 2개 분량)\n강력분 500g\n물 350g\n소금 10g',
+    );
+    expect(servings.input.flours[0]?.grams).toBe(500);
+    expect(servings.input.water).toBe(350);
+    expect(servings.input.salt).toBe(10);
+    expect(servings.input.levain.grams).toBe(120);
+  });
+
+  it('르방 표기 변형 — 르뱅·Leaven·뒤르', () => {
+    const a = parseRecipeText('강력분 500g\n물 350g\n르뱅 100g\n소금 10g');
+    expect(a.input.levain.grams).toBe(100);
+    expect(a.input.extras).toHaveLength(0);
+    const tartine = parseRecipeText(
+      'Leaven 200g\nBread flour 900g\nWhole wheat flour 100g\nWater 750g\nSalt 20g',
+    );
+    expect(tartine.input.levain.grams).toBe(200);
+    expect(tartine.input.levain.flourName).toBeUndefined();
+    expect(tartine.input.extras).toHaveLength(0);
+    expect(Math.abs(computeStats(tartine.input).hydrationPct - (850 / 1100) * 100)).toBeLessThan(
+      1e-9,
+    );
+    const dur = parseRecipeText('강력분 500g\n물 350g\n르방 뒤르 150g');
+    expect(dur.input.levain.hydration).toBe(0.5);
+  });
+
+  it("'leavening'·'르뱅쿠키'는 르방이 아니다", () => {
+    const a = parseRecipeText('강력분 500g\n물 350g\nleavening 5g');
+    expect(a.input.levain.grams).toBe(0);
+    expect(a.input.extras).toHaveLength(1);
+    const cookie = parseRecipeText('르뱅쿠키 만들기\n박력분 200g\n버터 100g\n초코칩 80g');
+    expect(cookie.name).toBe('르뱅쿠키 만들기');
+    expect(cookie.input.levain.grams).toBe(0);
+    expect(cookie.input.flours).toHaveLength(1);
+    expect(cookie.input.flours[0].grams).toBe(200);
+    expect(cookie.input.extras).toHaveLength(2);
+  });
+
+  it('부분 문자열 오분류 — unsalted·곡물·식물성·durum·IDY·코코아가루', () => {
+    const butter = parseRecipeText('Bread flour 500g\nWater 350g\nUnsalted butter 60g\nSalt 9g');
+    expect(butter.input.salt).toBe(9);
+    expect(butter.input.extras.map((e) => [e.name, e.grams])).toEqual([['Unsalted butter', 60]]);
+    const grain = parseRecipeText('강력분 500\n물 380\n곡물 믹스 80\n식물성 오일 20\n소금 10');
+    expect(grain.input.water).toBe(380);
+    expect(grain.input.extras).toHaveLength(2);
+    const durum = parseRecipeText('T65 500g\nwater 350g\nDurum levain 100g');
+    expect(durum.input.levain.grams).toBe(100);
+    expect(durum.input.levain.hydration).toBe(1.0);
+    const idy = parseRecipeText('T65 500g\nwater 350g\nIDY 3g');
+    expect(idy.input.yeast).toEqual({ type: 'instant', grams: 3 });
+    const cocoa = parseRecipeText('강력분 500g\n물 350g\n코코아가루 30g');
+    expect(cocoa.input.flours).toHaveLength(1);
+    expect(cocoa.input.extras[0]?.grams).toBe(30);
+  });
+
+  it("'@75%'는 멘션이 아니라 르방 수분율이다", () => {
+    const r = parseRecipeText('T65 500g\nwater 350g\nLevain 150g @75%');
+    expect(r.input.levain.hydration).toBe(0.75);
+    expect(cleanForParsing('Levain 150g @75%')).toBe('Levain 150g @75%');
+    expect(cleanForParsing('flour @7thbakery 500g')).toBe('flour  500g');
+  });
+
+  it('숫자가 앞서는 초코칩·분유는 시간 표기로 지우지 않는다', () => {
+    const chips = parseRecipeText('강력분 500\n물 350\n르방 100\n50 초코칩');
+    expect(chips.input.extras.map((e) => [e.name, e.grams])).toEqual([['초코칩', 50]]);
+    expect(chips.name).toBeNull();
+    expect(chips.matchedLineCount).toBe(4);
+    const milk = parseRecipeText('강력분 500\n물 350\n20 분유');
+    expect(milk.input.extras.map((e) => [e.name, e.grams])).toEqual([['분유', 20]]);
+    const more = parseRecipeText('강력분 500\n물 350\n100 초코칩');
+    expect(more.input.extras.map((e) => [e.name, e.grams])).toEqual([['초코칩', 100]]);
+    expect(more.matchedLineCount).toBe(3);
+  });
+
+  it('시간 표기만 남은 공정 줄은 재료도 제목도 아니다', () => {
+    const rest = parseRecipeText('강력분 500\n물 350\n30분간 휴지');
+    expect(rest.input.extras).toHaveLength(0);
+    expect(rest.matchedLineCount).toBe(2);
+    expect(rest.name).toBeNull();
+    expect(parseRecipeText('강력분 500\n물 350\n오토리즈 30분').name).toBeNull();
+    expect(parseRecipeText('강력분 500\n물 350\n벌크 발효 4시간').name).toBeNull();
+    const build = parseRecipeText('르방 만들기\n스타터 20g\n밀가루 90g\n물 90g\n30분마다 저어주기');
+    expect(build.input.levain.grams).toBe(200);
+    const levain = parseRecipeText('강력분 500g\n물 350g\n르방 100g 12시간\n소금 10g');
+    expect(levain.input.levain.grams).toBe(100);
+  });
+
+  it('차수·범위 표기가 남은 공정 줄은 재료가 아니다', () => {
+    const r = parseRecipeText(
+      '캄파뉴\n강력분 500g\n물 350g\n소금 10g\n르방 100g\n1차 발효 3~4시간\n3회 폴딩',
+    );
+    expect(r.name).toBe('캄파뉴');
+    expect(r.input.extras).toHaveLength(0);
+    expect(r.matchedLineCount).toBe(4);
+    const en = parseRecipeText(
+      'Sourdough\n500 g flour\n350 g water\n10 g salt\n100 g starter (100% hydration)\n1차 발효 4시간',
+    );
+    expect(en.input.extras).toHaveLength(0);
+    expect(en.matchedLineCount).toBe(4);
+    const more = parseRecipeText(
+      '강력분 500g\n물 350g\n르방 100g\n2차발효 1～2시간\n30분 간격으로 폴딩 3~4회\n2번째 접기\nBulk ferment 3-4 hours',
+    );
+    expect(more.input.extras).toHaveLength(0);
+    expect(more.input.levain.grams).toBe(100);
+    expect(more.matchedLineCount).toBe(3);
+    // 띄어 쓴 대시는 범위가 아니다 — 앞의 단위 없는 재료 양을 지우지 않는다
+    expect(parseRecipeText('강력분 500\n물 350 - 30분 후 투입').input.water).toBe(350);
+    const only = parseRecipeText('1차 발효');
+    expect(only.name).toBeNull();
+    expect(only.matchedLineCount).toBe(0);
+    const tea = parseRecipeText('강력분 500g\n물 350g\n녹차 가루 10g\n말차 5g');
+    expect(tea.input.extras.map((e) => [e.name, e.grams])).toEqual([
+      ['녹차 가루', 10],
+      ['말차', 5],
+    ]);
+  });
+
+  it('키캡 번호(1️⃣ …)는 수량이 아니라 섹션·단계 번호다', () => {
+    const r = parseRecipeText(
+      cleanForParsing(
+        '🥖 캄파뉴\n1️⃣ 르방 만들기\n스타터 20g\n밀가루 100g\n물 100g\n2️⃣ 본반죽\n강력분 450g\n물 300g\n소금 10g\n' +
+          '3️⃣ 만드는 방법\n물 300g에 르방을 풀고 섞어요\n강력분 450g을 넣고 섞어요',
+      ),
+    );
+    expect(r.input.flours.map((f) => [f.name, f.grams])).toEqual([['강력분', 450]]);
+    expect(r.input.water).toBe(300);
+    expect(r.input.salt).toBe(10);
+    expect(r.input.levain.grams).toBe(220);
+    expect(r.input.levain.hydration).toBe(1.0);
+    expect(r.input.extras).toHaveLength(0);
+    expect(r.matchedLineCount).toBe(6);
+    const short = parseRecipeText('캄파뉴\n1️⃣ 강력분 450\n2️⃣ 물 300\n3️⃣ 르방\n4️⃣ 소금 10');
+    expect(short.input.flours.map((f) => f.name)).toEqual(['강력분']);
+    expect(short.input.levain.grams).toBe(0);
+    expect(cleanForParsing('1️⃣ 르방 만들기\n2️⃣. 본반죽\n🔟 소금 10g\n#️⃣ 물 300g')).toBe(
+      '르방 만들기\n본반죽\n소금 10g\n물 300g',
+    );
+    // 숫자 뒤 VS16이 숫자를 끊지 않는다 — 양쪽 모두 코드포인트 단위로 토큰화
+    expect(parseRecipeText('강력분 500\u{FE0F}g\n물 350g').input.flours[0].grams).toBe(500);
   });
 });

@@ -80,6 +80,8 @@ final class AppModel {
     var calc = CalcState() {
         didSet { scheduleDraftSave() }
     }
+    /// 마지막으로 불러오거나 새로 시작하거나 저장한 계산기 상태
+    private var calcBaseline: CalcState?
     var recipes: [Recipe] = [] {
         didSet { if !isLoading { scheduleLibrarySave() } }
     }
@@ -102,6 +104,9 @@ final class AppModel {
     var selectedTab: Tab = .calculator
 
     let cloud = CloudSync()
+    /// 마지막 library.json 쓰기가 실패했는가 — 다음 쓰기가 성공하면 false로 돌아간다
+    /// (변이마다 문서 전체를 다시 쓰므로 재시도는 따로 없다)
+    private(set) var libraryWriteFailed = false
 
     enum Tab: Hashable {
         case calculator, converter, recipes, tools
@@ -161,18 +166,38 @@ final class AppModel {
                 let aside = Self.dir.appendingPathComponent("library.corrupt-\(Int(Date().timeIntervalSince1970)).json")
                 try? FileManager.default.moveItem(at: Self.libraryURL, to: aside)
             } else {
-                apply(LibrarySync.decode(data))
+                let doc = LibrarySync.decode(data)
+                if LibrarySync.droppedItemCount(in: data, decoded: doc) > 0 {
+                    Self.keepDroppedOriginal(data)
+                }
+                apply(doc)
             }
         } else if let data = try? Data(contentsOf: Self.legacyRecipesURL) {
             // 옛 형식 이전 — 항목별 검증으로 살릴 수 있는 것은 전부 살린다
             apply(LibrarySync.decode(data))
-            Self.writeLibrary(document)
+            libraryWriteFailed = !Self.writeLibrary(document)
         }
         if let data = try? Data(contentsOf: Self.draftURL),
             let draft = try? JSONDecoder().decode(CalcState.self, from: data)
         {
+            // 복원한 draft는 기준으로 삼지 않는다 — 저장된 레시피와 같을 때만 calcIsDirty가 false
             calc = draft
+        } else {
+            calcBaseline = calc
         }
+    }
+
+    /// 검증에 실패해 버려진 항목이 든 원본을 옆에 복사해 둔다 (삭제 금지, 같은 내용은 한 번만) —
+    /// 다음 저장이 library.json을 덮어쓰면 그 항목은 되찾을 길이 없다
+    private static func keepDroppedOriginal(_ data: Data) {
+        let fm = FileManager.default
+        let existing = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        let alreadyKept = existing.contains {
+            $0.lastPathComponent.hasPrefix("library.dropped-") && (try? Data(contentsOf: $0)) == data
+        }
+        guard !alreadyKept else { return }
+        let aside = dir.appendingPathComponent("library.dropped-\(Int(Date().timeIntervalSince1970)).json")
+        try? data.write(to: aside, options: .atomic)
     }
 
     private func scheduleDraftSave() {
@@ -189,17 +214,20 @@ final class AppModel {
         librarySaveTask = Task { [document] in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            Self.writeLibrary(document)
+            libraryWriteFailed = !Self.writeLibrary(document)
             requestSync()
         }
     }
 
-    private static func writeLibrary(_ doc: LibraryDocument) {
+    /// 성공 여부를 돌려준다 — 실패해도 앱 동작은 계속하되 libraryWriteFailed로 사용자에게 알린다.
+    /// 오류의 localizedDescription은 앱 언어가 아니라 실행 시점의 기기 언어로 나오므로 화면에 쓰지 않는다
+    private static func writeLibrary(_ doc: LibraryDocument) -> Bool {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try LibrarySync.encode(doc).write(to: libraryURL, options: .atomic)
+            return true
         } catch {
-            // 저장 실패 시에도 앱 동작은 계속
+            return false
         }
     }
 
@@ -250,34 +278,52 @@ final class AppModel {
         cloud.status = .syncing
         do {
             let remote = try await cloud.readRemote()
+            // 새 버전 앱이 쓴 문서는 합치지도 쓰지도 않는다 — 모르는 필드를 뺀 사본이 원격과 같은 updatedAt으로
+            // 로컬에 남으면, 업데이트 뒤 병합 동률에서 그 사본이 이겨 원격의 필드를 지운다
+            if remote?.isNewerFormat == true {
+                cloud.status = .error(L("새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다"))
+                return
+            }
             // 여기서부터 apply까지는 await 없이 메인 액터에서 한 번에 — 그 사이 사용자 편집이 끼어들 수 없다.
             // 로컬은 정규화(코덱 왕복 + 정규 순서)해 원격과 같은 형태로 비교한다.
             let local = LibrarySync.normalized(document)
-            let merged = LibrarySync.merge(local: local, remote: remote ?? LibraryDocument())
+            let merged = LibrarySync.merge(local: local, remote: remote?.document ?? LibraryDocument())
+            var localWriteFailed = false
             if merged != local {
                 apply(merged)
-                Self.writeLibrary(merged)
+                libraryWriteFailed = !Self.writeLibrary(merged)
+                localWriteFailed = libraryWriteFailed
             }
             // 원격에 문서가 없고 로컬도 비었으면 아무것도 쓰지 않는다 (새 기기 보호)
-            let shouldWrite = remote.map { merged != $0 } ?? !merged.isEmpty
+            let shouldWrite = remote.map { merged != $0.document } ?? !merged.isEmpty
             if shouldWrite {
                 try await cloud.writeRemote(merged)
             }
-            cloud.markSynced()
+            if localWriteFailed {
+                cloud.status = .error(L("기기에 저장하지 못했습니다 — 저장 공간을 확인하세요"))
+            } else {
+                cloud.markSynced()
+            }
         } catch {
-            cloud.status = .error(error.localizedDescription)
+            // localizedDescription은 앱 언어가 아니라 기기 언어로 나온다
+            cloud.status = .error(L("동기화하지 못했습니다 — 다음에 다시 시도합니다"))
         }
     }
 
     // MARK: 레시피 CRUD
 
-    /// touch: false면 updatedAt을 그대로 둔다 (백업 가져오기 — 다른 기기의 더 새 편집을 덮지 않도록)
+    /// touch: false면 updatedAt을 그대로 둔다 (백업 가져오기 — 받을지는 LibrarySync.importable이 정한다).
+    /// 단 묘비가 있는 id는 묘비 뒤로 민다 — 지운 레시피의 복원은 편집이고, 그러지 않으면
+    /// iCloud에 남은 같은 묘비에 다음 병합에서 다시 지워진다. 내용이 그대로면 아무것도 하지 않는다.
     func save(_ recipe: Recipe, touch: Bool = true) {
-        var updated = recipe
-        if touch { updated.updatedAt = isoNow() }
+        let idx = recipes.firstIndex { $0.id == recipe.id }
+        guard
+            let updated = LibrarySync.savedRecipe(
+                recipe, replacing: idx.map { recipes[$0] },
+                tombstone: tombstones.first { $0.id == recipe.id }, touch: touch)
+        else { return }
         tombstones.removeAll { $0.id == recipe.id }
-        if let idx = recipes.firstIndex(where: { $0.id == recipe.id }) {
-            updated.createdAt = recipes[idx].createdAt
+        if let idx {
             recipes[idx] = updated
         } else {
             recipes.insert(updated, at: 0)
@@ -285,9 +331,10 @@ final class AppModel {
     }
 
     func updateNote(recipeId: String, note: String?) {
-        guard let idx = recipes.firstIndex(where: { $0.id == recipeId }) else { return }
-        recipes[idx].note = (note?.isEmpty ?? true) ? nil : note
-        recipes[idx].updatedAt = isoNow()
+        guard let idx = recipes.firstIndex(where: { $0.id == recipeId }),
+            let updated = LibrarySync.notedRecipe(recipes[idx], note: note)
+        else { return }
+        recipes[idx] = updated
     }
 
     func delete(_ id: String) {
@@ -318,11 +365,13 @@ final class AppModel {
     }
 
     func saveLog(_ log: BakeLog) {
-        var updated = log
-        updated.updatedAt = isoNow()
+        let idx = logs.firstIndex { $0.id == log.id }
+        guard
+            let updated = LibrarySync.savedLog(
+                log, replacing: idx.map { logs[$0] }, tombstone: tombstones.first { $0.id == log.id })
+        else { return }
         tombstones.removeAll { $0.id == log.id }
-        if let idx = logs.firstIndex(where: { $0.id == log.id }) {
-            updated.createdAt = logs[idx].createdAt
+        if let idx {
             logs[idx] = updated
         } else {
             logs.append(updated)
@@ -338,6 +387,23 @@ final class AppModel {
 
     // MARK: 계산기 연동
 
+    /// 계산기에 저장하지 않은 입력이 있는가 — 불러오기가 덮어쓰기 전에 확인한다
+    var calcIsDirty: Bool {
+        guard calc != calcBaseline else { return false }
+        // 연결된 레시피와 내용이 같으면 저장된 것 (앱 재실행으로 복원한 draft, 동기화 뒤 포함).
+        // 레시피엔 목표 역산 입력이 없다 — 불러오기는 target을 기본값으로 두므로 다르면 불러온 뒤 고친 것
+        guard calc.mode == .a, calc.target == (calcBaseline?.target ?? TargetForm()),
+            let id = calc.recipeId,
+            let r = recipes.first(where: { $0.id == id })
+        else { return true }
+        return !(r.name == calc.name && r.doughInput == calc.input && (r.pieces ?? 0) == calc.pieces)
+    }
+
+    /// 계산기 내용을 레시피로 저장한 직후 호출 — 이후 바뀐 것만 '저장하지 않은 입력'이 된다
+    func markCalcSaved() {
+        calcBaseline = calc
+    }
+
     func loadIntoCalculator(_ recipe: Recipe) {
         calc = CalcState(
             mode: .a,
@@ -345,6 +411,7 @@ final class AppModel {
             recipeId: recipe.id,
             input: recipe.doughInput,
             pieces: recipe.pieces ?? 0)
+        calcBaseline = calc
         selectedTab = .calculator
     }
 
@@ -354,6 +421,7 @@ final class AppModel {
             mode: .a,
             name: empty ? "" : L("캉파뉴"),
             input: empty ? CalcState.emptyDoughInput() : CalcState.defaultDoughInput())
+        calcBaseline = calc
     }
 
     func sendToConverter(name: String, input: DoughInput) {

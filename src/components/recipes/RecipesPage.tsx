@@ -5,7 +5,7 @@ import { computeStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtDate, fmtGrams, fmtPct } from '../../lib/format';
 import { newId } from '../../lib/id';
-import { OcrError, recognizeImage } from '../../lib/ocr';
+import { OcrError, recognizeImage, type OcrPhase } from '../../lib/ocr';
 import { cleanForParsing, parseRecipeText } from '../../lib/recipeParser';
 import { exportJson, importJson } from '../../lib/storage';
 import { doughInputFromRecipe } from '../../state';
@@ -49,7 +49,12 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
     message: string;
     recognizedText?: string;
   } | null>(null);
-  const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+  const [ocr, setOcr] = useState<{ progress: number; phase: OcrPhase } | null>(null);
+
+  // 어느 탭에서 저장했든 여기서 알린다 — 이 페이지는 다른 탭을 보는 동안에도 마운트되어 있다
+  useEffect(() => {
+    if (api.writeFailCount > 0) toast('저장 공간에 쓰지 못했습니다 — JSON으로 내보내 백업하세요');
+  }, [api.writeFailCount, toast]);
 
   const allTags = useMemo(
     () => [...new Set(api.recipes.flatMap((r) => r.tags ?? []))].sort(),
@@ -78,9 +83,18 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
     }
     const res = importJson(text);
     if (res.ok) {
-      api.importAll(res.recipes);
+      const { added, updated, skipped } = api.importAll(res.recipes);
       setImportError(null);
-      toast(`${res.recipes.length}개 레시피를 가져왔습니다`);
+      if (added + updated === 0) {
+        toast(`가져올 새 내용이 없습니다 — ${skipped}개 모두 같거나 더 새로운 버전이 저장되어 있습니다`);
+      } else {
+        const parts = [
+          added > 0 && `${added}개 추가`,
+          updated > 0 && `${updated}개 갱신`,
+          skipped > 0 && `${skipped}개는 같거나 더 새로운 버전이 있어 건너뜀`,
+        ].filter(Boolean);
+        toast(`레시피를 가져왔습니다 — ${parts.join(', ')}`);
+      }
     } else {
       setImportError(res.reason);
     }
@@ -102,9 +116,9 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
   };
 
   const handleImageFile = async (file: File) => {
-    setOcrProgress(0);
+    setOcr({ progress: 0, phase: 'loading' });
     try {
-      const text = await recognizeImage(file, (p) => setOcrProgress(p));
+      const text = await recognizeImage(file, (progress, phase) => setOcr({ progress, phase }));
       // iOS와 동일하게 '글자 없음'은 사진 경로에서만 판정한다
       if (text.trim() === '') {
         setAiImportFail({ message: '사진에서 글자를 찾지 못했습니다.' });
@@ -119,7 +133,7 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
             : '문자 인식(OCR) 모듈을 불러오지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.',
       });
     } finally {
-      setOcrProgress(null);
+      setOcr(null);
     }
   };
 
@@ -147,15 +161,15 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
           ariaLabel="레시피 검색"
           className="min-w-[200px] flex-1"
         />
-        <Button disabled={ocrProgress !== null} onClick={() => imageRef.current?.click()}>
-          {ocrProgress !== null
-            ? `사진 인식 중… ${Math.round(ocrProgress * 100)}%`
-            : '사진에서 가져오기'}
+        <Button disabled={ocr !== null} onClick={() => imageRef.current?.click()}>
+          {ocr === null
+            ? '사진에서 가져오기'
+            : `${ocr.phase === 'loading' ? '인식 데이터 준비 중' : '사진 인식 중'}… ${Math.round(ocr.progress * 100)}%`}
         </Button>
-        <Button disabled={ocrProgress !== null} onClick={() => setTextImportOpen(true)}>
+        <Button disabled={ocr !== null} onClick={() => setTextImportOpen(true)}>
           텍스트에서 가져오기
         </Button>
-        <Button disabled={ocrProgress !== null} onClick={() => fileRef.current?.click()}>
+        <Button disabled={ocr !== null} onClick={() => fileRef.current?.click()}>
           JSON 가져오기
         </Button>
         <Button
@@ -190,6 +204,12 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
           }}
         />
       </div>
+
+      {api.writeFailed && (
+        <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
+          이 브라우저 저장 공간에 쓰지 못했습니다 — 최근 변경은 새로 고치면 사라지니 전체 내보내기로 백업하세요.
+        </div>
+      )}
 
       {importError && (
         <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
@@ -318,6 +338,7 @@ function TextImportDialog({
       open={open}
       onClose={onClose}
       title="텍스트에서 가져오기"
+      confirmDismiss={text.trim() !== ''}
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
@@ -352,7 +373,7 @@ function TagChip({ label, active, onClick }: { label: string; active: boolean; o
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`min-h-[32px] rounded-full border px-3 text-xs font-medium transition-colors motion-reduce:transition-none ${
+      className={`min-h-[36px] rounded-full border px-3 text-xs font-medium transition-colors motion-reduce:transition-none ${
         active
           ? 'border-bottle bg-bottle text-paper'
           : 'border-line bg-white text-ink/70 hover:border-bottle/40'

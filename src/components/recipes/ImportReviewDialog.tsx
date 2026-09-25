@@ -5,7 +5,7 @@ import { fmtGrams, fmtPct } from '../../lib/format';
 import type { Settings } from '../../types';
 import { IngredientForm } from '../calculator/IngredientForm';
 import { Button } from '../ui/Button';
-import { Dialog } from '../ui/Dialog';
+import { DISCARD_PROMPT, Dialog } from '../ui/Dialog';
 import { TextField } from '../ui/fields';
 
 export interface ImportedDraft {
@@ -29,6 +29,8 @@ export function ImportReviewDialog({ onClose, draft, settings, onSave }: Props) 
   const [name, setName] = useState(draft.name);
   const [input, setInput] = useState<DoughInput>(() => structuredClone(draft.input));
   const stats = useMemo(() => computeStats(input), [input]);
+  const draftJson = useMemo(() => JSON.stringify(draft.input), [draft.input]);
+  const edited = name !== draft.name || JSON.stringify(input) !== draftJson;
 
   return (
     <Dialog
@@ -36,9 +38,18 @@ export function ImportReviewDialog({ onClose, draft, settings, onSave }: Props) 
       onClose={onClose}
       title="가져오기 확인"
       wide
+      // 인식 결과는 다시 만들려면 사진 인식부터 반복해야 하므로 수정 전이라도 배경·Escape로는 바로 닫지 않는다
+      confirmDismiss
       footer={
         <>
-          <Button onClick={onClose}>취소</Button>
+          <Button
+            onClick={() => {
+              if (edited && !window.confirm(DISCARD_PROMPT)) return;
+              onClose();
+            }}
+          >
+            취소
+          </Button>
           <Button
             variant="primary"
             onClick={() => {

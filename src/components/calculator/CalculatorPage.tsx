@@ -117,6 +117,18 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
                 </select>
               </label>
             )}
+            {/* 이미 선택된 항목을 다시 골라도 select는 change를 보내지 않으므로 편집을 버리는 길을 따로 둔다 */}
+            {loadedRecipe && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  onChange(calcStateFromRecipe(loadedRecipe));
+                  toast(`'${loadedRecipe.name}' 레시피를 다시 불러왔습니다`);
+                }}
+              >
+                다시 불러오기
+              </Button>
+            )}
           </div>
           <TextField
             label="레시피 이름"
@@ -170,7 +182,10 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
             >
               레시피 저장
             </Button>
-            <Button onClick={() => onSendToConverter(state.name, structuredClone(dough))}>
+            <Button
+              disabled={negativeWater || negativeFlour}
+              onClick={() => onSendToConverter(state.name, structuredClone(dough))}
+            >
               변환기로 보내기
             </Button>
             <Button onClick={() => window.print()}>인쇄</Button>
@@ -198,6 +213,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
         initialTags={loadedRecipe?.tags ?? []}
         initialNote={loadedRecipe?.note ?? ''}
         allowOverwrite={!!loadedRecipe}
+        loadedName={loadedRecipe?.name}
         onSave={handleSave}
       />
     </div>

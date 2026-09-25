@@ -88,3 +88,13 @@ public func scheduleTimeline(_ plan: TimelinePlan) -> [ScheduledStage] {
         return ScheduledStage(stage: stage, start: cursor, end: end)
     }
 }
+
+/// 알림 트리거(UNCalendarNotificationTrigger)용 날짜 성분 — UTC 그레고리력과 시간대를 성분에 함께 싣는다.
+/// 기기 시간대의 벽시계 성분은 서머타임이 끝나는 밤 반복되는 한 시간에서 앞쪽 시각으로 풀리고,
+/// 시간대를 옮기면 그곳 벽시계 기준으로 밀린다.
+public func absoluteDateComponents(for date: Date) -> DateComponents {
+    var utc = Calendar(identifier: .gregorian)
+    utc.timeZone = .gmt
+    return utc.dateComponents(
+        [.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: date)
+}

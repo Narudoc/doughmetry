@@ -39,6 +39,9 @@ export function levainTypeFor(hydration: number): LevainType {
 }
 
 const EPS = 1e-9;
+/** 부동소수점 잔차(−EPS < x < 0)만 0으로. 그보다 큰 음수는 불가능한 배합이므로 그대로 둔다 —
+ *  UI의 −1e-9 가드가 저장을 막고 부족한 그램을 보여 줘야 한다. (Dough.swift snapTinyNegative와 동일) */
+const snapTinyNegative = (x: number): number => (x < 0 && x > -EPS ? 0 : x);
 const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
 
 export const addedFlourTotal = (input: DoughInput): number =>
@@ -129,8 +132,8 @@ export function solveFromTarget(spec: TargetSpec): DoughInput {
   const levainGrams = levainFlour * (1 + spec.levainHydration);
   const levainWater = levainGrams - levainFlour;
   return {
-    flours: [{ id: newId(), name: '밀가루', grams: totalFlour - levainFlour }],
-    water: spec.hydration * totalFlour - levainWater,
+    flours: [{ id: newId(), name: '밀가루', grams: snapTinyNegative(totalFlour - levainFlour) }],
+    water: snapTinyNegative(spec.hydration * totalFlour - levainWater),
     salt: spec.saltRatio * totalFlour,
     levain: {
       type: levainTypeFor(spec.levainHydration),
@@ -282,6 +285,16 @@ export function convertFixedPff(input: DoughInput, newHydration: number): Conver
   const levainWaterNew = levainGramsNew - levainFlour;
   const addedWaterNew = input.water + before.levainWater - levainWaterNew;
 
+  // 첨가 밀가루는 그대로 복사되므로, 모드 B의 불가능한 조합(PFF > 100%)이 음수 밀가루로 넘어오면 여기서 막는다
+  if (addedFlourTotal(input) < -EPS) {
+    return {
+      ok: false,
+      error: {
+        code: 'F_ADD_NEGATIVE',
+        maxLevainGrams: before.totalFlour * (1 + input.levain.hydration),
+      },
+    };
+  }
   if (addedWaterNew < -EPS) {
     // F_lev ≤ (본반죽 물 + W_lev) / h_new → 원본 수분율 기준 최대 르방 질량으로 환산
     const maxLevainGrams =

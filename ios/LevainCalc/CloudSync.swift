@@ -107,18 +107,20 @@ final class CloudSync {
     // MARK: 파일 I/O (NSFileCoordinator)
 
     /// 원격 문서 읽기 — 없으면 nil. 아직 내려받지 않은 파일은 조정 읽기가 다운로드를 기다린다.
-    func readRemote() async throws -> LibraryDocument? {
+    /// isNewerFormat이면 새 버전 앱이 쓴 문서라 이 기기는 덮어쓰면 안 된다 (LibrarySync.decodeReport).
+    func readRemote() async throws -> (document: LibraryDocument, isNewerFormat: Bool)? {
         guard let url = documentURL else { return nil }
         // 로컬에 아직 내려오지 않았어도 iCloud 메타데이터에 있으면 "없음"이 아니다 —
         // 조정 읽기가 다운로드를 기다린다. (새 기기에서 빈 문서로 덮어쓰는 사고 방지)
         let known = remoteFileKnown
-        return try await Task.detached(priority: .userInitiated) { () -> LibraryDocument? in
+        return try await Task.detached(priority: .userInitiated) {
+            () -> (document: LibraryDocument, isNewerFormat: Bool)? in
             let fm = FileManager.default
             if !fm.fileExists(atPath: url.path) && !known { return nil }
             try? fm.startDownloadingUbiquitousItem(at: url)
 
             var coordError: NSError?
-            var result: LibraryDocument?
+            var result: (document: LibraryDocument, isNewerFormat: Bool)?
             var readError: Error?
             NSFileCoordinator(filePresenter: nil).coordinate(
                 readingItemAt: url, options: [], error: &coordError
@@ -126,7 +128,7 @@ final class CloudSync {
                 guard fm.fileExists(atPath: readURL.path) else { return }
                 do {
                     let data = try Data(contentsOf: readURL)
-                    result = LibrarySync.decode(data)
+                    result = LibrarySync.decodeReport(data)
                 } catch {
                     readError = error
                 }

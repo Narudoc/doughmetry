@@ -52,12 +52,12 @@
   .print-only {
     display: block;
   }
-  .bakers-table thead {
+  /* 색·괘선은 th/td가 아니라 tr의 유틸리티 클래스에 있다 */
+  .bakers-table thead tr {
     background: #fff !important;
     color: #000 !important;
   }
-  .bakers-table th,
-  .bakers-table td {
+  .bakers-table tr {
     border-color: #000 !important;
   }
 }

@@ -11,6 +11,7 @@ import {
   solveFromTarget,
   withLevainMass,
 } from './dough';
+import { validateRecipe } from './storage';
 
 /** v2 기본 필드를 채운 배합 생성 헬퍼 */
 const makeInput = (partial: Partial<DoughInput> = {}): DoughInput => ({
@@ -65,6 +66,37 @@ describe('케이스 1 — 기본 계산', () => {
     expect(solved.salt).toBeCloseTo(20, 6);
     expect(solved.levain.grams).toBeCloseTo(200, 6);
     expect(computeStats(solved).hydrationPct).toBeCloseTo(72, 6);
+  });
+
+  it('모드 B: 첨가 물이 0인 경계(H = PFF × h)에서 부동소수점 잔차가 음수 물로 남지 않는다', () => {
+    // 보정 전 water: −2.27e-13 / −5.68e-14
+    for (const [hydration, pff, levainHydration] of [
+      [0.66, 0.55, 1.2],
+      [0.42, 0.84, 0.5],
+    ]) {
+      const solved = solveFromTarget({
+        doughWeight: 1740,
+        hydration,
+        saltRatio: 0.02,
+        pff,
+        levainHydration,
+      });
+      expect(solved.water).toBe(0);
+      // 저장 검증(water ≥ 0)을 통과해야 다음 로드에서 사라지지 않는다
+      const v = validateRecipe({ schemaVersion: 2, name: '경계', ...solved });
+      expect(v.ok ? '' : v.reason).toBe('');
+    }
+  });
+
+  it('모드 B: 실제로 불가능한 배합은 음수 그대로 남는다 (UI가 저장을 막도록)', () => {
+    const solved = solveFromTarget({
+      doughWeight: 1740,
+      hydration: 0.3,
+      saltRatio: 0.02,
+      pff: 0.5,
+      levainHydration: 1,
+    });
+    expect(solved.water).toBeLessThan(-1e-9);
   });
 });
 
@@ -394,5 +426,28 @@ describe('보조 모드 — PFF 고정', () => {
     expect(result.output.bassinage).toBe(60);
     expect(result.output.liquids).toEqual(input.liquids);
     expectInvariantsPreserved(input, result.output);
+  });
+
+  it('모드 B의 PFF > 100% 배합(음수 첨가 밀가루)은 F_ADD_NEGATIVE — 최대 르방 적용 후엔 저장 가능한 결과', () => {
+    // 총 밀가루 1000 / F_lev 1200 → 첨가 밀가루 −200, 본반죽 물 −480
+    const input = solveFromTarget({
+      doughWeight: 1740,
+      hydration: 0.72,
+      saltRatio: 0.02,
+      pff: 1.2,
+      levainHydration: 1,
+    });
+    const result = convertFixedPff(input, 0.5);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('F_ADD_NEGATIVE');
+    if (result.error.code !== 'F_ADD_NEGATIVE') return;
+    expect(result.error.maxLevainGrams).toBeCloseTo(2000, 6); // F_total × (1 + h)
+
+    const applied = convertFixedPff(withLevainMass(input, result.error.maxLevainGrams), 0.5);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const v = validateRecipe({ schemaVersion: 2, name: '적용', ...applied.output });
+    expect(v.ok ? '' : v.reason).toBe('');
   });
 });

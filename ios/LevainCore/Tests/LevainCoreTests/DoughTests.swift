@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import LevainCore
 
@@ -63,6 +64,32 @@ struct BasicCalc {
         #expect(near(solved.salt, 20))
         #expect(near(solved.levain.grams, 200))
         #expect(near(computeStats(solved).hydrationPct, 72))
+    }
+
+    @Test("모드 B: 첨가 물이 0인 경계(H = PFF × h)에서 부동소수점 잔차가 음수 물로 남지 않는다")
+    func solveTargetSnapsResidue() throws {
+        // 보정 전 water: −2.27e-13 / −5.68e-14
+        for (hydration, pff, levainHydration) in [(0.66, 0.55, 1.2), (0.42, 0.84, 0.5)] {
+            let solved = solveFromTarget(
+                TargetSpec(
+                    doughWeight: 1740, hydration: hydration, saltRatio: 0.02, pff: pff,
+                    levainHydration: levainHydration))
+            #expect(solved.water == 0)
+            // 저장 검증(water ≥ 0)을 통과해야 다음 로드에서 사라지지 않는다
+            let recipe = Recipe(name: "경계", createdAt: isoNow(), updatedAt: isoNow(), input: solved)
+            let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recipe))
+            if case .bad(let e) = RecipeCodec.validate(json) {
+                Issue.record("validate 실패: \(e)")
+            }
+        }
+    }
+
+    @Test("모드 B: 실제로 불가능한 배합은 음수 그대로 남는다 (UI가 저장을 막도록)")
+    func solveTargetKeepsInfeasibleNegative() {
+        let solved = solveFromTarget(
+            TargetSpec(
+                doughWeight: 1740, hydration: 0.3, saltRatio: 0.02, pff: 0.5, levainHydration: 1))
+        #expect(solved.water < -1e-9)
     }
 }
 
@@ -379,5 +406,28 @@ struct FixedPff {
         #expect(result.output.bassinage == 60)
         #expect(result.output.liquids == input.liquids)
         expectInvariantsPreserved(input, result.output)
+    }
+
+    @Test("모드 B의 PFF > 100% 배합(음수 첨가 밀가루)은 F_ADD_NEGATIVE — 최대 르방 적용 후엔 저장 가능한 결과")
+    func infeasibleTargetRejected() throws {
+        // 총 밀가루 1000 / F_lev 1200 → 첨가 밀가루 −200, 본반죽 물 −480
+        let input = solveFromTarget(
+            TargetSpec(
+                doughWeight: 1740, hydration: 0.72, saltRatio: 0.02, pff: 1.2, levainHydration: 1))
+        guard case .failure(.fAddNegative(let maxGrams)) = convertFixedPff(input, newHydration: 0.5)
+        else {
+            Issue.record("F_ADD_NEGATIVE 오류가 발생해야 한다")
+            return
+        }
+        #expect(near(maxGrams, 2000)) // F_total × (1 + h)
+
+        let applied = try convertFixedPff(withLevainMass(input, grams: maxGrams), newHydration: 0.5)
+            .get()
+        let recipe = Recipe(
+            name: "적용", createdAt: isoNow(), updatedAt: isoNow(), input: applied.output)
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recipe))
+        if case .bad(let e) = RecipeCodec.validate(json) {
+            Issue.record("validate 실패: \(e)")
+        }
     }
 }

@@ -25,16 +25,18 @@ export function loadJson<T>(key: string, store: KeyValueStore | null = browserSt
   }
 }
 
+/** 저장에 성공했는가를 돌려준다 — 저장 공간 초과·저장소 없음이어도 앱 동작은 계속한다 */
 export function saveJson(
   key: string,
   value: unknown,
   store: KeyValueStore | null = browserStore,
-): void {
-  if (!store) return;
+): boolean {
+  if (!store) return false;
   try {
     store.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
-    // 저장 공간 초과 등 — 앱 동작은 계속
+    return false;
   }
 }
 
@@ -200,8 +202,116 @@ export function loadRecipes(store: KeyValueStore | null = browserStore): Recipe[
   return recipes;
 }
 
-export function persistRecipes(recipes: Recipe[], store: KeyValueStore | null = browserStore): void {
-  saveJson(RECIPES_KEY, recipes, store);
+export function persistRecipes(
+  recipes: Recipe[],
+  store: KeyValueStore | null = browserStore,
+): boolean {
+  return saveJson(RECIPES_KEY, recipes, store);
+}
+
+/** 탭이 들고 있는 레시피 목록 */
+export interface RecipeList {
+  recipes: Recipe[];
+  /** 저장소가 이 목록과 같은가 — 마지막 쓰기가 실패했으면 false (저장소가 뒤처져 있다) */
+  persisted: boolean;
+}
+
+export function loadRecipeList(store: KeyValueStore | null = browserStore): RecipeList {
+  return { recipes: loadRecipes(store), persisted: true };
+}
+
+/**
+ * fn을 적용해 저장하고 새 목록을 돌려준다.
+ * 저장소가 목록과 같은 동안은 매번 저장소를 다시 읽어야 다른 탭에서 저장·삭제한 내용을 덮어쓰지 않는다.
+ * 쓰기가 한 번 실패한 뒤로는 저장소가 뒤처져 있으므로 탭의 목록에 적용한다 — 저장되지 못한 레시피가 목록에서 사라지지 않도록.
+ */
+export function updateRecipes(
+  fn: (current: Recipe[]) => Recipe[],
+  prev: RecipeList,
+  store: KeyValueStore | null = browserStore,
+): RecipeList {
+  const recipes = fn(prev.persisted ? loadRecipes(store) : prev.recipes);
+  return { recipes, persisted: persistRecipes(recipes, store) };
+}
+
+/** 다른 탭이 저장소를 바꿨을 때 — 저장소가 뒤처져 있으면 탭의 목록을 그대로 둔다 */
+export function reloadRecipes(
+  prev: RecipeList,
+  store: KeyValueStore | null = browserStore,
+): RecipeList {
+  return prev.persisted ? loadRecipeList(store) : prev;
+}
+
+export interface ImportMergeResult {
+  recipes: Recipe[];
+  added: number;
+  updated: number;
+  skipped: number;
+}
+
+/** iOS `LibrarySync.webEpochMillis`가 같은 문법을 읽는다 — Date.parse는 날짜만·시간대 없는 문자열도 받아 준다 */
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/** iOS `LibrarySync.isNewerOnWeb`과 같다 — 둘 다 해석되면 실제 시각으로, 아니면 문자열로 비교 */
+function isNewer(a: string, b: string): boolean {
+  const ta = ISO_DATE_TIME.test(a) ? Date.parse(a) : NaN;
+  const tb = ISO_DATE_TIME.test(b) ? Date.parse(b) : NaN;
+  return Number.isNaN(ta) || Number.isNaN(tb) ? a > b : ta > tb;
+}
+
+/** 정렬된 키로 직렬화 — 키 순서가 달라도 같은 값이면 같은 문자열 */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (typeof v === 'object' && v !== null) {
+    const entries = Object.entries(v)
+      .filter(([, x]) => x !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, x]) => `${JSON.stringify(k)}:${stableJson(x)}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+/** 시각(createdAt·updatedAt)을 뺀 내용이 같은가 */
+function sameContent(a: Recipe, b: Recipe): boolean {
+  return (
+    stableJson({ ...a, createdAt: '', updatedAt: '' }) ===
+    stableJson({ ...b, createdAt: '', updatedAt: '' })
+  );
+}
+
+/**
+ * JSON 가져오기 병합 — iOS `LibrarySync.importable`과 같은 규칙.
+ * - 파일 안에서 같은 id가 반복되면 첫 행만 쓴다
+ * - 같은 id가 없으면 id·createdAt·updatedAt을 그대로 두고 추가
+ * - 있으면 가져온 updatedAt이 더 새롭고 내용도 다를 때만 교체(로컬 createdAt 유지), 아니면 건너뜀
+ */
+export function mergeImported(prev: Recipe[], items: Recipe[]): ImportMergeResult {
+  const recipes = [...prev];
+  const seen = new Set<string>();
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      skipped++;
+      continue;
+    }
+    seen.add(item.id);
+    const idx = recipes.findIndex((r) => r.id === item.id);
+    if (idx < 0) {
+      recipes.push(item);
+      added++;
+    } else if (
+      isNewer(item.updatedAt, recipes[idx].updatedAt) &&
+      !sameContent(recipes[idx], item)
+    ) {
+      recipes[idx] = { ...item, createdAt: recipes[idx].createdAt };
+      updated++;
+    } else {
+      skipped++;
+    }
+  }
+  return { recipes, added, updated, skipped };
 }
 
 // ── JSON 내보내기 / 가져오기 ───────────────────────────────────────

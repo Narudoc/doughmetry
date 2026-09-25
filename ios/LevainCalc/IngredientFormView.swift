@@ -9,6 +9,31 @@ struct IngredientFormSections: View {
     let precision: Precision
     let basis: PctBasis
 
+    /// 입력 옆 % 열 — StatValue(14pt)와 같은 비율로 넓혀야 큰 글자에서 숫자가 끊기지 않는다
+    @ScaledMetric(relativeTo: .subheadline) private var pctWidth: CGFloat = 60
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// 접근성 글자 크기에선 입력 옆 보조 수치를 아랫줄로 — 한 줄에 두면 입력 칸이 화면 밖으로 밀린다
+    private var rowLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 2)) : AnyLayout(HStackLayout())
+    }
+
+    private func pctRow<Field: View>(_ pct: Double, @ViewBuilder field: () -> Field) -> some View {
+        rowLayout {
+            field()
+            StatValue(value: fmtPct(pct), size: 14)
+                .frame(width: typeSize.isAccessibilitySize ? nil : pctWidth, alignment: .trailing)
+        }
+    }
+
+    /// 목표 역산이 붙인 이름 "밀가루"는 flourLabel처럼 앱 언어로 보인다 — 저장값은 사용자가 고칠 때만 바뀐다
+    private func flourNameBinding(_ name: Binding<String>) -> Binding<String> {
+        Binding(
+            get: { name.wrappedValue == "밀가루" ? L("밀가루") : name.wrappedValue },
+            set: { name.wrappedValue = $0 })
+    }
+
     var body: some View {
         floursSection
         waterSection
@@ -24,17 +49,23 @@ struct IngredientFormSections: View {
         Section {
             ForEach($input.flours) { $flour in
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField(L("밀가루 이름 (T65, 호밀…)"), text: $flour.name)
+                    TextField(L("밀가루 이름 (T65, 호밀…)"), text: flourNameBinding($flour.name))
                         .font(.subheadline)
-                    HStack {
-                        NumberField(label: "", value: $flour.grams)
-                        StatValue(
-                            value: fmtPct(stats.uiPct(grams: flour.grams, basis: basis)), size: 14)
-                            .frame(width: 60, alignment: .trailing)
+                    pctRow(stats.uiPct(grams: flour.grams, basis: basis)) {
+                        NumberField(
+                            label: "", value: $flour.grams,
+                            accessibilityName: flourLabel(flour))
                     }
                 }
+                // onDelete의 시스템 "삭제"는 앱 언어가 아니라 번들 현지화를 따른다.
+                // 앱 전체 tint(bottle)가 destructive의 빨강을 덮으므로 색을 직접 준다
+                .swipeActions {
+                    Button(L("삭제"), role: .destructive) { [id = flour.id] in
+                        input.flours.removeAll { $0.id == id }
+                    }
+                    .tint(Color.danger)
+                }
             }
-            .onDelete { input.flours.remove(atOffsets: $0) }
             Button {
                 input.flours.append(Flour(name: "", grams: 0))
             } label: {
@@ -62,11 +93,8 @@ struct IngredientFormSections: View {
                     .italic()
                     .foregroundStyle(.secondary)
             }
-            HStack {
+            pctRow(stats.uiPct(grams: input.salt, basis: basis)) {
                 NumberField(label: L("소금"), value: $input.salt)
-                StatValue(
-                    value: fmtPct(stats.uiPct(grams: input.salt, basis: basis)), size: 14)
-                    .frame(width: 60, alignment: .trailing)
             }
         }
     }
@@ -111,23 +139,24 @@ struct IngredientFormSections: View {
         input.levain.type = levainTypeFor(hydration: h)
     }
 
+    /// 비율 → % 입력값. ×100 부동소수 잡음(0.575 × 100 = 57.4999…)을 걷어내야
+    /// 포커스 해제 후 57.5가 57로 보이지 않는다
+    private func pctFromRatio(_ ratio: Double) -> Double {
+        (ratio * 100 * 1e9).rounded() / 1e9
+    }
+
     private var levainSection: some View {
         Section {
             levainPresetPicker
-            HStack {
+            pctRow(stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis)) {
                 NumberField(label: L("르방 무게"), value: $input.levain.grams)
-                StatValue(
-                    value: fmtPct(
-                        stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis)),
-                    size: 14)
-                    .frame(width: 60, alignment: .trailing)
             }
             NumberField(
                 label: L("수분율"),
                 value: Binding(
-                    get: { input.levain.hydration * 100 },
+                    get: { pctFromRatio(input.levain.hydration) },
                     set: { setLevainHydration(max(0.01, $0 / 100)) }),
-                unit: "%", fractionDigits: 0)
+                unit: "%", maxValue: 1000)
             TextField(
                 L("르방 밀가루 (표시용)"),
                 text: Binding(
@@ -164,14 +193,15 @@ struct IngredientFormSections: View {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField(L("이름"), text: $liquid.name)
                         .font(.subheadline)
-                    NumberField(label: "", value: $liquid.grams)
-                    HStack {
+                    let liquidName = liquid.name.isEmpty ? L("액체") : liquid.name
+                    NumberField(label: "", value: $liquid.grams, accessibilityName: liquidName)
+                    rowLayout {
                         NumberField(
                             label: L("수분율"),
                             value: Binding(
-                                get: { liquid.waterRatio * 100 },
+                                get: { pctFromRatio(liquid.waterRatio) },
                                 set: { liquid.waterRatio = min(1, max(0, $0 / 100)) }),
-                            unit: "%", fractionDigits: 0)
+                            unit: "%", accessibilityName: "\(liquidName) \(L("수분율"))")
                         HStack(spacing: 4) {
                             Text(L("수분")).font(.caption).foregroundStyle(.secondary)
                             StatValue(
@@ -180,8 +210,13 @@ struct IngredientFormSections: View {
                         }
                     }
                 }
+                .swipeActions {
+                    Button(L("삭제"), role: .destructive) { [id = liquid.id] in
+                        input.liquids.removeAll { $0.id == id }
+                    }
+                    .tint(Color.danger)
+                }
             }
-            .onDelete { input.liquids.remove(atOffsets: $0) }
             Menu {
                 ForEach(LiquidPreset.allCases, id: \.name) { preset in
                     Button("\(L(preset.name)) (\(L("수분")) \(Int(preset.waterRatio * 100))%)") {
@@ -224,11 +259,8 @@ struct IngredientFormSections: View {
                 Text(L("인스턴트")).tag(YeastType.instant)
             }
             .pickerStyle(.segmented)
-            HStack {
+            pctRow(stats.uiPct(grams: input.yeast.grams, basis: basis)) {
                 NumberField(label: L("투입량"), value: $input.yeast.grams)
-                StatValue(
-                    value: fmtPct(stats.uiPct(grams: input.yeast.grams, basis: basis)), size: 14)
-                    .frame(width: 60, alignment: .trailing)
             }
             if input.yeast.grams > 0 {
                 HStack(spacing: 4) {
@@ -258,15 +290,19 @@ struct IngredientFormSections: View {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField(L("이름 (호두, 건포도…)"), text: $extra.name)
                         .font(.subheadline)
-                    HStack {
-                        NumberField(label: "", value: $extra.grams)
-                        StatValue(
-                            value: fmtPct(stats.uiPct(grams: extra.grams, basis: basis)), size: 14)
-                            .frame(width: 60, alignment: .trailing)
+                    pctRow(stats.uiPct(grams: extra.grams, basis: basis)) {
+                        NumberField(
+                            label: "", value: $extra.grams,
+                            accessibilityName: extra.name.isEmpty ? L("기타 재료") : extra.name)
                     }
                 }
+                .swipeActions {
+                    Button(L("삭제"), role: .destructive) { [id = extra.id] in
+                        input.extras.removeAll { $0.id == id }
+                    }
+                    .tint(Color.danger)
+                }
             }
-            .onDelete { input.extras.remove(atOffsets: $0) }
             Button {
                 input.extras.append(Extra(name: "", grams: 0))
             } label: {

@@ -77,7 +77,8 @@ struct LevainBuildView: View {
         Form {
             Section {
                 NumberField(label: L("필요한 르방"), value: $targetGrams)
-                NumberField(label: L("르방 수분율"), value: $targetHydrationPct, unit: "%", fractionDigits: 0)
+                NumberField(
+                    label: L("르방 수분율"), value: $targetHydrationPct, unit: "%", maxValue: 1000)
                 Button {
                     let lev = model.calc.currentDough.levain
                     targetGrams = lev.grams
@@ -95,13 +96,14 @@ struct LevainBuildView: View {
                 }
                 .pickerStyle(.segmented)
                 if chefByPercent {
-                    NumberField(label: L("종 비율"), value: $chefPercent, unit: "%", fractionDigits: 0)
+                    NumberField(label: L("종 비율"), value: $chefPercent, unit: "%", maxValue: 1000)
                 } else {
                     NumberField(label: L("종 무게"), value: $chefGrams)
                 }
                 Toggle(L("종 수분율 = 르방과 같음"), isOn: $chefSameHydration)
                 if !chefSameHydration {
-                    NumberField(label: L("종 수분율"), value: $chefHydrationPct, unit: "%", fractionDigits: 0)
+                    NumberField(
+                        label: L("종 수분율"), value: $chefHydrationPct, unit: "%", maxValue: 1000)
                 }
             } header: {
                 BilingualLabel(L("종"), fr: "chef")
@@ -176,8 +178,24 @@ struct WaterTemperatureView: View {
     @AppStorage("ddt.levain") private var levainTemp: Double = 24
     @AppStorage("ddt.friction") private var friction: Double = 2
 
-    private var frictionPreset: Int {
-        friction == 2 ? 0 : friction == 8 ? 1 : 2
+    /// 마찰계수 프리셋 — '직접'(2)도 실제 선택 가능하도록 @State로 유지하고 값 변경과 동기화한다
+    @State private var frictionSel = 0
+
+    private func applyFrictionPreset(_ sel: Int) {
+        if sel == 0 { friction = 2 }
+        if sel == 1 { friction = 8 }
+    }
+
+    private func syncFrictionPreset(_ f: Double) {
+        let sel: Int
+        if f == 2 {
+            sel = 0
+        } else if f == 8 {
+            sel = 1
+        } else {
+            sel = 2
+        }
+        frictionSel = sel
     }
 
     var body: some View {
@@ -200,30 +218,24 @@ struct WaterTemperatureView: View {
                 }
             }
             Section {
-                Picker(
-                    L("마찰계수"),
-                    selection: Binding(
-                        get: { frictionPreset },
-                        set: { v in
-                            if v == 0 { friction = 2 }
-                            if v == 1 { friction = 8 }
-                        })
-                ) {
+                Picker(L("마찰계수"), selection: $frictionSel) {
                     Text(L("손반죽")).tag(0)
                     Text(L("스탠드 믹서")).tag(1)
                     Text(L("직접")).tag(2)
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: frictionSel) { _, sel in applyFrictionPreset(sel) }
+                .onChange(of: friction, initial: true) { _, f in syncFrictionPreset(f) }
                 NumberField(label: L("마찰계수"), value: $friction, unit: "°C", fractionDigits: 1)
             } footer: {
                 Text(L("믹싱 마찰로 오르는 온도. 손반죽 1~2°C, 스탠드 믹서 6~10°C — 본인 환경에 맞게 조정하세요."))
             }
             Section {
-                HStack {
+                LabeledContent {
+                    StatValue(value: String(format: "%.1f °C", water), size: 22)
+                } label: {
                     BilingualLabel(L("사용할 물 온도"), fr: "température de l'eau")
                         .fontWeight(.semibold)
-                    Spacer()
-                    StatValue(value: String(format: "%.1f °C", water), size: 22)
                 }
                 if water < 4 {
                     Label(L("얼음물이 필요합니다 — 얼음을 넣어 물 온도를 맞추세요."), systemImage: "snowflake")

@@ -4,6 +4,15 @@ const inputBase =
   'w-full min-h-[44px] rounded border border-line bg-white px-3 text-base ' +
   'focus-visible:ring-2 focus-visible:ring-brass focus-visible:outline-none';
 
+/**
+ * 숫자 입력 해석. 자릿수가 맞는 천 단위 구분("1,000", "12,345,678", "1,000.5")만 쉼표를 지우고,
+ * 그 밖의 쉼표는 소수점으로 본다("72,5", "0,125" — 쉼표 소수점 키패드). 해석할 수 없으면 NaN.
+ */
+export function parseDecimalInput(s: string): number {
+  if (/^[1-9]\d{0,2}(,\d{3})+(\.\d*)?$/.test(s)) return Number(s.replace(/,/g, ''));
+  return Number(s.replace(',', '.'));
+}
+
 function formatForEdit(v: number): string {
   if (!Number.isFinite(v)) return '';
   return String(Math.round(v * 1000) / 1000);
@@ -45,7 +54,7 @@ export function NumberField({
       onChange(min);
       return;
     }
-    const n = Number(trimmed.replace(',', '.'));
+    const n = parseDecimalInput(trimmed);
     if (Number.isFinite(n)) onChange(Math.max(min, n));
   };
 

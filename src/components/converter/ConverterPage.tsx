@@ -53,11 +53,25 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
   const suggestTarget = (d: DoughInput) =>
     setTargetHydrationPct(d.levain.hydration >= 0.75 ? 50 : 100);
 
-  const adoptInput = (n: string, d: DoughInput) => {
+  // 드롭다운이 아닌 경로(계산기 배합·변환기로 보내기)는 recipeId 없이 불러 선택 표시를 지운다
+  const adoptInput = (n: string, d: DoughInput, recipeId = '') => {
     setName(n);
     setInput(d);
     suggestTarget(d);
     setDistFlourId('');
+    setSelectedRecipeId(recipeId);
+  };
+  const loadRecipe = (r: Recipe) => adoptInput(r.name, doughInputFromRecipe(r), r.id);
+  const selectedRecipe = api.recipes.find((r) => r.id === selectedRecipeId);
+
+  // 모드 B의 불가능한 목표 조합(음수 밀가루·물)은 변환기에 들이지 않는다
+  const adoptCalcDough = () => {
+    const d = getCalcDough();
+    if (d.water < -1e-9 || d.flours.some((f) => f.grams < -1e-9)) {
+      toast('목표 조합이 불가능합니다 — 계산기에서 PFF를 낮추세요');
+      return;
+    }
+    adoptInput(calcName, d);
   };
 
   useEffect(() => {
@@ -117,11 +131,11 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
           <label className="block min-w-[200px] flex-1">
             <span className="mb-1 block text-xs font-medium text-ink/70">저장된 레시피 불러오기</span>
             <select
-              value={selectedRecipeId}
+              value={selectedRecipe ? selectedRecipeId : ''}
               onChange={(e) => {
                 const r = api.recipes.find((x) => x.id === e.target.value);
-                setSelectedRecipeId(e.target.value);
-                if (r) adoptInput(r.name, doughInputFromRecipe(r));
+                if (r) loadRecipe(r);
+                else setSelectedRecipeId('');
               }}
               className="min-h-[44px] w-full rounded border border-line bg-white px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
             >
@@ -133,7 +147,19 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
               ))}
             </select>
           </label>
-          <Button onClick={() => adoptInput(calcName, getCalcDough())}>계산기 배합 가져오기</Button>
+          {/* 이미 선택된 항목을 다시 골라도 select는 change를 보내지 않으므로 편집을 버리는 길을 따로 둔다 */}
+          {selectedRecipe && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                loadRecipe(selectedRecipe);
+                toast(`'${selectedRecipe.name}' 레시피를 다시 불러왔습니다`);
+              }}
+            >
+              다시 불러오기
+            </Button>
+          )}
+          <Button onClick={adoptCalcDough}>계산기 배합 가져오기</Button>
           <Button onClick={() => setEditOpen((v) => !v)}>
             {editOpen ? '편집 닫기' : '원본 직접 편집'}
           </Button>

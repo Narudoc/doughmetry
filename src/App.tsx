@@ -39,6 +39,7 @@ export default function App() {
     SETTINGS_KEY,
     () => ({ precision: 0.1, pctBasis: 'total' }),
     sanitizeSettings,
+    { syncTabs: true },
   );
   const [calc, setCalc] = usePersistedState<CalcState>(
     DRAFT_KEY,
@@ -70,7 +71,7 @@ export default function App() {
     <div className="flex min-h-screen flex-col">
       <header className="no-print bg-bottle text-paper">
         <div className="mx-auto w-full max-w-5xl px-4 pt-5">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h1 className="font-display text-2xl font-bold uppercase tracking-[0.2em]">
                 Doughmetry
@@ -79,7 +80,7 @@ export default function App() {
                 도우메트리 — 사워도우 레시피 계산기 · <span className="italic">pain au levain</span>
               </p>
             </div>
-            <div className="mt-1 flex flex-col items-end gap-1">
+            <div className="mt-1 flex flex-wrap gap-2 sm:flex-col sm:items-end sm:gap-1">
               <div
                 role="radiogroup"
                 aria-label="표시 자릿수"
@@ -92,7 +93,7 @@ export default function App() {
                     role="radio"
                     aria-checked={settings.precision === p}
                     onClick={() => setSettings({ ...settings, precision: p })}
-                    className={`min-h-[32px] rounded px-2.5 font-medium tabular-nums transition-colors motion-reduce:transition-none ${
+                    className={`min-h-[36px] whitespace-nowrap rounded px-2.5 font-medium tabular-nums transition-colors motion-reduce:transition-none ${
                       settings.precision === p ? 'bg-paper text-bottle' : 'text-paper/70 hover:text-paper'
                     }`}
                   >
@@ -118,7 +119,7 @@ export default function App() {
                     role="radio"
                     aria-checked={settings.pctBasis === b}
                     onClick={() => setSettings({ ...settings, pctBasis: b })}
-                    className={`min-h-[32px] rounded px-2.5 font-medium transition-colors motion-reduce:transition-none ${
+                    className={`min-h-[36px] whitespace-nowrap rounded px-2.5 font-medium transition-colors motion-reduce:transition-none ${
                       settings.pctBasis === b ? 'bg-paper text-bottle' : 'text-paper/70 hover:text-paper'
                     }`}
                   >

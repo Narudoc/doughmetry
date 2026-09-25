@@ -25,7 +25,8 @@ enum ConvMode: String, CaseIterable {
 struct ConverterView: View {
     @Environment(AppModel.self) private var model
 
-    @State private var name = "캉파뉴"
+    /// nil = 손대지 않은 기본 이름 — 보일 때 현재 언어로 옮긴다 (한국어 원문을 저장해 두면 영어 화면에 그대로 샌다)
+    @State private var name: String?
     @State private var input = CalcState.defaultDoughInput()
     @State private var targetHydrationPct: Double = 50
     /// 목표 프리셋 선택 — '직접'(2)도 실제 선택 가능
@@ -72,11 +73,17 @@ struct ConverterView: View {
                     } label: {
                         Label(L("저장"), systemImage: "square.and.arrow.down")
                     }
-                    .disabled(!isSuccess(result))
+                    // 르방 수분율 0 이하는 코덱 검증에서 탈락해 저장해도 다음 실행 때 사라진다
+                    .disabled(!isSuccess(result) || newHydration <= 0)
                 }
             }
             .sheet(isPresented: $showLoadSheet) {
+                // 모드 B의 불가능한 목표 조합(음수 밀가루·물)은 변환기에 들이지 않는다
+                let calcDough = model.calc.currentDough
+                let calcInfeasible =
+                    calcDough.water < -1e-9 || calcDough.flours.contains { $0.grams < -1e-9 }
                 ConverterLoadSheet(
+                    calcError: calcInfeasible ? L("목표 조합이 불가능합니다 — 계산기에서 PFF를 낮추세요") : nil,
                     onPickCalc: {
                         model.sendToConverter(
                             name: model.calc.name, input: model.calc.currentDough)
@@ -105,9 +112,11 @@ struct ConverterView: View {
         }
     }
 
+    private var displayName: String { name ?? L("캉파뉴") }
+
     private var suggestedSaveName: String {
         let type = L(targetHydrationPct >= 75 ? "리퀴드" : "뒤흐")
-        return "\(name) (\(type) \(Int(targetHydrationPct))%)"
+        return "\(displayName) (\(type) \(fmtCount(targetHydrationPct))%)"
     }
 
     private func isSuccess(_ result: ConvertResult) -> Bool {
@@ -137,10 +146,12 @@ struct ConverterView: View {
     @ViewBuilder
     private func sourceSection(sourceStats: DoughStats) -> some View {
         Section {
-            TextField(L("레시피 이름"), text: $name)
+            TextField(
+                L("레시피 이름"),
+                text: Binding(get: { displayName }, set: { name = $0 }))
             LabeledContent {
                 Text(
-                    "\(L(input.levain.hydration >= 0.75 ? "리퀴드" : "뒤흐")) \(Int((input.levain.hydration * 100).rounded()))% · \(fmtGrams(input.levain.grams, model.precision)) g"
+                    "\(L(input.levain.hydration >= 0.75 ? "리퀴드" : "뒤흐")) \(clampedInt(input.levain.hydration * 100))% · \(fmtGrams(input.levain.grams, model.precision)) g"
                 )
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -206,12 +217,13 @@ struct ConverterView: View {
             .pickerStyle(.segmented)
             targetPresetPicker
             NumberField(
-                label: L("목표 르방 수분율"), value: $targetHydrationPct, unit: "%", fractionDigits: 0)
+                label: L("목표 르방 수분율"), value: $targetHydrationPct, unit: "%",
+                minValue: 1, maxValue: 1000)
             if convMode == .fixedMass && input.flours.count > 1 {
                 Picker(L("밀가루 증감 배분"), selection: $distFlourId) {
                     Text(L("비례 배분")).tag("")
                     ForEach(input.flours) { f in
-                        Text(f.name.isEmpty ? L("이름 없음") : f.name).tag(f.id)
+                        Text(flourLabel(f)).tag(f.id)
                     }
                 }
             }
@@ -275,6 +287,8 @@ struct ConverterView: View {
 
 /// 변환기 소스 불러오기 시트 — 계산기 배합 또는 저장된 레시피
 struct ConverterLoadSheet: View {
+    /// 계산기 배합을 가져올 수 없는 이유 — 있으면 버튼을 막고 보여 준다
+    var calcError: String? = nil
     let onPickCalc: () -> Void
     let onPickRecipe: (Recipe) -> Void
 
@@ -290,6 +304,11 @@ struct ConverterLoadSheet: View {
                         dismiss()
                     } label: {
                         Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
+                    }
+                    .disabled(calcError != nil)
+                } footer: {
+                    if let calcError {
+                        Text(calcError).foregroundStyle(Color.danger)
                     }
                 }
                 if !model.recipes.isEmpty {

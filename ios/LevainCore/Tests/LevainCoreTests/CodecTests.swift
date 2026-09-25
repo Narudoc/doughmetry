@@ -79,6 +79,16 @@ struct CodecTests {
         #expect(fmtDate(iso: "2026-08-22T00:00:00Z").hasPrefix("2026."))
     }
 
+    @Test("이 버전보다 새 레시피 schemaVersion은 거부한다 (새 버전 앱의 형식)")
+    func rejectsNewerSchemaVersion() {
+        let json = """
+            {"schemaVersion":\(Recipe.currentSchemaVersion + 1),"name":"새 형식","flours":[{"grams":900}],
+             "water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}
+            """
+        #expect((try? RecipeCodec.importJSON(json).get()) == nil)
+        #expect(RecipeCodec.salvageRecipes(json).isEmpty)
+    }
+
     @Test("웹 내보내기 형식({app, recipes:[…]})을 읽는다")
     func webEnvelope() throws {
         let json = """

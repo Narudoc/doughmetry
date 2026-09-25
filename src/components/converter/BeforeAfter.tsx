@@ -19,6 +19,8 @@ interface Line {
 }
 
 const CHANGE_THRESHOLD = 0.05;
+/** 1 g 표시에서는 반올림하면 0이 되는 증감(+0 g)을 강조하지 않는다 (iOS deltaText와 동일) */
+const CHANGE_THRESHOLD_WHOLE_G = 0.5;
 
 /** 변환 전/후 좌우 대조 표 — 변경 값 강조 + 증감분 표시 */
 export function BeforeAfter({ result, inputBefore, precision }: Props) {
@@ -125,7 +127,9 @@ export function BeforeAfter({ result, inputBefore, precision }: Props) {
 
   const renderRow = (line: Line) => {
     const delta = line.after - line.before;
-    const changed = Math.abs(delta) > CHANGE_THRESHOLD;
+    const threshold =
+      line.unit === 'g' && precision === 1 ? CHANGE_THRESHOLD_WHOLE_G : CHANGE_THRESHOLD;
+    const changed = Math.abs(delta) >= threshold;
     return (
       <tr
         key={line.key}
@@ -143,8 +147,7 @@ export function BeforeAfter({ result, inputBefore, precision }: Props) {
         <td className="px-3 py-2 text-right">
           {changed ? (
             <span className="inline-block rounded bg-brass/10 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-brass">
-              {fmtSigned(delta, precision)}
-              {line.unit === 'g' ? ' g' : '%p'}
+              {line.unit === 'g' ? `${fmtSigned(delta, precision)} g` : `${fmtSigned(delta, 0.1)}%p`}
             </span>
           ) : (
             <span className="text-xs text-ink/40">—</span>

@@ -74,8 +74,9 @@ public enum RecipeCodec {
         guard let r = x as? [String: Any] else { return .bad(CodecError(.notAnObject)) }
 
         // v1 레시피는 v2로 마이그레이션
-        let version = (r["schemaVersion"] as? NSNumber)?.intValue
-        guard version == 1 || version == 2 else {
+        guard let version = (r["schemaVersion"] as? NSNumber)?.intValue,
+            (1...Recipe.currentSchemaVersion).contains(version)
+        else {
             return .bad(CodecError(.unsupportedSchemaVersion))
         }
         guard let name = r["name"] as? String,

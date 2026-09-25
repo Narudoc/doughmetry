@@ -9,9 +9,19 @@ struct ImportReviewSheet: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var input = CalcState.defaultDoughInput()
+    @State private var name: String
+    @State private var input: DoughInput
     @State private var showText = false
+    @State private var showDiscard = false
+
+    init(imported: ImportedRecipe, onSave: @escaping (_ name: String, _ input: DoughInput) -> Void) {
+        self.imported = imported
+        self.onSave = onSave
+        _name = State(initialValue: imported.name)
+        _input = State(initialValue: imported.input)
+    }
+
+    private var isEdited: Bool { name != imported.name || input != imported.input }
 
     var body: some View {
         let stats = computeStats(input)
@@ -57,23 +67,22 @@ struct ImportReviewSheet: View {
             .keyboardDoneButton()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(L("취소")) { dismiss() }
+                    Button(L("취소")) {
+                        if isEdited { showDiscard = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("저장")) {
-                        onSave(
-                            name.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? L("가져온 레시피") : name,
-                            input)
+                        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onSave(trimmed.isEmpty ? L("가져온 레시피") : trimmed, input)
                         dismiss()
                     }
                 }
             }
-            .onAppear {
-                name = imported.name
-                input = imported.input
-            }
+            .discardConfirmation(isPresented: $showDiscard) { dismiss() }
         }
+        // 인식 결과는 사진 인식을 다시 돌려야 되살릴 수 있다 — 쓸어내리기로는 닫히지 않고 취소 버튼으로만 닫힌다
+        .interactiveDismissDisabled()
     }
 }
 
@@ -82,7 +91,18 @@ struct TextImportSheet: View {
     let onSubmit: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
+    @State private var text: String
+    @State private var showDiscard = false
+    private let initialText: String
+
+    /// initialText — 인식에 실패한 텍스트를 고쳐 다시 분석할 때 채워 둔다
+    init(initialText: String = "", onSubmit: @escaping (String) -> Void) {
+        self.onSubmit = onSubmit
+        self.initialText = initialText
+        _text = State(initialValue: initialText)
+    }
+
+    private var hasText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -101,16 +121,30 @@ struct TextImportSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button(L("취소")) { dismiss() }
+                        Button(L("취소")) {
+                            if hasText && text != initialText { showDiscard = true } else { dismiss() }
+                        }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(L("분석")) {
                             dismiss()
                             onSubmit(text)
                         }
-                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!hasText)
                     }
                 }
+                .discardConfirmation(isPresented: $showDiscard) { dismiss() }
+        }
+        .interactiveDismissDisabled(hasText)
+    }
+}
+
+extension View {
+    /// 편집 내용이 있는 시트의 취소 확인 — 시트의 취소 버튼이 편집 여부를 보고 isPresented를 켠다
+    func discardConfirmation(isPresented: Binding<Bool>, onDiscard: @escaping () -> Void) -> some View {
+        confirmationDialog(L("변경 사항을 버릴까요?"), isPresented: isPresented, titleVisibility: .visible) {
+            Button(L("버리기"), role: .destructive, action: onDiscard)
+            Button(L("계속 편집"), role: .cancel) {}
         }
     }
 }

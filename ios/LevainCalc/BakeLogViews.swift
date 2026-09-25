@@ -19,7 +19,7 @@ struct StarRating: View {
         .allowsHitTesting(interactive)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("별점"))
-        .accessibilityValue(rating.map { "\($0)/5" } ?? L("없음"))
+        .accessibilityValue(rating.map { LF("별 5개 중 %d개", $0) } ?? L("없음"))
         .accessibilityAdjustableAction { direction in
             guard interactive else { return }
             switch direction {
@@ -40,9 +40,27 @@ struct BakeLogSheet: View {
     let onSave: (BakeLog) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var bakedAt = Date()
+    @State private var bakedAt: Date
     @State private var rating: Int?
-    @State private var note = ""
+    @State private var note: String
+    @State private var showDiscard = false
+    /// 연 시점의 날짜 — 새 기록은 Date()라 뷰가 다시 만들어질 때마다 달라지므로 상태로 한 번만 잡는다
+    @State private var initialBakedAt: Date
+
+    init(recipeId: String, existing: BakeLog?, onSave: @escaping (BakeLog) -> Void) {
+        self.recipeId = recipeId
+        self.existing = existing
+        self.onSave = onSave
+        let date = existing.flatMap { parseISO($0.bakedAt) } ?? Date()
+        _bakedAt = State(initialValue: date)
+        _initialBakedAt = State(initialValue: date)
+        _rating = State(initialValue: existing?.rating)
+        _note = State(initialValue: existing?.note ?? "")
+    }
+
+    private var isEdited: Bool {
+        bakedAt != initialBakedAt || rating != existing?.rating || note != (existing?.note ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -65,7 +83,9 @@ struct BakeLogSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(L("취소")) { dismiss() }
+                    Button(L("취소")) {
+                        if isEdited { showDiscard = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("저장")) {
@@ -83,15 +103,10 @@ struct BakeLogSheet: View {
                     }
                 }
             }
-            .onAppear {
-                if let existing {
-                    bakedAt = parseISO(existing.bakedAt) ?? Date()
-                    rating = existing.rating
-                    note = existing.note
-                }
-            }
+            .discardConfirmation(isPresented: $showDiscard) { dismiss() }
         }
         .presentationDetents([.medium, .large])
+        .interactiveDismissDisabled(isEdited)
     }
 }
 
@@ -101,7 +116,14 @@ struct NoteEditSheet: View {
     let onSave: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
+    @State private var text: String
+    @State private var showDiscard = false
+
+    init(initial: String, onSave: @escaping (String) -> Void) {
+        self.initial = initial
+        self.onSave = onSave
+        _text = State(initialValue: initial)
+    }
 
     var body: some View {
         NavigationStack {
@@ -120,18 +142,21 @@ struct NoteEditSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button(L("취소")) { dismiss() }
+                        Button(L("취소")) {
+                            if text != initial { showDiscard = true } else { dismiss() }
+                        }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(L("저장")) {
-                            onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                            if text != initial { onSave(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
                             dismiss()
                         }
                     }
                 }
-                .onAppear { text = initial }
+                .discardConfirmation(isPresented: $showDiscard) { dismiss() }
         }
         .presentationDetents([.medium, .large])
+        .interactiveDismissDisabled(text != initial)
     }
 }
 

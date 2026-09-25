@@ -1,27 +1,57 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { newId } from '../lib/id';
-import { loadRecipes, persistRecipes } from '../lib/storage';
+import {
+  RECIPES_KEY,
+  loadRecipeList,
+  mergeImported,
+  reloadRecipes,
+  updateRecipes,
+} from '../lib/storage';
 import type { Recipe } from '../types';
+
+export interface ImportSummary {
+  added: number;
+  updated: number;
+  skipped: number;
+}
 
 export interface RecipesApi {
   recipes: Recipe[];
+  /** 마지막 변경을 이 브라우저 저장소에 쓰지 못했다 — 목록에는 있지만 새로 고치면 사라진다 */
+  writeFailed: boolean;
+  /** 쓰기 실패 횟수 — 실패할 때마다 늘어나므로 알림을 띄우는 데 쓴다 */
+  writeFailCount: number;
   /** upsert — 같은 id가 있으면 덮어쓰기(createdAt 유지), 없으면 추가 */
   save(recipe: Recipe): void;
   rename(id: string, name: string): void;
   duplicate(id: string): void;
   remove(id: string): void;
-  importAll(items: Recipe[]): void;
+  /** id 기준 병합 — 규칙은 storage.mergeImported */
+  importAll(items: Recipe[]): ImportSummary;
 }
 
 export function useRecipes(): RecipesApi {
-  const [recipes, setRecipes] = useState<Recipe[]>(() => loadRecipes());
+  const [list, setList] = useState(() => loadRecipeList());
+  const latest = useRef(list);
+  const [writeFailCount, setWriteFailCount] = useState(0);
 
-  const mutate = useCallback((fn: (prev: Recipe[]) => Recipe[]) => {
-    setRecipes((prev) => {
-      const next = fn(prev);
-      persistRecipes(next);
-      return next;
-    });
+  // 저장(부수 효과)과 newId가 두 번 실행되지 않도록 setState 업데이터 밖에서 처리한다 (StrictMode)
+  const mutate = useCallback((fn: (current: Recipe[]) => Recipe[]) => {
+    const next = updateRecipes(fn, latest.current);
+    latest.current = next;
+    setList(next);
+    if (!next.persisted) setWriteFailCount((n) => n + 1);
+  }, []);
+
+  // 다른 탭에서 바뀐 목록을 화면에 반영 (key가 null이면 저장소 전체가 비워진 것)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== RECIPES_KEY && e.key !== null) return;
+      latest.current = reloadRecipes(latest.current);
+      setList(latest.current);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   const save = useCallback(
@@ -78,20 +108,26 @@ export function useRecipes(): RecipesApi {
   );
 
   const importAll = useCallback(
-    (items: Recipe[]) => {
+    (items: Recipe[]): ImportSummary => {
+      let summary: ImportSummary = { added: 0, updated: 0, skipped: 0 };
       mutate((prev) => {
-        const ids = new Set(prev.map((p) => p.id));
-        const merged = [...prev];
-        for (const item of items) {
-          const id = ids.has(item.id) ? newId() : item.id;
-          ids.add(id);
-          merged.push({ ...item, id });
-        }
+        const { recipes: merged, ...counts } = mergeImported(prev, items);
+        summary = counts;
         return merged;
       });
+      return summary;
     },
     [mutate],
   );
 
-  return { recipes, save, rename, duplicate, remove, importAll };
+  return {
+    recipes: list.recipes,
+    writeFailed: !list.persisted,
+    writeFailCount,
+    save,
+    rename,
+    duplicate,
+    remove,
+    importAll,
+  };
 }

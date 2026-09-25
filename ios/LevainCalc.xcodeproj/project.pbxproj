@@ -92,7 +92,7 @@
 				};
 			};
 			buildConfigurationList = AB10000E29AA00010000000E /* Build configuration list for PBXProject "LevainCalc" */;
-			developmentRegion = ko;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				ko,

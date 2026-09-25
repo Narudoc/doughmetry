@@ -19,7 +19,10 @@ export function rebasePct(stats: DoughStats, pctOfTotal: number, basis: PctBasis
   return added > 1e-9 ? (pctOfTotal * stats.totalFlour) / added : 0;
 }
 
-/** 르방 행의 % — 총 밀가루 기준일 땐 PFF, 베이커스 퍼센트일 땐 르방 무게/첨가 밀가루 */
+/**
+ * 계산기 입력 폼의 르방 % 전용 — 총 밀가루 기준일 땐 PFF, 베이커스 퍼센트일 땐 르방 무게/첨가 밀가루.
+ * 배합표의 르방 행은 uiPct(르방 무게) + '↳ 속 밀가루 (PFF)' 보조 행으로 나눠 보인다 (iOS와 동일)
+ */
 export function uiLevainPct(stats: DoughStats, levainGrams: number, basis: PctBasis): number {
   return basis === 'added' ? uiPct(stats, levainGrams, basis) : stats.pffPct;
 }

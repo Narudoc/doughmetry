@@ -1,6 +1,7 @@
 import Foundation
 import LevainCore
 import Observation
+import SwiftUI
 
 /// 인앱 언어 설정 — 한국어(기본) / 영어.
 /// UI 문자열은 한국어 원문을 키로 쓰고, 영어일 때만 테이블에서 치환한다.
@@ -10,11 +11,24 @@ enum AppLanguage: String, CaseIterable {
     case ko
     case en
 
+    /// "ko-KR", "en_GB" 같은 언어 태그 → 앱 언어 (한·영 외는 nil)
+    init?(languageTag: String) {
+        self.init(rawValue: String(languageTag.prefix { $0 != "-" && $0 != "_" }).lowercased())
+    }
+
     var label: String {
         switch self {
         case .ko: return "한국어"
         case .en: return "English"
         }
+    }
+
+    /// 날짜·시각 서식과 DatePicker의 로캘. 시스템 로캘(Locale.current)은 앱 언어를 모른다.
+    /// 언어가 같으면 기기 로캘을 그대로 써서 지역 서식·24시간제 설정을 살리고, 다르면 언어만 바꾼다
+    var locale: Locale {
+        let device = Locale.autoupdatingCurrent
+        if device.language.languageCode?.identifier == rawValue { return device }
+        return Locale(languageCode: Locale.LanguageCode(rawValue), languageRegion: device.region)
     }
 }
 
@@ -23,17 +37,35 @@ final class Lang {
     static let shared = Lang()
 
     var current: AppLanguage {
-        didSet { UserDefaults.standard.set(current.rawValue, forKey: "appLanguage") }
+        didSet {
+            let defaults = UserDefaults.standard
+            defaults.set(current.rawValue, forKey: "appLanguage")
+            // 앱 도메인의 AppleLanguages = iOS의 앱별 언어. 검색 취소·사진 선택처럼 UIKit이 그리는
+            // 문자열은 이것만 따르고, 다음 실행부터 적용된다. 공유 시트의 활동 이름(미리 알림·더 보기·
+            // 파일에 저장)은 시스템이 기기 언어로 채워 이것으로도 바뀌지 않는다
+            defaults.set([current.rawValue], forKey: "AppleLanguages")
+        }
     }
 
     private init() {
-        if let raw = UserDefaults.standard.string(forKey: "appLanguage"),
+        let defaults = UserDefaults.standard
+        // 인앱 선택은 AppleLanguages에도 같이 쓰므로, 둘이 다르면 그 뒤에 iOS 설정 → 앱 → 언어에서 바꾼 것이다.
+        // 영속 도메인끼리만 비교한다 — 실행 인자(-appLanguage)는 저장값을 바꾸지 않아야 한다
+        if let domain = Bundle.main.bundleIdentifier.flatMap(defaults.persistentDomain(forName:)),
+            let saved = domain["appLanguage"] as? String,
+            let picked = (domain["AppleLanguages"] as? [String])?.first.flatMap(AppLanguage.init(languageTag:)),
+            picked.rawValue != saved
+        {
+            defaults.set(picked.rawValue, forKey: "appLanguage")
+        }
+        if let raw = defaults.string(forKey: "appLanguage"),
             let lang = AppLanguage(rawValue: raw)
         {
             current = lang
         } else {
-            // 최초 실행: 시스템 언어를 따른다
-            current = (Locale.preferredLanguages.first ?? "").hasPrefix("ko") ? .ko : .en
+            // 최초 실행: iOS가 번들에 고른 현지화를 따른다 — 시스템이 그리는 문자열(편집·취소·삭제 등)과
+            // 같은 언어가 되도록. developmentRegion(en)과 한 쌍이다: 그것이 ko면 한/영 외 기기가 한국어가 된다
+            current = Bundle.main.preferredLocalizations.first == "ko" ? .ko : .en
         }
     }
 }
@@ -49,6 +81,45 @@ func LF(_ ko: String, _ args: CVarArg...) -> String {
     String(format: L(ko), arguments: args)
 }
 
+/// 개수 템플릿 (%d 하나) — 영어는 1일 때 단수형(enOne)을 쓴다. 한국어는 단·복수 형태가 같다
+func LF(_ ko: String, count: Int) -> String {
+    if Lang.shared.current == .en, count == 1, let one = enOne[ko] {
+        return String(format: one, count)
+    }
+    return LF(ko, count)
+}
+
+/// 밀가루 행 이름. 목표 역산이 붙이는 이름 "밀가루"(기존 저장본·웹 JSON 포함)도 빈 이름처럼 현재 언어로 보인다
+func flourLabel(_ flour: Flour) -> String {
+    flour.name.isEmpty || flour.name == "밀가루" ? L("밀가루") : flour.name
+}
+
+/// 시각 (오전 7:30 / 7:30 AM) — `Date.formatted()`의 기본 로캘은 앱 언어가 아니라 기기 로캘이다
+func fmtTime(_ date: Date) -> String {
+    date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(Lang.shared.current.locale))
+}
+
+/// 월·일 (9. 27. / 9/27)
+func fmtMonthDay(_ date: Date) -> String {
+    date.formatted(Date.FormatStyle.dateTime.month(.defaultDigits).day().locale(Lang.shared.current.locale))
+}
+
+/// EditButton 대체 — 시스템 EditButton의 "편집/완료"는 앱 언어가 아니라 번들 현지화를 따른다
+struct LocalizedEditButton: View {
+    @Environment(\.editMode) private var editMode
+
+    var body: some View {
+        let isEditing = editMode?.wrappedValue.isEditing == true
+        Button(isEditing ? L("완료") : L("편집")) {
+            withAnimation { editMode?.wrappedValue = isEditing ? .inactive : .active }
+        }
+    }
+}
+
+private let enOne: [String: String] = [
+    "%d개의 레시피를 가져왔습니다.": "Imported %d recipe.",
+]
+
 private let en: [String: String] = [
     // 탭 · 공통
     "계산기": "Calculator",
@@ -58,6 +129,11 @@ private let en: [String: String] = [
     "취소": "Cancel",
     "닫기": "Close",
     "완료": "Done",
+    "편집": "Edit",
+    "변경 사항을 버릴까요?": "Discard changes?",
+    "버리기": "Discard",
+    "계속 편집": "Keep Editing",
+    "삭제": "Delete",
     "확인": "OK",
     "직접": "Custom",
     "이름": "Name",
@@ -115,6 +191,7 @@ private let en: [String: String] = [
     "새 배합": "New recipe",
     "새 배합을 시작할까요? 저장하지 않은 입력은 지워집니다.":
         "Start a new recipe? Unsaved input will be cleared.",
+    "레시피를 불러올까요? 저장하지 않은 입력은 지워집니다.": "Load this recipe? Unsaved input will be cleared.",
     "빈 배합으로 시작": "Start empty",
     "예시 배합으로 시작 (캉파뉴)": "Start from example (campagne)",
     "입력 모드": "Input mode",
@@ -151,8 +228,9 @@ private let en: [String: String] = [
     "기타": "Other",
     "액체": "Liquid",
     "밀가루": "Flour",
-    "분할 %d개 — 개당": "Divide by %d — each",
-    "%d개 × %@ g": "%d × %@ g",
+    "분할 %@개 — 개당": "Divide by %@ — each",
+    "%@개 × %@ g": "%@ × %@ g",
+    "공유": "Share",
 
     // 저장 시트
     "레시피 저장": "Save recipe",
@@ -194,6 +272,8 @@ private let en: [String: String] = [
     "최대 르방 질량 적용 — %@ g": "Apply max levain mass — %@ g",
     "ΔF = %@ g — 르방 속 밀가루 증감분을 첨가 밀가루에서 빼고 본반죽 물에 더했습니다.":
         "ΔF = %@ g — the change in levain flour was taken from added flour and added to mixing water.",
+    "목표 조합이 불가능합니다 — 계산기에서 PFF를 낮추세요":
+        "This target combination is impossible — lower PFF in the calculator",
 
     // 레시피 탭
     "저장된 레시피가 없습니다": "No saved recipes",
@@ -206,6 +286,13 @@ private let en: [String: String] = [
     "가져오기 실패": "Import failed",
     "가져오기 완료": "Import complete",
     "%d개의 레시피를 가져왔습니다.": "Imported %d recipes.",
+    "%d개를 가져왔고, %d개는 기기에 같거나 더 새로운 버전이 있어 건너뛰었습니다.":
+        "Imported %d; skipped %d because this device already has the same or a newer version.",
+    "가져오는 중 오류가 발생했습니다. 다시 시도해 주세요.": "Something went wrong while importing. Please try again.",
+    "'%@' 레시피를 삭제할까요?": "Delete the recipe '%@'?",
+    "베이킹 기록 %d개도 함께 삭제되며 되돌릴 수 없습니다.":
+        "This recipe's bake logs (%d) will also be deleted. This can't be undone.",
+    "되돌릴 수 없습니다.": "This can't be undone.",
     "파일을 읽을 수 없습니다": "Could not read the file",
     "계산기로 불러오기": "Load into calculator",
 
@@ -227,7 +314,7 @@ private let en: [String: String] = [
     "levain.grams가 0 이상의 숫자가 아닙니다": "levain.grams is not a number ≥ 0",
     "levain.hydration이 0보다 큰 숫자가 아닙니다 (소수, 예: 1.0)":
         "levain.hydration is not a number > 0 (decimal, e.g. 1.0)",
-    "JSON 파싱 실패: %@": "JSON parse failed: %@",
+    "JSON 파싱 실패 — 올바른 JSON 파일이 아닙니다": "JSON parse failed — this is not a valid JSON file",
     "recipes 필드가 배열이 아닙니다": "The recipes field is not an array",
     "레시피 목록을 찾을 수 없습니다": "No recipe list found",
     "가져올 레시피가 없습니다": "No recipes to import",
@@ -249,8 +336,9 @@ private let en: [String: String] = [
     "가져온 레시피": "Imported recipe",
     "이미지를 읽을 수 없습니다": "Could not read the image",
     "이미지에서 텍스트를 찾지 못했습니다": "No text found in the image",
-    "재료를 인식하지 못했습니다. 더 선명한 사진이나 정리된 텍스트로 다시 시도해 주세요.":
-        "Could not recognize any ingredients. Try a clearer photo or tidier text.",
+    "재료를 인식하지 못했습니다. 재료와 g 수량이 줄 단위로 적힌 텍스트가 필요합니다.":
+        "Could not recognize any ingredients. The text needs one ingredient per line with its amount in grams.",
+    "텍스트 편집": "Edit text",
 
     // 베이킹 로그 · 노트
     "노트 추가": "Add a note",
@@ -261,6 +349,7 @@ private let en: [String: String] = [
     "기록 편집": "Edit bake",
     "구운 날짜": "Baked on",
     "별점": "Rating",
+    "별 5개 중 %d개": "%d of 5 stars",
     "메모": "Notes",
     "이 레시피로 구운 날짜·별점·메모를 남겨 다음 굽기에 참고하세요.":
         "Log each bake — date, rating, notes — to refer to next time.",
@@ -281,6 +370,10 @@ private let en: [String: String] = [
     "대기 중": "Ready",
     "레시피·베이킹 로그를 iCloud로 기기 간 동기화합니다. 충돌 시 최신 수정본이 유지됩니다.":
         "Syncs recipes and bake logs across your devices via iCloud. On conflict, the most recent edit wins.",
+    "동기화하지 못했습니다 — 다음에 다시 시도합니다": "Sync failed — will try again later",
+    "새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다":
+        "Some data was saved by a newer version of the app — update the app on this device to sync",
+    "기기에 저장하지 못했습니다 — 저장 공간을 확인하세요": "Couldn't save to this device — check your storage space",
 
     // 도구 탭
     "도구": "Tools",
@@ -363,12 +456,19 @@ private let en: [String: String] = [
         "You'll be notified when each stage ends, even with the app closed.",
     "알림 권한이 꺼져 있습니다": "Notifications are off",
     "설정 앱 → 알림에서 이 앱의 알림을 허용해 주세요.": "Allow notifications for this app in Settings → Notifications.",
+    "모든 단계가 이미 지났습니다": "All stages are already past",
+    "시작 시각을 바꾸거나 '지금 시작'을 누른 뒤 다시 예약하세요.":
+        "Change the start time or tap 'Start now', then schedule again.",
+    "알림을 예약하지 못했습니다": "Couldn't schedule alerts",
+    "잠시 후 다시 시도하세요.": "Please try again in a moment.",
     "내일": "Tomorrow",
     "%d시간 %d분": "%dh %dm",
     "%d분": "%d min",
 
     // 설정
     "언어": "Language",
+    "검색 같은 시스템 화면은 앱을 다시 열면 바뀝니다. 공유 시트의 일부 항목은 기기 언어를 따릅니다.":
+        "System screens such as search switch the next time you open the app. Some share-sheet items follow the device language.",
     "% 표기": "Percent display",
     "총 밀가루 기준": "Of total flour",
     "베이커스 퍼센트": "Baker's %",
@@ -415,8 +515,9 @@ extension CodecError {
             return L("levain.grams가 0 이상의 숫자가 아닙니다")
         case .levainHydrationInvalid:
             return L("levain.hydration이 0보다 큰 숫자가 아닙니다 (소수, 예: 1.0)")
-        case .jsonParse(let detail):
-            return LF("JSON 파싱 실패: %@", detail)
+        case .jsonParse:
+            // detail은 시스템 localizedDescription — 기기 언어로 나오고 형식 오류 외의 정보도 없다
+            return L("JSON 파싱 실패 — 올바른 JSON 파일이 아닙니다")
         case .recipesFieldNotArray:
             return L("recipes 필드가 배열이 아닙니다")
         case .noRecipeList:

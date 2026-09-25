@@ -1,5 +1,6 @@
 import LevainCore
 import SwiftUI
+import UIKit
 
 struct CalculatorView: View {
     @Environment(AppModel.self) private var model
@@ -7,6 +8,9 @@ struct CalculatorView: View {
     @State private var showSave = false
     @State private var savedFeedback = false
     @State private var showResetDialog = false
+    @State private var keyboardVisible = false
+    /// 저장하지 않은 입력이 있을 때 고른 레시피 — 확인 뒤에만 불러온다
+    @State private var pendingLoad: Recipe?
 
     var body: some View {
         @Bindable var model = model
@@ -35,7 +39,7 @@ struct CalculatorView: View {
                     Section(L("분할")) {
                         NumberField(
                             label: L("분할 개수 (0 = 사용 안 함)"), value: $model.calc.pieces,
-                            unit: L("개"), fractionDigits: 0)
+                            unit: L("개"), maxValue: 1000, integer: true)
                     }
                 } else {
                     TargetFormSections(target: $model.calc.target)
@@ -53,7 +57,11 @@ struct CalculatorView: View {
                         Menu {
                             ForEach(model.recipes) { recipe in
                                 Button(recipe.name) {
-                                    model.loadIntoCalculator(recipe)
+                                    if model.calcIsDirty {
+                                        pendingLoad = recipe
+                                    } else {
+                                        model.loadIntoCalculator(recipe)
+                                    }
                                 }
                             }
                         } label: {
@@ -74,10 +82,11 @@ struct CalculatorView: View {
                     } label: {
                         Label(L("저장"), systemImage: "square.and.arrow.down")
                     }
-                    .disabled(infeasible)
+                    // 르방 수분율 0 이하는 코덱 검증에서 탈락해 저장해도 다음 실행 때 사라진다 (이전 draft 대비)
+                    .disabled(infeasible || dough.levain.hydration <= 0)
                 }
             }
-            .keyboardDoneButton()
+            // keyboardDoneButton()을 달지 않는다 — 편집 중엔 아래 요약 바가 완료를 보인다 (내비게이션 바에 완료가 둘이 된다)
             .confirmationDialog(
                 L("새 배합을 시작할까요? 저장하지 않은 입력은 지워집니다."),
                 isPresented: $showResetDialog, titleVisibility: .visible
@@ -90,11 +99,30 @@ struct CalculatorView: View {
                 }
                 Button(L("취소"), role: .cancel) {}
             }
+            .confirmationDialog(
+                L("레시피를 불러올까요? 저장하지 않은 입력은 지워집니다."),
+                isPresented: Binding(
+                    get: { pendingLoad != nil }, set: { if !$0 { pendingLoad = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingLoad
+            ) { recipe in
+                Button(L("불러오기"), role: .destructive) { model.loadIntoCalculator(recipe) }
+                Button(L("취소"), role: .cancel) {}
+            }
             .safeAreaInset(edge: .bottom) {
-                SummaryBar(stats: stats, pieces: pieces, precision: model.precision) {
+                SummaryBar(
+                    stats: stats, pieces: pieces, precision: model.precision,
+                    isEditing: keyboardVisible
+                ) {
                     showTable = true
                 }
             }
+            .onReceive(
+                NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+            ) { _ in keyboardVisible = true }
+            .onReceive(
+                NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+            ) { _ in keyboardVisible = false }
             .sheet(isPresented: $showTable) {
                 BakersTableSheet(
                     name: model.calc.name, input: dough, stats: stats, pieces: pieces,
@@ -108,7 +136,8 @@ struct CalculatorView: View {
                     initialName: model.calc.name,
                     initialTags: loaded?.tags ?? [],
                     initialNote: loaded?.note ?? "",
-                    allowOverwrite: loaded != nil
+                    allowOverwrite: loaded != nil,
+                    loadedName: loaded?.name
                 ) { name, tags, note, overwrite in
                     let id = overwrite ? (loaded?.id ?? newId()) : newId()
                     let now = isoNow()
@@ -122,6 +151,7 @@ struct CalculatorView: View {
                     model.save(recipe)
                     model.calc.name = name
                     model.calc.recipeId = id
+                    model.markCalcSaved()
                     savedFeedback.toggle()
                 }
             }
@@ -167,7 +197,9 @@ struct TargetFormSections: View {
             }
             .pickerStyle(.segmented)
             if target.byPieces {
-                NumberField(label: L("분할 개수"), value: $target.pieces, unit: L("개"), fractionDigits: 0)
+                NumberField(
+                    label: L("분할 개수"), value: $target.pieces, unit: L("개"),
+                    maxValue: 1000, integer: true)
                 NumberField(label: L("개당 무게"), value: $target.pieceWeight)
                 HStack {
                     Text(L("총 반죽 무게")).foregroundStyle(.secondary)
@@ -182,7 +214,9 @@ struct TargetFormSections: View {
             NumberField(label: L("총 수분율"), value: $target.hydrationPct, unit: "%")
             NumberField(label: L("소금"), value: $target.saltPct, unit: "%")
             NumberField(label: "PFF", value: $target.pffPct, unit: "%")
-            NumberField(label: L("르방 수분율"), value: $target.levainHydrationPct, unit: "%", fractionDigits: 0)
+            NumberField(
+                label: L("르방 수분율"), value: $target.levainHydrationPct, unit: "%",
+                minValue: 1, maxValue: 1000)
         } header: {
             Text(L("비율 (총 밀가루 기준)"))
         } footer: {

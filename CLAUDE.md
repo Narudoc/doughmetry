@@ -31,6 +31,7 @@ npm run build    # tsc --noEmit && vite build
 - 액체 재료(liquids)는 `waterRatio`(소수)만큼 수분으로 계산. 프리셋: 우유 0.88, 계란(전란) 0.76 — USDA FoodData Central per 100g 기준 (`LIQUID_PRESETS`). 지방 함량은 반영하지 않음.
 - 이스트: `IDY = 생이스트 × 0.4` (`IDY_FACTOR`, 사용자 지정 비율). `yeast.grams`는 선택한 타입 기준 실제 투입량. 무게·%에만 반영, 수분율에는 미반영.
 - 내부 계산은 full precision, 반올림은 표시 계층([src/lib/format.ts](src/lib/format.ts))에서만 한다 (0.1g/1g 설정).
+- 표시 반올림은 JS `toFixed`와 글자 하나까지 같아야 한다 — [Format.swift](ios/LevainCore/Sources/LevainCore/Format.swift)의 `toFixed`가 그 이식본(정확한 .5 동률만 0에서 먼 쪽으로). 한쪽을 바꾸면 FormatTests.swift ↔ format.test.ts를 함께 고칠 것.
 - 르방 변환(질량 고정): `ΔF = L/(1+h_new) − L/(1+h_old)`를 첨가 밀가루에서 빼고 **본반죽 물**에 더한다. 바시나주·액체·이스트는 고정. → 총 밀가루·총 물·총 수분율·총 반죽 무게 보존, PFF는 변함. 물 쪽 변환 한도는 조정 가능 풀(본반죽 물 + `W_lev`) 기준.
 - 르방 변환(PFF 고정): `F_lev` 고정, `L_new = F_lev × (1+h_new)`, 본반죽 물이 보정. → 르방 질량과 본반죽 물만 변하고 나머지 지표는 보존.
 - 기타 재료(extras)는 무게에만 합산하고 수분 계산에서 제외 — 수분이 있는 재료는 liquids로.
@@ -63,8 +64,11 @@ npm run build    # tsc --noEmit && vite build
 - SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+, iPhone 전용.
 - 계산 코어는 [ios/LevainCore/Sources/LevainCore/Dough.swift](ios/LevainCore/Sources/LevainCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
 - 레시피 JSON 스키마는 웹과 완전 호환 (내보내기/가져오기 양방향). 스키마 변경 시 Codec.swift의 검증·마이그레이션도 함께.
+- JSON 가져오기 병합 규칙은 웹 `mergeImported`([storage.ts](src/lib/storage.ts)) ↔ iOS `LibrarySync.importable`이 같다: 없는 id는 추가, 같은 id는 가져온 `updatedAt`이 같거나 새로울 때만 교체(로컬 `createdAt` 유지). 시각 비교는 웹의 ISO 문법·밀리초 기준 — 한쪽을 바꾸면 양쪽 테스트를 함께.
+- 사진 OCR 조각 → 줄 재조립은 [OCRLayout.swift](ios/LevainCore/Sources/LevainCore/OCRLayout.swift) (재료 | 만드는 법 두 단 카드 분리 포함, iOS 전용).
+- 앱 안 한/영 언어 선택은 사용자 요구라 유지한다 (iOS 앱별 언어 설정으로 대체하지 말 것). 고른 언어는 루트의 `.environment(\.locale, …)`로 날짜·시간 표시까지 따른다. 사용자에게 보이는 문자열은 전부 `L()`/`LF()`로 쓰고 [Localization.swift](ios/LevainCalc/Localization.swift) 영어 사전에 넣을 것.
 - 코어 검증: `cd ios/LevainCore && swift test` (Xcode 필요) 또는 `swift run levain-core-check` (CLT만으로 가능).
-- 저장소는 단일 `library.json`(`LibraryDocument`: recipes + logs(베이킹 로그) + deleted(묘비)). iCloud 동기화 병합은 [LibrarySync.swift](ios/LevainCore/Sources/LevainCore/LibrarySync.swift) — **모든 변이는 `updatedAt`을 갱신하고 삭제는 묘비를 남길 것** (안 그러면 다른 기기에서 되살아나거나 편집이 밀린다). 베이킹 로그는 iOS 전용 기능 (웹 미포팅).
+- 저장소는 단일 `library.json`(`LibraryDocument`: recipes + logs(베이킹 로그) + deleted(묘비)). iCloud 동기화 병합은 [LibrarySync.swift](ios/LevainCore/Sources/LevainCore/LibrarySync.swift) — **모든 변이는 `updatedAt`을 갱신하고 삭제는 묘비를 남길 것** (안 그러면 다른 기기에서 되살아나거나 편집이 밀린다). 베이킹 로그는 iOS 전용 기능 (웹 미포팅). Recipe·BakeLog·Tombstone 또는 LibraryDocument(새 최상위 키)에 필드를 추가하면 `LibraryDocument.currentSchemaVersion`을 반드시 올릴 것 — 옛 버전 앱은 자기보다 큰 버전(또는 레시피 schemaVersion)의 iCloud 문서를 보면 합치지도 쓰지도 않는다 (`LibrarySync.decodeReport`). 안 올리면 옛 앱이 모르는 필드를 버린 채 덮어쓴다.
 
 ## iOS 전용 기능 (웹 미포팅 — 웹에 옮길 때 iOS 코어 규칙을 그대로 이식)
 

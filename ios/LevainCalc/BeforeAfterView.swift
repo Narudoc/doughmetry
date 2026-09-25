@@ -7,6 +7,15 @@ struct BeforeAfterSections: View {
     let result: ConvertSuccess
     let precision: Precision
 
+    @ScaledMetric(relativeTo: .caption) private var deltaWidth: CGFloat = 56
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// 접근성 글자 크기에선 이름을 위, 전후 수치를 아랫줄로 — 한 줄에 두면 이름과 수치가 쪼개진다
+    private var rowLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+    }
+
     private func deltaText(_ before: Double, _ after: Double) -> String? {
         let d = after - before
         guard abs(d) >= (precision == .whole ? 0.5 : 0.05) else { return nil }
@@ -14,25 +23,46 @@ struct BeforeAfterSections: View {
     }
 
     private func compareRow(_ name: String, _ before: Double, _ after: Double) -> some View {
-        HStack {
+        let delta = deltaText(before, after)
+        return rowLayout {
             Text(name)
-            Spacer()
-            Text(fmtGrams(before, precision))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            Image(systemName: "arrow.right")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            Text(fmtGrams(after, precision))
-                .monospacedDigit()
-                .foregroundStyle(Color.brass)
-                .fontWeight(.semibold)
-            Text(deltaText(before, after) ?? "")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack {
+                    Spacer(minLength: 8)
+                    Text(fmtGrams(before, precision))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Image(systemName: "arrow.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(fmtGrams(after, precision))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.brass)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    if !typeSize.isAccessibilitySize {
+                        deltaLabel(delta ?? "")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(width: deltaWidth, alignment: .trailing)
+                    }
+                }
+                // 접근성 크기에선 증감을 아랫줄로 — 전후 수치와 한 줄에 두면 넷 다 잘린다
+                if typeSize.isAccessibilitySize, let delta {
+                    deltaLabel(delta)
+                }
+            }
         }
+    }
+
+    private func deltaLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
     }
 
     var body: some View {
@@ -40,7 +70,7 @@ struct BeforeAfterSections: View {
             ForEach(Array(result.output.flours.enumerated()), id: \.element.id) { idx, f in
                 let before = input.flours.first { $0.id == f.id }?.grams
                     ?? (idx < input.flours.count ? input.flours[idx].grams : 0)
-                compareRow(f.name.isEmpty ? L("밀가루") : f.name, before, f.grams)
+                compareRow(flourLabel(f), before, f.grams)
             }
             compareRow(L("본반죽 물"), input.water, result.output.water)
             if input.bassinage > 0 {
@@ -82,24 +112,32 @@ struct BeforeAfterSections: View {
     private func metricRow(
         _ name: String, _ before: String, _ after: String, preserved: Bool
     ) -> some View {
-        HStack {
-            Text(name)
-            if preserved {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.caption)
-                    .foregroundStyle(Color.bottle)
+        rowLayout {
+            HStack {
+                Text(name)
+                if preserved {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.bottle)
+                }
             }
-            Spacer()
-            Text(before)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            Image(systemName: "arrow.right")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            Text(after)
-                .monospacedDigit()
-                .fontWeight(.semibold)
-                .foregroundStyle(preserved ? Color.primary : Color.brass)
+            HStack {
+                Spacer(minLength: 8)
+                Text(before)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(after)
+                    .monospacedDigit()
+                    .fontWeight(.semibold)
+                    .foregroundStyle(preserved ? Color.primary : Color.brass)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+            }
         }
     }
 }
