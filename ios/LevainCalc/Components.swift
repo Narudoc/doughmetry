@@ -94,11 +94,15 @@ struct NumberField: View {
                     selfWritten = nil
                 }
             }
-            .onChange(of: value) { _, newValue in
-                // 편집 중이라도 외부에서 값이 바뀌면(이스트 환산 등) 표시를 따라간다
-                if !focused || newValue != selfWritten {
-                    text = format(newValue)
-                    selfWritten = focused ? newValue : nil
+            .onChange(of: value) {
+                // 편집 중이라도 외부에서 값이 바뀌면(이스트 환산 등) 표시를 따라간다.
+                // newValue가 아니라 바인딩을 다시 읽어 비교한다 — 키 입력이 몰리면 이 onChange가 한 박자 늦게
+                // 도착해(100 → 10 → 1에서 newValue 10, 바인딩은 이미 1) 낡은 값을 외부 변경으로 오인하고
+                // 텍스트를 되돌린다. 그러면 text·value 핸들러가 10 ↔ 1을 끝없이 주고받아 메인 스레드가 멈춘다
+                let current = value
+                if !focused || current != selfWritten {
+                    text = format(current)
+                    selfWritten = focused ? current : nil
                 }
             }
             .onAppear { text = format(value) }
