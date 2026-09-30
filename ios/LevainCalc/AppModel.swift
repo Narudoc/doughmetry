@@ -287,23 +287,31 @@ final class AppModel {
             // 여기서부터 apply까지는 await 없이 메인 액터에서 한 번에 — 그 사이 사용자 편집이 끼어들 수 없다.
             // 로컬은 정규화(코덱 왕복 + 정규 순서)해 원격과 같은 형태로 비교한다.
             let local = LibrarySync.normalized(document)
-            let merged = LibrarySync.merge(local: local, remote: remote?.document ?? LibraryDocument())
+            // 충돌 판까지 한 번에 병합한다 — 둘씩 차례로 합치면 중간에 지워졌다 되살아난 레시피의 로그를 잃는다
+            let merged = LibrarySync.merge([local] + (remote.map { [$0.current] + $0.conflicts } ?? []))
             var localWriteFailed = false
             if merged != local {
                 apply(merged)
                 libraryWriteFailed = !Self.writeLibrary(merged)
                 localWriteFailed = libraryWriteFailed
             }
-            // 원격에 문서가 없고 로컬도 비었으면 아무것도 쓰지 않는다 (새 기기 보호)
-            let shouldWrite = remote.map { merged != $0.document } ?? !merged.isEmpty
+            // 원격에 문서가 없고 로컬도 비었으면 아무것도 쓰지 않는다 (새 기기 보호).
+            // 비교는 iCloud 현재 판과 한다 — 충돌 판에서 합친 내용도 현재 판에 써야 반영된다
+            let shouldWrite = remote.map { merged != $0.current } ?? !merged.isEmpty
             if shouldWrite {
                 try await cloud.writeRemote(merged)
+            }
+            // 충돌 판은 그 내용이 현재 판에 들어간 뒤에만 정리한다 (쓰기가 실패하면 위에서 catch로 빠진다)
+            if let remote, !remote.resolvable.isEmpty {
+                await cloud.resolveConflicts(remote.resolvable)
             }
             if localWriteFailed {
                 cloud.status = .error(L("기기에 저장하지 못했습니다 — 저장 공간을 확인하세요"))
             } else {
                 cloud.markSynced()
             }
+        } catch CloudSync.SyncError.notDownloaded {
+            cloud.status = .error(L("iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다"))
         } catch {
             // localizedDescription은 앱 언어가 아니라 기기 언어로 나온다
             cloud.status = .error(L("동기화하지 못했습니다 — 다음에 다시 시도합니다"))

@@ -131,9 +131,17 @@ public enum LibrarySync {
     // MARK: 병합
 
     public static func merge(local: LibraryDocument, remote: LibraryDocument) -> LibraryDocument {
+        merge([local, remote])
+    }
+
+    /// 여러 문서를 한 번에 병합 — 모든 항목·묘비를 모은 뒤 묘비·고아 로그 필터를 한 번만 적용한다.
+    /// 둘씩 차례로 합치면 안 된다: 중간 결과에서 레시피가 묘비에 지워지면 그 로그가 고아로 걸러지고,
+    /// 뒤 문서가 그 레시피를 되살려도 로그는 돌아오지 않는다 (쌍별 병합은 결합법칙이 성립하지 않는다).
+    /// 결과는 입력 순서와 무관하다.
+    public static func merge(_ documents: [LibraryDocument]) -> LibraryDocument {
         // 묘비: id별 최신
         var tombstones: [String: Tombstone] = [:]
-        for t in local.deleted + remote.deleted {
+        for t in documents.flatMap(\.deleted) {
             if let existing = tombstones[t.id], !isNewer(t.deletedAt, than: existing.deletedAt) {
                 continue
             }
@@ -147,10 +155,10 @@ public enum LibrarySync {
             return a == b ? a : deterministicTieBreak(a, b)
         }
 
-        // 레시피: 로컬 순서를 기준으로, 원격에만 있는 항목은 뒤에 붙인다
+        // 같은 id는 updatedAt 최신 판 (순서는 마지막에 canonical로 정한다)
         var recipeMap: [String: Recipe] = [:]
         var recipeOrder: [String] = []
-        for r in local.recipes + remote.recipes {
+        for r in documents.flatMap(\.recipes) {
             if let existing = recipeMap[r.id] {
                 recipeMap[r.id] = pickNewer(existing, r, updatedAt: \.updatedAt)
             } else {
@@ -161,7 +169,7 @@ public enum LibrarySync {
 
         var logMap: [String: BakeLog] = [:]
         var logOrder: [String] = []
-        for l in local.logs + remote.logs {
+        for l in documents.flatMap(\.logs) {
             if let existing = logMap[l.id] {
                 logMap[l.id] = pickNewer(existing, l, updatedAt: \.updatedAt)
             } else {
@@ -195,6 +203,33 @@ public enum LibrarySync {
             LibraryDocument(
                 schemaVersion: LibraryDocument.currentSchemaVersion,
                 recipes: recipes, logs: logs, deleted: deleted))
+    }
+
+    /// iCloud 충돌 판(NSFileVersion) 해석 — 두 기기가 따로 쓴 library.json 중 iCloud가 현재 판으로 고르지 않은 판들.
+    /// 병합은 호출 측이 로컬·현재 판과 함께 `merge(_:)` 한 번으로 한다 (먼저 합쳐 두면 로그를 잃는다).
+    /// `resolvable`은 병합 결과를 원격에 쓴 뒤 정리(삭제)해도 되는 판의 인덱스다.
+    /// 정리하면 그 판은 되찾을 수 없으므로 다음 판은 남긴다:
+    /// JSON이 아닌 판(읽을 수 없음), 새 버전 앱이 쓴 판(이 버전이 모르는 필드를 버린다 — 병합에도 넣지 않는다),
+    /// 검증에서 항목·묘비가 버려지는 판(살릴 수 있는 항목은 병합에 넣되 원본은 둔다).
+    public static func conflictDocuments(
+        _ versions: [Data]
+    ) -> (documents: [LibraryDocument], isNewerFormat: Bool, resolvable: [Int]) {
+        var documents: [LibraryDocument] = []
+        var isNewerFormat = false
+        var resolvable: [Int] = []
+        for (i, data) in versions.enumerated() {
+            guard (try? JSONSerialization.jsonObject(with: data)) != nil else { continue }
+            let report = decodeReport(data)
+            if report.isNewerFormat {
+                isNewerFormat = true
+                continue
+            }
+            documents.append(report.document)
+            if droppedItemCount(in: data, decoded: report.document) == 0 {
+                resolvable.append(i)
+            }
+        }
+        return (documents, isNewerFormat, resolvable)
     }
 
     /// 삭제 묘비 시각 — 지금 시각과 '항목 updatedAt + 1초' 중 늦은 쪽.
@@ -351,7 +386,7 @@ public enum LibrarySync {
         return (doc, version > LibraryDocument.currentSchemaVersion || hasNewerRecipe(recipeItems))
     }
 
-    /// 원본 데이터의 레시피·로그 중 decode가 검증 실패로 버린 개수.
+    /// 원본 데이터의 레시피·로그·묘비 중 decode가 검증 실패로 버린 개수.
     /// 0보다 크면 다음 저장이 그 항목을 영구히 덮어쓰므로, 호출 측이 원본을 따로 보관해야 한다.
     public static func droppedItemCount(in data: Data, decoded: LibraryDocument) -> Int {
         guard let parsed = try? JSONSerialization.jsonObject(with: data) else { return 0 }
@@ -364,11 +399,11 @@ public enum LibrarySync {
                 guard let v = obj[key] else { return 0 }
                 return (v as? [Any])?.count ?? 1
             }
-            raw = count("recipes") + count("logs")
+            raw = count("recipes") + count("logs") + count("deleted")
         } else {
             return 0
         }
-        return max(0, raw - decoded.recipes.count - decoded.logs.count)
+        return max(0, raw - decoded.recipes.count - decoded.logs.count - decoded.deleted.count)
     }
 
     private static func salvage(_ items: [Any]) -> [Recipe] {

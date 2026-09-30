@@ -514,4 +514,97 @@ struct LibrarySyncTests {
         #expect(LibrarySync.decode(bad).logs.map(\.id) == ["ok"])
         #expect(LibrarySync.decode(Data("not json".utf8)).isEmpty)
     }
+
+    @Test("iCloud 충돌 판은 로컬·현재 판과 함께 병합하고, 정리해도 되는 판만 resolvable로 알린다")
+    func conflictVersionsMerged() throws {
+        let current = LibraryDocument(recipes: [
+            recipe("a", name: "현재 판 A", updatedAt: "2026-09-03T10:00:00Z"),
+        ])
+        // 다른 기기가 오프라인에서 쓴 판 — 현재 판에 없는 레시피와 더 새 A
+        let other = try LibrarySync.encode(LibraryDocument(recipes: [
+            recipe("a", name: "충돌 판 A (더 새것)", updatedAt: "2026-09-03T11:00:00Z"),
+            recipe("b", name: "충돌 판에만 있는 B", updatedAt: "2026-09-02T00:00:00Z"),
+        ]))
+        let c = LibrarySync.conflictDocuments([other])
+        #expect(c.isNewerFormat == false)
+        #expect(c.resolvable == [0])
+        let merged = LibrarySync.merge([LibraryDocument(), current] + c.documents)
+        #expect(Set(merged.recipes.map(\.id)) == ["a", "b"])
+        #expect(merged.recipes.first { $0.id == "a" }?.name == "충돌 판 A (더 새것)")
+
+        // 충돌 판이 없으면 아무것도 없다
+        let none = LibrarySync.conflictDocuments([])
+        #expect(none.documents.isEmpty && none.resolvable.isEmpty && !none.isNewerFormat)
+    }
+
+    @Test("읽을 수 없는 판·새 버전 판·항목이나 묘비가 버려지는 판은 정리하지 않는다 (그 판의 데이터가 사라지지 않게)")
+    func conflictVersionsKeptWhenUnsafe() throws {
+        let unreadable = Data("not json".utf8)
+        let newer = Data(#"{"schemaVersion":\#(LibraryDocument.currentSchemaVersion + 1),"recipes":[],"logs":[],"deleted":[]}"#.utf8)
+        // 레시피 하나는 살리고(b) 하나는 검증에서 버려진다(이름 없음)
+        let valid = String(decoding: try LibrarySync.encode(LibraryDocument(recipes: [
+            recipe("b", name: "B", updatedAt: "2026-09-02T00:00:00Z"),
+        ])), as: UTF8.self)
+        let partlyBad = Data(
+            valid.replacingOccurrences(
+                of: #""recipes":["#,
+                with: #""recipes":[{"schemaVersion":2,"id":"x","name":"","water":1,"salt":1,"levain":{"hydration":1,"grams":1}},"#
+            ).utf8)
+        #expect(LibrarySync.droppedItemCount(in: partlyBad, decoded: LibrarySync.decode(partlyBad)) == 1)
+        // 묘비가 깨진 판 — 정리하면 그 삭제가 사라져 레시피가 되살아난다
+        let badTombstone = Data(#"{"schemaVersion":1,"recipes":[],"logs":[],"deleted":[{"id":"z"}]}"#.utf8)
+        #expect(LibrarySync.droppedItemCount(in: badTombstone, decoded: LibrarySync.decode(badTombstone)) == 1)
+
+        let c = LibrarySync.conflictDocuments([unreadable, newer, partlyBad, badTombstone])
+        #expect(c.isNewerFormat)
+        #expect(c.resolvable.isEmpty)
+        // 새 버전 판은 병합에 넣지 않고, 버려지지 않은 항목은 넣는다
+        #expect(c.documents.count == 2)
+        #expect(c.documents.flatMap(\.recipes).map(\.id) == ["b"])
+    }
+
+    @Test("여러 판 병합은 판 순서와 무관하다")
+    func conflictOrderIndependent() throws {
+        let current = LibraryDocument(recipes: [
+            recipe("a", name: "A", updatedAt: "2026-09-03T10:00:00Z"),
+        ])
+        let v1 = LibraryDocument(recipes: [
+            recipe("a", name: "A v1", updatedAt: "2026-09-03T12:00:00Z"),
+            recipe("b", name: "B", updatedAt: "2026-09-01T00:00:00Z"),
+        ])
+        let v2 = LibraryDocument(
+            recipes: [recipe("a", name: "A v2", updatedAt: "2026-09-03T11:00:00Z")],
+            deleted: [Tombstone(id: "b", deletedAt: "2026-09-02T00:00:00Z")])
+        let ab = LibrarySync.merge([current, v1, v2])
+        let ba = LibrarySync.merge([v2, current, v1])
+        #expect(ab == ba)
+        #expect(ab.recipes.map(\.name) == ["A v1"])  // b는 묘비로 지워진다
+    }
+
+    @Test("여러 판 병합에서 중간에 지워졌다 되살아난 레시피의 로그를 잃지 않는다")
+    func multiMergeKeepsLogsOfRevivedRecipe() {
+        // 현재 판: r의 묘비(12시) / 충돌 판: 삭제 전 r(11시) + 로그 L / 로컬: 삭제 뒤 고친 r(13시), L 없음
+        let current = LibraryDocument(deleted: [Tombstone(id: "r", deletedAt: "2026-09-03T12:00:00Z")])
+        let conflict = LibraryDocument(
+            recipes: [recipe("r", name: "삭제 전 R", updatedAt: "2026-09-03T11:00:00Z")],
+            logs: [log("L", recipeId: "r", note: "충돌 판에만 있는 기록", updatedAt: "2026-09-03T11:00:00Z")])
+        let local = LibraryDocument(recipes: [
+            recipe("r", name: "삭제 뒤 고친 R", updatedAt: "2026-09-03T13:00:00Z"),
+        ])
+        let merged = LibrarySync.merge([local, current, conflict])
+        #expect(merged.recipes.map(\.name) == ["삭제 뒤 고친 R"])
+        #expect(merged.logs.map(\.id) == ["L"])
+        #expect(merged.deleted.isEmpty)  // 되살아난 항목의 묘비는 버린다
+
+        // 순서를 바꿔도 같다 — 쌍별로 차례로 합치면 순서에 따라 L이 사라졌다
+        let current2 = LibraryDocument(
+            recipes: [recipe("r", name: "R", updatedAt: "2026-09-03T11:00:00Z")],
+            logs: [log("L", recipeId: "r", note: "기록", updatedAt: "2026-09-03T11:00:00Z")])
+        let v1 = LibraryDocument(deleted: [Tombstone(id: "r", deletedAt: "2026-09-03T12:00:00Z")])
+        let v2 = LibraryDocument(recipes: [recipe("r", name: "R 고침", updatedAt: "2026-09-03T13:00:00Z")])
+        let x = LibrarySync.merge([current2, v1, v2])
+        let y = LibrarySync.merge([current2, v2, v1])
+        #expect(x == y)
+        #expect(x.logs.map(\.id) == ["L"])
+    }
 }

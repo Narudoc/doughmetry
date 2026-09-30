@@ -371,6 +371,8 @@ private let en: [String: String] = [
     "레시피·베이킹 로그를 iCloud로 기기 간 동기화합니다. 충돌 시 최신 수정본이 유지됩니다.":
         "Syncs recipes and bake logs across your devices via iCloud. On conflict, the most recent edit wins.",
     "동기화하지 못했습니다 — 다음에 다시 시도합니다": "Sync failed — will try again later",
+    "iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다":
+        "Downloading your library from iCloud — will sync when it finishes",
     "새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다":
         "Some data was saved by a newer version of the app — update the app on this device to sync",
     "기기에 저장하지 못했습니다 — 저장 공간을 확인하세요": "Couldn't save to this device — check your storage space",
