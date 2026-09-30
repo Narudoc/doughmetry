@@ -87,8 +87,13 @@ final class AppModel {
     }
     /// 베이킹 로그 — 레시피별 구운 기록
     var logs: [BakeLog] = [] {
-        didSet { if !isLoading { scheduleLibrarySave() } }
+        didSet {
+            bakeSummaryCache = nil
+            if !isLoading { scheduleLibrarySave() }
+        }
     }
+    /// 레시피별 굽기 요약 — 목록 행마다 전체 로그를 거르고 정렬하지 않도록 로그가 바뀔 때 한 번만 모은다
+    @ObservationIgnored private var bakeSummaryCache: [String: BakeSummary]?
     /// 삭제 묘비 — iCloud 병합에서 삭제를 전파하기 위해 유지
     var tombstones: [Tombstone] = [] {
         didSet { if !isLoading { scheduleLibrarySave() } }
@@ -278,10 +283,11 @@ final class AppModel {
         cloud.status = .syncing
         do {
             let remote = try await cloud.readRemote()
+            cloud.keptConflictCount = remote?.keptConflictCount ?? 0
             // 새 버전 앱이 쓴 문서는 합치지도 쓰지도 않는다 — 모르는 필드를 뺀 사본이 원격과 같은 updatedAt으로
             // 로컬에 남으면, 업데이트 뒤 병합 동률에서 그 사본이 이겨 원격의 필드를 지운다
             if remote?.isNewerFormat == true {
-                cloud.status = .error(L("새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다"))
+                cloud.fail(L("새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다"))
                 return
             }
             // 여기서부터 apply까지는 await 없이 메인 액터에서 한 번에 — 그 사이 사용자 편집이 끼어들 수 없다.
@@ -306,15 +312,23 @@ final class AppModel {
                 await cloud.resolveConflicts(remote.resolvable)
             }
             if localWriteFailed {
-                cloud.status = .error(L("기기에 저장하지 못했습니다 — 저장 공간을 확인하세요"))
+                cloud.fail(L("기기에 저장하지 못했습니다 — 저장 공간을 확인하세요"))
             } else {
                 cloud.markSynced()
             }
         } catch CloudSync.SyncError.notDownloaded {
-            cloud.status = .error(L("iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다"))
+            cloud.forgetRemoteState()
+            cloud.fail(L("iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다"))
+        } catch CloudSync.SyncError.downloadFailed {
+            cloud.forgetRemoteState()
+            cloud.fail(L("iCloud에서 라이브러리를 내려받지 못했습니다 — 네트워크와 iCloud 저장 공간을 확인하세요. 다시 시도합니다"))
+        } catch CloudSync.SyncError.timedOut {
+            cloud.forgetRemoteState()
+            cloud.fail(L("iCloud에 연결하지 못해 동기화를 미뤘습니다 — 연결되면 다시 시도합니다"))
         } catch {
+            cloud.forgetRemoteState()
             // localizedDescription은 앱 언어가 아니라 기기 언어로 나온다
-            cloud.status = .error(L("동기화하지 못했습니다 — 다음에 다시 시도합니다"))
+            cloud.fail(L("동기화하지 못했습니다 — 다음에 다시 시도합니다"))
         }
     }
 
@@ -364,6 +378,29 @@ final class AppModel {
     }
 
     // MARK: 베이킹 로그
+
+    struct BakeSummary {
+        let count: Int
+        let latestBakedAt: String
+    }
+
+    /// 목록 행용 굽기 요약 (횟수·최근 날짜)
+    func bakeSummary(for recipeId: String) -> BakeSummary? {
+        let logs = self.logs  // 관찰 등록 — 로그가 바뀌면 행이 다시 그려진다
+        if bakeSummaryCache == nil {
+            var acc: [String: (count: Int, latest: BakeLog, date: Date)] = [:]
+            for log in logs {
+                let date = parseISO(log.bakedAt) ?? .distantPast
+                if let cur = acc[log.recipeId] {
+                    acc[log.recipeId] = (cur.count + 1, date > cur.date ? log : cur.latest, max(date, cur.date))
+                } else {
+                    acc[log.recipeId] = (1, log, date)
+                }
+            }
+            bakeSummaryCache = acc.mapValues { BakeSummary(count: $0.count, latestBakedAt: $0.latest.bakedAt) }
+        }
+        return bakeSummaryCache?[recipeId]
+    }
 
     func logs(for recipeId: String) -> [BakeLog] {
         logs.filter { $0.recipeId == recipeId }

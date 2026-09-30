@@ -12,7 +12,7 @@ struct StarRating: View {
             ForEach(1...5, id: \.self) { i in
                 Image(systemName: (rating ?? 0) >= i ? "star.fill" : "star")
                     .font(.system(size: size))
-                    .foregroundStyle((rating ?? 0) >= i ? Color.brass : Color.secondary.opacity(0.5))
+                    .foregroundStyle((rating ?? 0) >= i ? Color.bottle : Color.secondary.opacity(0.5))
                     .onTapGesture { rating = rating == i ? nil : i }
             }
         }

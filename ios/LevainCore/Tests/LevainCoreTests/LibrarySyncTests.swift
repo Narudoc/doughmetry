@@ -69,6 +69,21 @@ struct LibrarySyncTests {
         #expect(LibrarySync.merge(local: fromA, remote: fromB) == fromA)
     }
 
+    @Test("정규 순서는 해석되는 시각과 안 되는 값이 섞여도 입력 순서와 무관하다 (전순서)")
+    func canonicalIsTotalOrder() {
+        // 예전 비교(해석 실패 시 문자열 비교)로는 a > c > b > a 순환이 생기던 조합
+        var a = recipe("a", name: "A", updatedAt: "2026-09-01T00:00:00Z")
+        a.createdAt = "2026-01-01T10:00:00+09:00"  // 01:00Z
+        var b = recipe("b", name: "B", updatedAt: "2026-09-01T00:00:00Z")
+        b.createdAt = "2026-01-01T02:00:00Z"
+        var c = recipe("c", name: "C", updatedAt: "2026-09-01T00:00:00Z")
+        c.createdAt = "2026-01-01T05"  // 해석 불가
+        let orders = [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]]
+        let results = Set(orders.map { LibrarySync.canonical(LibraryDocument(recipes: $0)).recipes.map(\.id) })
+        #expect(results.count == 1)
+        #expect(results.first == ["b", "a", "c"])  // 해석되는 시각은 최신순, 해석 안 되는 값은 뒤
+    }
+
     @Test("정규화는 멱등이고, 이름 trim 같은 코덱 규칙을 로컬에도 적용한다")
     func normalizationIdempotent() throws {
         var r = recipe("a", name: "캉파뉴 ", updatedAt: "2026-09-01T00:00:00Z")
@@ -557,6 +572,7 @@ struct LibrarySyncTests {
 
         let c = LibrarySync.conflictDocuments([unreadable, newer, partlyBad, badTombstone])
         #expect(c.isNewerFormat)
+        #expect(c.newerFormatCount == 1)  // 새 버전 판은 손상된 판과 따로 센다
         #expect(c.resolvable.isEmpty)
         // 새 버전 판은 병합에 넣지 않고, 버려지지 않은 항목은 넣는다
         #expect(c.documents.count == 2)

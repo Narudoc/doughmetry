@@ -109,16 +109,41 @@ public enum LibrarySync {
     /// 병합 결과·저장 문서가 기기와 무관하게 같은 배열이 되어야 `==` 비교로 수렴을 판단할 수 있다.
     public static func canonical(_ doc: LibraryDocument) -> LibraryDocument {
         var d = doc
-        d.recipes.sort { a, b in
-            if a.createdAt != b.createdAt { return isNewer(a.createdAt, than: b.createdAt) }
-            return a.id < b.id
-        }
-        d.logs.sort { a, b in
-            if a.bakedAt != b.bakedAt { return isNewer(a.bakedAt, than: b.bakedAt) }
-            return a.id < b.id
-        }
+        d.recipes = d.recipes.map { (NewestFirstKey($0.createdAt, id: $0.id), $0) }
+            .sorted { NewestFirstKey.precedes($0.0, $1.0) }
+            .map(\.1)
+        d.logs = d.logs.map { (NewestFirstKey($0.bakedAt, id: $0.id), $0) }
+            .sorted { NewestFirstKey.precedes($0.0, $1.0) }
+            .map(\.1)
         d.deleted.sort { $0.id < $1.id }
         return d
+    }
+
+    /// 정규 순서의 정렬 키 — 비교마다 시각을 다시 파싱하지 않도록 한 번만 계산한다.
+    private struct NewestFirstKey {
+        let date: Date?
+        let raw: String
+        let id: String
+
+        init(_ raw: String, id: String) {
+            self.date = parseISO(raw)
+            self.raw = raw
+            self.id = id
+        }
+
+        /// 전순서 — 해석되는 시각은 최신순, 해석 안 되는 값은 그 뒤에 문자열 역순, 같으면 id.
+        /// isNewer(해석 실패 시 문자열 비교)로 바로 정렬하면 두 종류가 섞일 때 순환(a>c>b>a)이 생겨
+        /// 결과가 입력 순서에 따라 달라지고, 두 기기의 정규 문서가 같아지지 않아 서로 다시 쓴다.
+        /// 모든 시각이 해석되고 서로 다르면 예전 순서와 같다 (옛 버전 앱과 같은 문서를 낸다)
+        static func precedes(_ a: Self, _ b: Self) -> Bool {
+            switch (a.date, b.date) {
+            case let (da?, db?) where da != db: return da > db
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil) where a.raw != b.raw: return a.raw > b.raw
+            default: return a.id < b.id
+            }
+        }
     }
 
     /// 코덱 왕복으로 정규화 (이름 trim, 빈 tags → nil 등 validate 규칙 적용) + 정규 순서.
@@ -211,17 +236,18 @@ public enum LibrarySync {
     /// 정리하면 그 판은 되찾을 수 없으므로 다음 판은 남긴다:
     /// JSON이 아닌 판(읽을 수 없음), 새 버전 앱이 쓴 판(이 버전이 모르는 필드를 버린다 — 병합에도 넣지 않는다),
     /// 검증에서 항목·묘비가 버려지는 판(살릴 수 있는 항목은 병합에 넣되 원본은 둔다).
+    /// `newerFormatCount`는 새 버전 앱이 쓴 판의 수 — 손상된 판이 아니므로 호출 측이 따로 알린다.
     public static func conflictDocuments(
         _ versions: [Data]
-    ) -> (documents: [LibraryDocument], isNewerFormat: Bool, resolvable: [Int]) {
+    ) -> (documents: [LibraryDocument], isNewerFormat: Bool, resolvable: [Int], newerFormatCount: Int) {
         var documents: [LibraryDocument] = []
-        var isNewerFormat = false
+        var newerFormatCount = 0
         var resolvable: [Int] = []
         for (i, data) in versions.enumerated() {
             guard (try? JSONSerialization.jsonObject(with: data)) != nil else { continue }
             let report = decodeReport(data)
             if report.isNewerFormat {
-                isNewerFormat = true
+                newerFormatCount += 1
                 continue
             }
             documents.append(report.document)
@@ -229,7 +255,7 @@ public enum LibrarySync {
                 resolvable.append(i)
             }
         }
-        return (documents, isNewerFormat, resolvable)
+        return (documents, newerFormatCount > 0, resolvable, newerFormatCount)
     }
 
     /// 삭제 묘비 시각 — 지금 시각과 '항목 updatedAt + 1초' 중 늦은 쪽.

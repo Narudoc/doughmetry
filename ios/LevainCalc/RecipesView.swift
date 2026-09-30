@@ -285,7 +285,7 @@ struct RecipeRow: View {
 
     var body: some View {
         let stats = computeStats(recipe.doughInput)
-        let logs = model.logs(for: recipe.id)
+        let bake = model.bakeSummary(for: recipe.id)
         // 접근성 크기에선 한 줄에 하나씩 — 한 줄에 두면 폭을 나눠 가져 숫자·단어 중간에서 끊긴다
         let ax = typeSize.isAccessibilitySize
         let statsLayout = ax
@@ -320,11 +320,11 @@ struct RecipeRow: View {
             metaLayout {
                 Text(fmtDate(iso: recipe.updatedAt))
                     .lineLimit(1)
-                if let last = logs.first {
+                if let bake {
                     if !ax { Text("·") }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: "flame")
-                        Text(LF("%d회 구움 · 최근 %@", logs.count, fmtDate(iso: last.bakedAt)))
+                        Text(LF("%d회 구움 · 최근 %@", bake.count, fmtDate(iso: bake.latestBakedAt)))
                     }
                 }
             }
@@ -534,6 +534,14 @@ struct SettingsSheet: View {
                     LabeledContent(L("상태")) {
                         Text(cloudStatusText)
                             .foregroundStyle(.secondary)
+                    }
+                    if cloud.keptConflictCount > 0 {
+                        Label(
+                            LF("아직 합치지 못한 충돌 사본 %d개를 iCloud에 그대로 보관 중입니다 — 이번에 읽지 못했거나 일부 항목이 손상된 사본이라 지우지 않습니다.", count: cloud.keptConflictCount),
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
                 } header: {
                     Text("iCloud")

@@ -45,12 +45,18 @@ enum TimelineNotifier {
         }
     }
 
-    static func cancelAll() async {
-        generation.withLock { $0 += 1 }
+    /// 대기 중인 타임라인 알림을 모두 지우고 새 예약 세대를 돌려준다
+    @discardableResult
+    static func cancelAll() async -> Int {
+        let gen = generation.withLock {
+            $0 += 1
+            return $0
+        }
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
         center.removePendingNotificationRequests(
             withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
+        return gen
     }
 
     static func pendingCount() async -> Int {
@@ -117,6 +123,11 @@ enum TimelineNotifier {
             guard gen == generation.withLock({ $0 }) else { return }
             try? await center.add(
                 UNNotificationRequest(identifier: req.identifier, content: content, trigger: req.trigger))
+            // add를 기다리는 사이 취소·재예약이 지나갔으면 방금 되살린 옛 알림을 지운다 (schedule과 같은 방어)
+            if gen != generation.withLock({ $0 }) {
+                center.removePendingNotificationRequests(withIdentifiers: [req.identifier])
+                return
+            }
         }
     }
 
@@ -124,24 +135,41 @@ enum TimelineNotifier {
         var added = 0
         var future = 0
         var error: Error?
+        /// 더 새 예약·취소에 밀려 중간에 멈췄다 — 이 결과로 상태·안내를 바꾸면 안 된다 (새 쪽이 정한다)
+        var superseded = false
     }
 
     /// 예약 결과: 성공 건수, 아직 끝나지 않은 단계 수(이미 지난 시각은 건너뜀), 첫 실패.
     /// 성공 0건이 "모두 지남"인지 예약 실패인지 가려야 안내가 틀리지 않는다
     static func schedule(_ scheduled: [ScheduledStage]) async -> ScheduleResult {
-        await cancelAll()
+        let gen = await cancelAll()
         let center = UNUserNotificationCenter.current()
         var r = ScheduleResult()
+        func isCurrent() -> Bool { gen == generation.withLock { $0 } }
+        let batch = UUID().uuidString.prefix(8)
         for (i, s) in scheduled.enumerated() where s.end > Date() {
-            if Task.isCancelled { break }
+            if Task.isCancelled || !isCurrent() {
+                r.superseded = true
+                break
+            }
             r.future += 1
             let next = i + 1 < scheduled.count ? scheduled[i + 1].stage : nil
+            // 식별자에 예약마다 새 토큰을 넣는다 — 늦게 도착한 옛 요청을 지울 때 새 예약의 같은 단계를 지우지 않도록.
+            // 세대 번호는 실행할 때마다 0부터라 이전 실행에서 남은 알림과 겹칠 수 있어 식별자에는 쓰지 않는다
+            let id = "\(prefix)\(batch).\(s.stage.id)"
             let req = UNNotificationRequest(
-                identifier: prefix + s.stage.id, content: makeContent(stage: s.stage, next: next),
+                identifier: id, content: makeContent(stage: s.stage, next: next),
                 trigger: UNCalendarNotificationTrigger(
                     dateMatching: absoluteDateComponents(for: s.end), repeats: false))
             do {
                 try await center.add(req)
+                // add를 기다리는 사이 취소·재예약이 지나갔으면(그쪽 cancelAll이 먼저 끝남) 방금 넣은 알림이 남는다 —
+                // 스스로 지운다. 안 그러면 '알림 취소' 뒤에도, 지운 단계의 알림도 울린다
+                guard isCurrent() else {
+                    center.removePendingNotificationRequests(withIdentifiers: [id])
+                    r.superseded = true
+                    break
+                }
                 r.added += 1
             } catch {
                 if r.error == nil { r.error = error }
@@ -202,13 +230,15 @@ final class TimelineStore {
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled, alertsArmed else { return }
             let r = await TimelineNotifier.schedule(scheduleTimeline(plan))
-            if !Task.isCancelled { scheduledCount = r.added }
+            if !Task.isCancelled, !r.superseded { scheduledCount = r.added }
         }
     }
 
     func scheduleAlerts() async -> TimelineNotifier.ScheduleResult {
         rescheduling?.cancel()
         let r = await TimelineNotifier.schedule(scheduleTimeline(plan))
+        // 더 새 예약·취소에 밀렸으면 개수·알림 켜짐 상태는 그쪽이 정한다 (두 번 누름, 예약 중 취소)
+        guard !r.superseded else { return r }
         scheduledCount = r.added
         alertsArmed = r.added > 0
         return r
@@ -374,6 +404,8 @@ struct TimelineView: View {
                             return
                         }
                         let r = await store.scheduleAlerts()
+                        // 밀린 예약은 안내하지 않는다 — 새 예약이 성공해도 "모든 단계가 지났습니다" 같은 가짜 알림창이 뜬다
+                        if r.superseded { return }
                         if r.added > 0 {
                             scheduledFeedback.toggle()
                         } else if r.future == 0 {

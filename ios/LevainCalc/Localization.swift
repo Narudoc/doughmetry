@@ -118,6 +118,8 @@ struct LocalizedEditButton: View {
 
 private let enOne: [String: String] = [
     "%d개의 레시피를 가져왔습니다.": "Imported %d recipe.",
+    "아직 합치지 못한 충돌 사본 %d개를 iCloud에 그대로 보관 중입니다 — 이번에 읽지 못했거나 일부 항목이 손상된 사본이라 지우지 않습니다.":
+        "Keeping %d conflicting copy in iCloud that hasn't been merged — it couldn't be read this time or is partly damaged, so it isn't deleted.",
 ]
 
 private let en: [String: String] = [
@@ -373,6 +375,12 @@ private let en: [String: String] = [
     "동기화하지 못했습니다 — 다음에 다시 시도합니다": "Sync failed — will try again later",
     "iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다":
         "Downloading your library from iCloud — will sync when it finishes",
+    "iCloud에서 라이브러리를 내려받지 못했습니다 — 네트워크와 iCloud 저장 공간을 확인하세요. 다시 시도합니다":
+        "Couldn't download your library from iCloud — check your network and iCloud storage. Will try again",
+    "iCloud에 연결하지 못해 동기화를 미뤘습니다 — 연결되면 다시 시도합니다":
+        "Couldn't reach iCloud, so sync was postponed — will try again when connected",
+    "아직 합치지 못한 충돌 사본 %d개를 iCloud에 그대로 보관 중입니다 — 이번에 읽지 못했거나 일부 항목이 손상된 사본이라 지우지 않습니다.":
+        "Keeping %d conflicting copies in iCloud that haven't been merged — they couldn't be read this time or are partly damaged, so they aren't deleted.",
     "새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다":
         "Some data was saved by a newer version of the app — update the app on this device to sync",
     "기기에 저장하지 못했습니다 — 저장 공간을 확인하세요": "Couldn't save to this device — check your storage space",
