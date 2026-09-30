@@ -280,8 +280,9 @@ function shouldSkip(line: string): boolean {
   if (contains(t, ['수분율', 'hydration', '온도']) && !hasAmount(numberTokens(t))) {
     return true; // "수분율 75%" 같은 통계·표기 줄
   }
-  // "물 340g에 르방을 풀어주세요" 같은 서술문
-  if (/(하세요|해주세요|주세요|해 주세요|니다)/u.test(t)) return true;
+  // "물 340g에 르방을 풀어주세요" 같은 서술문 — 합계 판정처럼 괄호 밖에서 본다.
+  // "물 350g (나눠 넣습니다)"의 괄호 속 메모는 재료 줄을 지우지 않는다
+  if (/(하세요|해주세요|주세요|해 주세요|니다)/u.test(outer)) return true;
   // "양 (g)" / "g" 같은 표 헤더
   if (/^(재\s*료|양|무게|amount|quantity|ingr)[^0-9]*$/i.test(t)) return true;
   return false;

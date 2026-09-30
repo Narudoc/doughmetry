@@ -252,6 +252,25 @@ struct RecipeTextParserTests {
         #expect(r.matchedLineCount == 4)
     }
 
+    @Test("괄호 속 '~니다' 메모는 재료 줄을 지우지 않는다")
+    func politeNoteInParens() {
+        let r = RecipeTextParser.parse(
+            """
+            강력분 500g
+            물 350g (나눠 넣습니다)
+            소금 10g (취향껏 줄여도 됩니다)
+            르방 100g (전날 밤 리프레시합니다)
+            물 340g에 르방을 풀어주세요
+            (반죽이 매끈해질 때까지 치댑니다)
+            """)
+        #expect(r.input.water == 350)
+        #expect(r.input.salt == 10)
+        #expect(r.input.levain.grams == 100)
+        // 괄호 밖 서술문과 괄호뿐인 서술문은 여전히 건너뛴다 (괄호뿐인 줄이 제목으로 잡히지도 않는다)
+        #expect(r.matchedLineCount == 4)
+        #expect(r.name == nil)
+    }
+
     @Test("조절수·조정수는 바시나주로 분류된다")
     func adjustmentWater() {
         let r = RecipeTextParser.parse("강력분 500g\n물 320g\n조절수 30g\n소금 10g\n르방 100g")

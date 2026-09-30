@@ -274,8 +274,9 @@ public enum RecipeTextParser {
         if contains(t, ["수분율", "hydration", "온도"]), !hasAmount(numberTokens(in: t)) {
             return true  // "수분율 75%" 같은 통계·표기 줄
         }
-        // "물 340g에 르방을 풀어주세요" 같은 서술문
-        if t.range(of: #"(하세요|해주세요|주세요|해 주세요|니다)"#, options: rx) != nil {
+        // "물 340g에 르방을 풀어주세요" 같은 서술문 — 합계 판정처럼 괄호 밖에서 본다.
+        // "물 350g (나눠 넣습니다)"의 괄호 속 메모는 재료 줄을 지우지 않는다
+        if outer.range(of: #"(하세요|해주세요|주세요|해 주세요|니다)"#, options: rx) != nil {
             return true
         }
         // "양 (g)" / "g" 같은 표 헤더
