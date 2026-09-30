@@ -223,6 +223,36 @@ describe('여러 탭에서 저장 (저장소 기준 읽기-적용-쓰기)', () =
     persistRecipes([sampleRecipe()], store);
     expect(reloadRecipes(tab, store).recipes.map((r) => r.id)).toEqual(['r1']);
   });
+
+  it('id·시각이 없던 레코드는 로드 때 한 번 써서 고정한다 — 탭이 들고 있는 id로 편집이 된다', () => {
+    const store = memoryStore();
+    const { id: _id, createdAt: _c, updatedAt: _u, ...noId } = sampleRecipe();
+    store.setItem('levain-calc:recipes:v1', JSON.stringify([noId]));
+
+    const tab = loadRecipeList(store);
+    const id = tab.recipes[0].id;
+    expect(tab.persisted).toBe(true);
+    // 다시 읽어도 같은 id — 로드마다 새 id를 받지 않는다
+    expect(loadRecipes(store)[0].id).toBe(id);
+    expect(loadRecipes(store)[0].createdAt).toBe(tab.recipes[0].createdAt);
+
+    const after = updateRecipes(
+      (cur) => cur.map((r) => (r.id === id ? { ...r, name: '새 이름' } : r)),
+      tab,
+      store,
+    );
+    expect(after.recipes.map((r) => r.name)).toEqual(['새 이름']);
+    expect(loadRecipes(store).map((r) => [r.id, r.name])).toEqual([[id, '새 이름']]);
+  });
+
+  it('검증에서 버려지는 레코드가 있으면 로드 때 쓰지 않는다 (사용자 조작 없이 지우지 않게)', () => {
+    const store = memoryStore();
+    const { id: _id, ...noId } = sampleRecipe();
+    const raw = JSON.stringify([noId, { ...sampleRecipe(), id: 'bad', salt: '20g' }]);
+    store.setItem('levain-calc:recipes:v1', raw);
+    loadRecipeList(store);
+    expect(store.getItem('levain-calc:recipes:v1')).toBe(raw);
+  });
 });
 
 describe('저장소 쓰기 실패 (저장 공간 초과·저장소 없음)', () => {

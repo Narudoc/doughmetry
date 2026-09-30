@@ -9,10 +9,12 @@ import { useRecipes } from './hooks/useRecipes';
 import type { DoughInput } from './lib/dough';
 import { DRAFT_KEY, SETTINGS_KEY } from './lib/storage';
 import {
+  LOAD_OVER_DIRTY_PROMPT,
   calcStateFromRecipe,
   currentDoughInput,
   defaultCalcState,
   doughInputFromRecipe,
+  isCalcDirty,
   sanitizeCalcState,
   sanitizeSettings,
   type CalcState,
@@ -60,11 +62,12 @@ export default function App() {
 
   const openInCalculator = useCallback(
     (r: Recipe) => {
+      if (isCalcDirty(calc, api.recipes) && !window.confirm(LOAD_OVER_DIRTY_PROMPT)) return;
       setCalc(calcStateFromRecipe(r));
       setTab('calc');
       show(`'${r.name}' 레시피를 계산기로 열었습니다`);
     },
-    [setCalc, setTab, show],
+    [calc, api.recipes, setCalc, setTab, show],
   );
 
   return (

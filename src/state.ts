@@ -1,6 +1,7 @@
 import type { DoughInput, TargetSpec } from './lib/dough';
 import { solveFromTarget } from './lib/dough';
 import { newId } from './lib/id';
+import { stableJson } from './lib/storage';
 import type { Recipe, Settings } from './types';
 
 export type CalcMode = 'A' | 'B';
@@ -26,6 +27,11 @@ export interface CalcState {
   target: TargetForm;
   /** 모드 A의 분할 개수 (표시용) */
   pieces: number;
+  /**
+   * 마지막으로 불러오거나 저장한 상태의 내용(calcSnapshot) — 지금 내용이 이것과 같으면 저장하지 않은 입력이 없다.
+   * iOS calcBaseline에 해당하고, 웹은 draft와 함께 저장돼 새로 고침 뒤에도 유지된다
+   */
+  savedSnapshot?: string;
 }
 
 const defaultDoughInput = (): DoughInput => ({
@@ -125,7 +131,7 @@ export function doughInputFromRecipe(r: Recipe): DoughInput {
 }
 
 export function calcStateFromRecipe(r: Recipe): CalcState {
-  return {
+  const state: CalcState = {
     ...defaultCalcState(),
     mode: 'A',
     name: r.name,
@@ -133,4 +139,52 @@ export function calcStateFromRecipe(r: Recipe): CalcState {
     input: doughInputFromRecipe(r),
     pieces: r.pieces ?? 0,
   };
+  return { ...state, savedSnapshot: calcSnapshot(state) };
+}
+
+/** 재료 행 id를 뺀 배합 — 불러올 때마다·역산할 때마다 새로 붙는 id는 내용이 아니다 */
+function doughContent(d: DoughInput): string {
+  const strip = <T extends { id: string }>(rows: T[]) => rows.map(({ id: _id, ...rest }) => rest);
+  return stableJson({
+    ...d,
+    flours: strip(d.flours),
+    liquids: strip(d.liquids),
+    extras: strip(d.extras),
+  });
+}
+
+/** 저장하지 않은 계산기 입력 위로 레시피를 불러올 때 묻는 문구 (iOS와 같다) */
+export const LOAD_OVER_DIRTY_PROMPT = '레시피를 불러올까요? 저장하지 않은 입력은 지워집니다.';
+
+/** 저장하지 않은 입력을 판단하는 내용 — 재료 행 id는 뺀다 */
+export function calcSnapshot(s: CalcState): string {
+  return stableJson({
+    mode: s.mode,
+    name: s.name,
+    pieces: s.pieces,
+    target: s.target,
+    input: doughContent(s.input),
+  });
+}
+
+/**
+ * 계산기에 저장하지 않은 입력이 있는가 — 불러오기가 덮어쓰기 전에 확인한다 (iOS AppModel.calcIsDirty와 같은 판단).
+ * 마지막으로 불러오거나 저장한 상태와 같으면 깨끗하다. 그 기록이 없으면(예전 draft) 연결된 레시피를 불러온 상태나
+ * 처음 기본 배합과 비교한다.
+ * 목표 역산(모드 B) 입력은 레시피에 저장되지 않으므로 모드 B는 항상 저장하지 않은 입력으로 본다.
+ */
+export function isCalcDirty(state: CalcState, recipes: Recipe[]): boolean {
+  const linked = state.recipeId ? recipes.find((r) => r.id === state.recipeId) : undefined;
+  // 연결된 레시피가 지워졌으면 그 내용은 계산기에만 남아 있다 — 불러오기 전에 묻는다
+  if (state.recipeId && !linked) return true;
+  // 마지막으로 불러오거나 저장한 그대로면 깨끗하다 (모드 B 저장·목표 입력을 바꾼 채 저장·레시피 이름 변경 포함)
+  if (state.savedSnapshot !== undefined && calcSnapshot(state) === state.savedSnapshot) return false;
+  if (state.mode !== 'A') return true;
+  const base = linked ? calcStateFromRecipe(linked) : defaultCalcState();
+  return (
+    state.name !== base.name ||
+    state.pieces !== base.pieces ||
+    stableJson(state.target) !== stableJson(base.target) ||
+    doughContent(state.input) !== doughContent(base.input)
+  );
 }

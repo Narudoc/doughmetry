@@ -191,15 +191,41 @@ export function validateRecipe(
 
 // ── 저장/불러오기 ──────────────────────────────────────────────────
 
-export function loadRecipes(store: KeyValueStore | null = browserStore): Recipe[] {
+/**
+ * 저장소의 레시피 — patched: 검증이 id·시각을 새로 붙인 항목이 있다 (로드할 때마다 달라진다),
+ * dropped: 검증에서 버려진 항목 수
+ */
+function readRecipes(store: KeyValueStore | null): {
+  recipes: Recipe[];
+  patched: boolean;
+  dropped: number;
+} {
   const raw = loadJson<unknown>(RECIPES_KEY, store);
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) return { recipes: [], patched: false, dropped: 0 };
   const recipes: Recipe[] = [];
+  let patched = false;
+  let dropped = 0;
   for (const item of raw) {
     const v = validateRecipe(item);
-    if (v.ok) recipes.push(v.recipe);
+    if (!v.ok) {
+      dropped++;
+      continue;
+    }
+    recipes.push(v.recipe);
+    const r = item as Record<string, unknown>;
+    if (
+      !(typeof r.id === 'string' && r.id) ||
+      typeof r.createdAt !== 'string' ||
+      typeof r.updatedAt !== 'string'
+    ) {
+      patched = true;
+    }
   }
-  return recipes;
+  return { recipes, patched, dropped };
+}
+
+export function loadRecipes(store: KeyValueStore | null = browserStore): Recipe[] {
+  return readRecipes(store).recipes;
 }
 
 export function persistRecipes(
@@ -217,7 +243,12 @@ export interface RecipeList {
 }
 
 export function loadRecipeList(store: KeyValueStore | null = browserStore): RecipeList {
-  return { recipes: loadRecipes(store), persisted: true };
+  const { recipes, patched, dropped } = readRecipes(store);
+  // id·시각이 없던 항목은 로드할 때마다 새 id를 받는다 — 변경마다 저장소를 다시 읽는 updateRecipes가
+  // 탭이 들고 있는 id를 찾지 못하지 않도록 한 번 써서 고정한다.
+  // 버려진 항목이 있으면 쓰지 않는다 (쓰면 사용자 조작 없이 그 항목이 지워진다)
+  if (!patched || dropped > 0) return { recipes, persisted: true };
+  return { recipes, persisted: persistRecipes(recipes, store) };
 }
 
 /**
@@ -259,8 +290,8 @@ function isNewer(a: string, b: string): boolean {
   return Number.isNaN(ta) || Number.isNaN(tb) ? a > b : ta > tb;
 }
 
-/** 정렬된 키로 직렬화 — 키 순서가 달라도 같은 값이면 같은 문자열 */
-function stableJson(v: unknown): string {
+/** 정렬된 키로 직렬화 — 키 순서가 달라도 같은 값이면 같은 문자열 (undefined 필드는 없는 것으로 본다) */
+export function stableJson(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
   if (typeof v === 'object' && v !== null) {
     const entries = Object.entries(v)

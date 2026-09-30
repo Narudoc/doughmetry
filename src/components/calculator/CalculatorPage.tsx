@@ -6,9 +6,12 @@ import { fmtGrams } from '../../lib/format';
 import { newId } from '../../lib/id';
 import type { CalcState } from '../../state';
 import {
+  LOAD_OVER_DIRTY_PROMPT,
+  calcSnapshot,
   calcStateFromRecipe,
   currentDoughInput,
   currentPieces,
+  isCalcDirty,
   targetSpecFromForm,
 } from '../../state';
 import type { Recipe, Settings } from '../../types';
@@ -43,6 +46,10 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     ? api.recipes.find((r) => r.id === state.recipeId)
     : undefined;
 
+  /** 저장하지 않은 입력이 있으면 덮어쓰기 전에 묻는다 (iOS calcIsDirty 확인과 같다) */
+  const confirmLoad = () =>
+    !isCalcDirty(state, api.recipes) || window.confirm(LOAD_OVER_DIRTY_PROMPT);
+
   // 모드 B에서 목표 조합이 물리적으로 불가능한 경우 (첨가 물/밀가루 음수)
   const negativeWater = state.mode === 'B' && dough.water < -1e-9;
   const negativeFlour = state.mode === 'B' && dough.flours.some((f) => f.grams < -1e-9);
@@ -70,7 +77,9 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
       pieces,
     };
     api.save(recipe);
-    onChange({ ...state, name: data.name, recipeId: id });
+    // 저장한 지금 상태가 새 기준 — 이후 바뀐 것만 '저장하지 않은 입력'이 된다 (iOS markCalcSaved)
+    const saved: CalcState = { ...state, name: data.name, recipeId: id };
+    onChange({ ...saved, savedSnapshot: calcSnapshot(saved) });
     toast(overwrite ? '레시피를 덮어썼습니다' : '새 레시피로 저장했습니다');
   };
 
@@ -101,7 +110,8 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
                   }
                   onChange={(e) => {
                     const r = api.recipes.find((x) => x.id === e.target.value);
-                    if (r) {
+                    // 취소하면 상태가 그대로라 제어되는 select가 원래 선택으로 돌아간다
+                    if (r && confirmLoad()) {
                       onChange(calcStateFromRecipe(r));
                       toast(`'${r.name}' 레시피를 불러왔습니다`);
                     }
@@ -122,6 +132,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
               <Button
                 variant="ghost"
                 onClick={() => {
+                  if (!confirmLoad()) return;
                   onChange(calcStateFromRecipe(loadedRecipe));
                   toast(`'${loadedRecipe.name}' 레시피를 다시 불러왔습니다`);
                 }}
