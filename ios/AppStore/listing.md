@@ -123,10 +123,10 @@ KR 설명의 물 온도 줄에는 °F를 넣지 않는다 — 한국 사용자�
 |---|---|---|---|---|
 | 1 | `01-convert` | 레시피 탭의 캉파뉴 T65 / Pain de campagne(르방 리퀴드 100%)를 '변환기로 보내기' → 목표 뒤흐 50%, 르방 질량 고정. '변환 결과 — 재료' 표와 보존 지표(✓) 행이 탭 바 위에 다 보이게 스크롤 | 르방만 바꾸고, 반죽은 그대로 | Switch levain. Keep the dough. |
 | 2 | `02-calculator` | 계산기: 기본 예시 캉파뉴(T65 900 · 물 620 · 소금 20 · 르방 200 g @100%) + 하단 요약 바 72.0% / 1740.0 g / PFF 10.0% | 총 밀가루 기준, 실시간 계산 | Total-flour math, live |
-| 3 | `03-import` | 레시피 탭 → 가져오기 → 텍스트 붙여넣기(스크립트가 클립보드에 넣어 둔 예시) → 분석 → 확인 시트(맨 위가 Apple Intelligence/규칙 기반 안내 — 'AI 결과가 규칙 분석과 달라…' 경고면 다시). 이름·밀가루가 보이게(iPad 13형은 지표까지) | 사진·텍스트로 레시피 가져오기 | Recipe from a photo or text |
+| 3 | `03-import` | 레시피 탭 → 가져오기 → 텍스트 붙여넣기(스크립트가 클립보드에 넣어 둔 예시) → 분석 → 확인 시트(맨 위가 Apple Intelligence/규칙 기반 안내 — 'AI 결과가 규칙 분석과 달라…' 경고면 다시). 이름·밀가루가 보이게(iPad 13형도 이름·밀가루·르방까지 — 지표는 스크롤 아래) | 사진·텍스트로 레시피 가져오기 | Recipe from a photo or text |
 | 4 | `04-timeline` | 도구 → 타임라인, 기준 '완성 시각', 단계 시각·버튼이 UI 언어로 (en은 `2:10 PM` 꼴과 `Edit`, ko는 `오후 2:10` 꼴과 `편집`) | 빵 나올 시각부터 거꾸로 | Plan back from bread time |
 | 5 | `05-bakelog` | 레시피 탭 → 캉파뉴 T65 / Pain de campagne 상세: 별점과 베이킹 로그 메모 (스크립트의 예시 데이터) | 굽기마다 별점·메모 | Rate and note every bake |
-| 6 | `06-fiche` | 캉파뉴 T65 / Pain de campagne를 계산기로 불러온 뒤 하단 요약 바를 눌러 연 배합표 시트(처음부터 큰 높이), 다크 모드 | 한 장짜리 배합표 | A one-page fiche technique |
+| 6 | `06-fiche` | 캉파뉴 T65 / Pain de campagne를 계산기로 불러온 뒤 하단 요약 바를 눌러 연 배합표 시트(처음부터 큰 높이 — iPad는 페이지 크기 시트라 재료와 총 수분율·총 반죽 무게까지 한 화면), 다크 모드 | 한 장짜리 배합표 | A one-page fiche technique |
 | (7) | `07-scale` | 선택: 계산기 → 분할 섹션의 '배율 조정' 시트(배율 1.5 입력 — 미리보기 '1760.0 g → 2640.0 g (×1.5)'가 보이게 — 06에서 불러온 캉파뉴 T65 / Pain de campagne 기준) | 배합 배율을 한 번에 | Scale any formula in one step |
 
 - 예시 데이터는 언어별로 따로 넣는다: ko는 캉파뉴 T65·바게트 오 르방·호밀 캉파뉴와 한국어 메모, en은 Pain de campagne·Baguette au levain·Rye country loaf와 영어 메모. 다른 언어 이름이 섞이거나 'Test' 같은 이름이 보이면 다시 찍는다.

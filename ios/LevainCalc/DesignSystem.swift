@@ -170,3 +170,36 @@ private struct AdaptiveDetentsSelection: ViewModifier {
                 set: { if !regular { selection.wrappedValue = $0 } }))
     }
 }
+
+extension View {
+    /// iPad에선 긴 내용이 작은 폼 시트에 갇히지 않게 페이지 크기 시트로 (iOS 18+ — 17은 adaptiveDetents의 .large 폼 시트).
+    /// iPhone·좁은 창의 시트는 그대로 — 크기 지정은 폼/페이지 시트로 뜰 때(넓은 창)만 쓰인다
+    @ViewBuilder
+    func pageSizedSheet() -> some View {
+        if #available(iOS 18, *) {
+            presentationSizing(.page)
+        } else {
+            self
+        }
+    }
+
+    /// 페이지 크기 시트(넓은 창)에서 폼을 결과 바와 같은 폭(700pt)으로 가운데에 모은다. 시트 안의 크기 클래스로는
+    /// 알 수 없어(폼 시트는 iPad에서도 compact) readableFormWidth() 대신 띄운 창의 폭(windowIsRegular)을 본다 —
+    /// iPhone·좁은 창은 그대로
+    func readableSheetWidth() -> some View { modifier(ReadableSheetWidth()) }
+}
+
+private struct ReadableSheetWidth: ViewModifier {
+    @Environment(\.windowIsRegular) private var windowIsRegular
+
+    func body(content: Content) -> some View {
+        if windowIsRegular {
+            GeometryReader { proxy in
+                content.contentMargins(
+                    .horizontal, max(20, (proxy.size.width - 700) / 2), for: .scrollContent)
+            }
+        } else {
+            content
+        }
+    }
+}

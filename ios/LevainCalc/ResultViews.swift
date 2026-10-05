@@ -176,6 +176,7 @@ struct BakersTableSheet: View {
                 FicheSections(
                     input: input, stats: stats, pieces: pieces, precision: precision, basis: basis)
             }
+            .readableSheetWidth()
             .navigationTitle(name.isEmpty ? L("배합표") : name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -203,6 +204,8 @@ struct BakersTableSheet: View {
             }
         }
         .adaptiveDetents([.medium, .large], selection: $detent)
+        // iPad: 한 장짜리 배합표답게 재료와 합계(총 수분율·총 반죽 무게)가 한 화면에 — 작은 폼 시트에선 합계가 잘린다
+        .pageSizedSheet()
         .modifier(KeepScreenAwake(enabled: keepAwake))
     }
 }
