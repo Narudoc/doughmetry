@@ -1,7 +1,8 @@
 import Foundation
+import ImageIO
 import LevainCore
-import UIKit
 import Vision
+import os
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -9,19 +10,33 @@ import FoundationModels
 /// 사진/텍스트 → 레시피 자동 인식 파이프라인.
 /// 1) Vision OCR로 텍스트 추출 (전 기기, 온디바이스)
 /// 2) Apple Intelligence(Foundation Models)로 구조화 — 지원 기기에서만
-/// 3) 미지원·실패 시 규칙 기반 파서(LevainCore.RecipeTextParser)로 폴백
+/// 3) 미지원·실패·건너뛰기 시 규칙 기반 파서(LevainCore.RecipeTextParser)로 폴백
 /// 결과는 반드시 확인 화면을 거쳐 저장한다.
 
-enum ImportEngine {
+enum ImportEngine: Sendable {
     case appleIntelligence
     case rules
 }
 
-struct ImportedRecipe: Identifiable {
+/// 가져오기 진행 단계 — 기다리는 동안 보이는 문구
+enum ImportStage: Sendable {
+    /// 사진에서 글자를 읽는 중 (Vision)
+    case reading
+    /// 온디바이스 모델이 재료를 정리하는 중
+    case analyzing
+}
+
+struct ImportedRecipe: Identifiable, Sendable {
     let id = UUID()
     var name: String
     var input: DoughInput
+    /// 공정(만드는 법) 원문 — 노트로 저장한다. 모델에 묻지 않고 규칙 파서가 잘라 낸 원문만 쓴다 (지어낸 공정 방지)
+    var note: String
+    /// 분량 표기("2개 분량")에서 읽은 분할 개수
+    var pieces: Double?
     var engine: ImportEngine
+    /// AI 초안이 규칙 분석과 어긋나 버리고 규칙 결과를 보이는 중 — 확인 화면이 물·르방을 다시 보라고 알린다
+    var aiRejected = false
     var recognizedText: String
 }
 
@@ -31,22 +46,97 @@ enum ImportError: Error {
     case noIngredients(recognizedText: String)
 }
 
+extension Log {
+    static let importer = Logger(subsystem: "com.narudoc.doughmetry", category: "import")
+}
+
+/// 가져오기 한 번의 모델 세션 — 사진 고르기·텍스트 붙여넣기 동안 미리 데워 두고,
+/// '규칙 결과로 보기'로 모델 분석만 끊는다. 앞선 인식의 대화 기록이 섞이지 않게 가져오기마다 새로 만든다
+@MainActor
+final class ImportSession {
+    /// LanguageModelSession (iOS 26+) — 저장 프로퍼티에는 가용성을 걸 수 없다
+    private var model: (any Sendable)?
+    private var cancelAnalysis: (@Sendable () -> Void)?
+    private var skipped = false
+
+    /// 새 세션 — 모델을 쓸 수 있는 기기면 모델 로드·지시문 처리를 미리 시작한다
+    static func prewarmed() -> ImportSession {
+        let session = ImportSession()
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), RecipeImporter.modelAvailable {
+            let model = RecipeImporter.makeLanguageSession()
+            model.prewarm()
+            session.model = model
+        }
+        #endif
+        return session
+    }
+
+    /// 모델 분석만 취소한다 — 가져오기는 이미 끝난 규칙 분석 결과로 이어진다
+    func skipAnalysis() {
+        skipped = true
+        cancelAnalysis?()
+    }
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    fileprivate func takeLanguageSession() -> LanguageModelSession? {
+        defer { model = nil }
+        return model as? LanguageModelSession
+    }
+    #endif
+
+    /// 분석 시작 전에 건너뛰기를 눌렀으면 바로 취소한다
+    fileprivate func track(_ cancel: @escaping @Sendable () -> Void) {
+        if skipped { cancel() } else { cancelAnalysis = cancel }
+    }
+}
+
 enum RecipeImporter {
     // MARK: OCR
 
-    static func recognizeText(in image: UIImage) async throws -> String {
-        guard let cgImage = image.cgImage else { throw ImportError.unreadableImage }
-        let orientation = CGImagePropertyOrientation(image.imageOrientation)
-        return try await Task.detached(priority: .userInitiated) {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["ko-KR", "en-US", "fr-FR"]
-            request.usesLanguageCorrection = true
-            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation)
-            try handler.perform([request])
-            let observations = request.results ?? []
-            return assembleRows(observations)
-        }.value
+    /// 사진 데이터 → 텍스트. 디코딩한 비트맵은 이 안에서만 살아 있다 — 모델을 기다리는 동안 들고 있지 않는다
+    static func recognizeText(in data: Data) async throws -> String {
+        let recognition = TextRecognition()
+        // 분리된 작업은 취소를 물려받지 않는다 — Vision 요청을 직접 끊는다
+        let text = try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) {
+                try recognition.perform(on: RecipeImporter.downsampledImage(data))
+            }.value
+        } onCancel: {
+            recognition.cancel()
+        }
+        try Task.checkCancellation()
+        return text
+    }
+
+    /// 넓이 상한(12 MP)까지 줄여 디코딩한다 — EXIF 회전도 여기서 적용된다.
+    /// 긴 변이 아니라 넓이로 자른다: 이어 붙인 세로 스크린숏(1290×12000)을 긴 변 4032로 줄이면 글자가 뭉개진다
+    static func downsampledImage(_ data: Data) throws -> CGImage {
+        guard
+            let source = CGImageSourceCreateWithData(
+                data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { throw ImportError.unreadableImage }
+        let maxArea = 4032.0 * 3024
+        var maxPixel = 4032
+        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let w = props[kCGImagePropertyPixelWidth] as? Int,
+            let h = props[kCGImagePropertyPixelHeight] as? Int, w > 0, h > 0
+        {
+            let area = Double(w) * Double(h)
+            let longSide = max(w, h)
+            maxPixel = area <= maxArea ? longSide : Int(Double(longSide) * (maxArea / area).squareRoot())
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw ImportError.unreadableImage
+        }
+        return image
     }
 
     static func assembleRows(_ observations: [VNRecognizedTextObservation]) -> String {
@@ -58,15 +148,22 @@ enum RecipeImporter {
 
     // MARK: 파이프라인
 
-    static func importRecipe(from image: UIImage) async throws -> ImportedRecipe {
-        let text = try await recognizeText(in: image)
+    static func importRecipe(
+        from data: Data, session: ImportSession? = nil,
+        onStage: @escaping @MainActor @Sendable (ImportStage) -> Void = { _ in }
+    ) async throws -> ImportedRecipe {
+        await onStage(.reading)
+        let text = try await recognizeText(in: data)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ImportError.noText
         }
-        return try await importRecipe(from: text)
+        return try await importRecipe(from: text, session: session, onStage: onStage)
     }
 
-    static func importRecipe(from text: String) async throws -> ImportedRecipe {
+    static func importRecipe(
+        from text: String, session: ImportSession? = nil,
+        onStage: @escaping @MainActor @Sendable (ImportStage) -> Void = { _ in }
+    ) async throws -> ImportedRecipe {
         // @멘션·#해시태그는 어느 경로에서도 재료 정보가 아니다
         let text = RecipeTextParser.cleanForParsing(text)
         let parsed = RecipeTextParser.parse(text)
@@ -75,22 +172,53 @@ enum RecipeImporter {
         guard parsed.matchedLineCount > 0 else {
             throw ImportError.noIngredients(recognizedText: text)
         }
+        var aiRejected = false
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            if case .available = SystemLanguageModel.default.availability,
-                let result = try? await parseWithAppleIntelligence(text, rules: parsed)
-            {
-                return result
+        if #available(iOS 26.0, *), modelAvailable {
+            await onStage(.analyzing)
+            do {
+                if let result = try await analyze(text, rules: parsed, session: session) {
+                    return result
+                }
+                Log.importer.notice("AI 분석 시간 초과 — 규칙 결과로")
+            } catch let reason as ReconcileRejection {
+                Log.importer.notice("AI 초안 기각: \(String(describing: reason), privacy: .public)")
+                aiRejected = reason != .empty
+            } catch {
+                // 건너뛰기(취소)·모델 오류 — 규칙 결과로
             }
         }
         #endif
+        try Task.checkCancellation()
         return ImportedRecipe(
-            name: parsed.name ?? "", input: parsed.input, engine: .rules, recognizedText: text)
+            name: parsed.name ?? "", input: parsed.input, note: parsed.methodNote ?? "",
+            pieces: parsed.pieces, engine: .rules, aiRejected: aiRejected, recognizedText: text)
+    }
+
+    /// operation이 seconds 안에 끝나지 않으면 nil — 남은 작업은 취소한다
+    static func withDeadline<T: Sendable>(
+        seconds: Double, _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T? {
+        try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                return nil
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? nil
+        }
     }
 
     // MARK: Apple Intelligence (Foundation Models)
 
     #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    static var modelAvailable: Bool {
+        if case .available = SystemLanguageModel.default.availability { return true }
+        return false
+    }
+
     @available(iOS 26.0, *)
     @Generable
     enum AIYeastType {
@@ -146,10 +274,8 @@ enum RecipeImporter {
     }
 
     @available(iOS 26.0, *)
-    static func parseWithAppleIntelligence(
-        _ text: String, rules: ParsedRecipeText
-    ) async throws -> ImportedRecipe {
-        let session = LanguageModelSession(
+    static func makeLanguageSession() -> LanguageModelSession {
+        LanguageModelSession(
             instructions: """
                 사워도우 빵 레시피 텍스트에서 재료를 추출한다. 규칙:
                 - 각 재료의 무게는 그 재료 이름 옆에 적힌 숫자다. 다른 재료의 숫자를 가져오지 않는다.
@@ -183,6 +309,32 @@ enum RecipeImporter {
                 (stiff/dur는 50), waterGrams=730, yeastGrams=10 + yeastType=fresh,
                 saltGrams=20, bassinageGrams=0, liquids=[]
                 """)
+    }
+
+    /// 모델 분석 — 시간 초과(nil)·건너뛰기(취소)·교차 검증 기각(ReconcileRejection)이면 호출부가 규칙 결과를 쓴다.
+    /// 실측 응답이 3.5초 안팎이라 기한은 넉넉히 10초
+    @available(iOS 26.0, *)
+    static func analyze(
+        _ text: String, rules: ParsedRecipeText, session: ImportSession?
+    ) async throws -> ImportedRecipe? {
+        let model = await session?.takeLanguageSession() ?? makeLanguageSession()
+        let analysis = Task {
+            try await withDeadline(seconds: 10) {
+                try await parseWithAppleIntelligence(text, rules: rules, session: model)
+            }
+        }
+        await session?.track { analysis.cancel() }
+        return try await withTaskCancellationHandler {
+            try await analysis.value
+        } onCancel: {
+            analysis.cancel()
+        }
+    }
+
+    @available(iOS 26.0, *)
+    static func parseWithAppleIntelligence(
+        _ text: String, rules: ParsedRecipeText, session: LanguageModelSession
+    ) async throws -> ImportedRecipe {
         // 같은 텍스트는 같은 결과가 나오도록 탐욕 샘플링
         let draft = try await session.respond(
             to: text, generating: AIDraft.self,
@@ -217,93 +369,32 @@ enum RecipeImporter {
                 .filter { $0.grams > 0 }
                 .map { Extra(name: $0.name, grams: $0.grams) })
 
-        let input = try reconcile(draftInput, rules: rules, text: text)
+        let input = try reconcileAIDraft(draftInput, rules: rules).get()
         return ImportedRecipe(
             name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines), input: input,
+            note: rules.methodNote ?? "", pieces: rules.pieces,
             engine: .appleIntelligence, recognizedText: text)
     }
     #endif
-
-    /// AI 초안을 규칙 파서 결과(같은 text를 parse한 것)로 보정·검증한다. 초안을 믿을 수 없으면 throw —
-    /// 호출부가 규칙 파서 결과로 폴백한다.
-    static func reconcile(
-        _ draft: DoughInput, rules: ParsedRecipeText, text: String
-    ) throws -> DoughInput {
-        var input = draft
-        guard !input.flours.isEmpty || input.levain.grams > 0 || input.water > 0 else {
-            throw ImportError.noIngredients(recognizedText: text)
-        }
-        // 르방·발효종이 밀가루·액체·기타로 분류되면 총 무게는 같아도 수분율·PFF가 틀어진다
-        let names = input.flours.map(\.name) + input.liquids.map(\.name) + input.extras.map(\.name)
-        if names.contains(where: RecipeTextParser.matchesLevain) {
-            throw ImportError.noIngredients(recognizedText: text)
-        }
-
-        // 규칙 파서가 키워드(리퀴드/뒤흐/stiff/30~150%)나 르방 빌드 비율로 정한 수분율은
-        // 온디바이스 모델의 추정보다 신뢰한다
-        if rules.input.levain.grams > 0,
-            rules.levainHydrationExplicit || rules.input.levain.hydration != 1.0
-        {
-            input.levain.hydration = rules.input.levain.hydration
-            input.levain.type = rules.input.levain.type
-        }
-        if input.levain.grams == 0 {
-            input.levain.hydration = 1.0
-            input.levain.type = .liquide
-        }
-        for i in input.liquids.indices {
-            if let preset = liquidPreset(for: input.liquids[i].name) {
-                input.liquids[i].waterRatio = preset.waterRatio
-            }
-        }
-        if rules.input.yeast.grams > 0, rules.input.yeast.type == .instant {
-            input.yeast.type = .instant
-        }
-
-        // 교차 검증 — 보정 후에도 규칙 파서와 어긋나면 AI 결과를 버린다
-        // (온디바이스 소형 모델이 표 형식에서 숫자를 섞거나 재료를 빠뜨리는 경우 방어).
-        // 제대로 읽은 초안은 보정 후 총 무게가 규칙 파서와 같다 — 남은 차이는 빠뜨리거나 지어낸 재료이고,
-        // 무게 허용치에 묻히는 소량 재료(몰트·이스트)는 가짓수로 본다
-        if rules.matchedLineCount >= 3 {
-            let ai = computeStats(input)
-            let rs = computeStats(rules.input)
-            let rulesLevain = rules.input.levain.grams
-            if abs(ai.doughWeight - rs.doughWeight) > max(5, rs.doughWeight * 0.01)
-                || abs(ai.hydrationPct - rs.hydrationPct) > 2
-                || abs(ai.pffPct - rs.pffPct) > 2
-                || abs(input.levain.grams - rulesLevain) > max(10, rulesLevain * 0.1)
-                || input.extras.count < rules.input.extras.count
-                || (rules.input.yeast.grams > 0 && input.yeast.grams == 0)
-            {
-                throw ImportError.noIngredients(recognizedText: text)
-            }
-        }
-        return input
-    }
-
-    /// 우유·계란은 모델이 추정한 수분율 대신 프리셋을 쓴다 — 키워드는 RecipeTextParser의 액체 분기와 같다
-    static func liquidPreset(for name: String) -> LiquidPreset? {
-        func has(_ words: [String]) -> Bool {
-            words.contains { name.localizedCaseInsensitiveContains($0) }
-        }
-        if has(["우유", "milk", "lait"]) { return .milk }
-        if has(["계란", "달걀", "전란", "egg", "oeuf", "œuf"]) { return .egg }
-        return nil
-    }
 }
 
-extension CGImagePropertyOrientation {
-    init(_ orientation: UIImage.Orientation) {
-        switch orientation {
-        case .up: self = .up
-        case .down: self = .down
-        case .left: self = .left
-        case .right: self = .right
-        case .upMirrored: self = .upMirrored
-        case .downMirrored: self = .downMirrored
-        case .leftMirrored: self = .leftMirrored
-        case .rightMirrored: self = .rightMirrored
-        @unknown default: self = .up
-        }
+/// Vision 글자 인식 한 번 — 취소 핸들러(다른 스레드)에서 요청을 끊을 수 있게 요청을 들고 있다.
+/// VNRequest.cancel()은 수행 중인 다른 스레드에서 불러도 된다
+private final class TextRecognition: @unchecked Sendable {
+    private let request: VNRecognizeTextRequest = {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["ko-KR", "en-US", "fr-FR"]
+        request.usesLanguageCorrection = true
+        return request
+    }()
+
+    func cancel() { request.cancel() }
+
+    /// image는 회전이 이미 적용된 비트맵이다 (downsampledImage)
+    func perform(on image: CGImage) throws -> String {
+        let handler = VNImageRequestHandler(cgImage: image, orientation: .up)
+        try handler.perform([request])
+        return RecipeImporter.assembleRows(request.results ?? [])
     }
 }

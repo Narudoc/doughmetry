@@ -43,7 +43,7 @@ export function YeastControl({ yeast, onChange, pct, pctLabel = '총 밀가루 �
         className="max-w-[220px]"
       />
       {yeast.grams > 0 && (
-        <p className="text-xs tabular-nums text-ink/60">
+        <p className="text-xs tabular-nums text-ink/70">
           = {LABEL[other]} {fmtGrams(convertYeast(yeast.grams, yeast.type, other), 0.1)} g (환산
           비율 40%) · {pctLabel} {fmtPct(pct, 2)}
         </p>

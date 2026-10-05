@@ -1,0 +1,103 @@
+name: iOS
+
+# ios/ 변경마다: LevainCore 테스트(swift test) · 앱 빌드(시뮬레이터) · 영어 사전 누락 검사.
+# UI 스모크 테스트(LevainCalcUITests)는 오래 걸려 수동 실행(workflow_dispatch)에서만 돈다.
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+    inputs:
+      ui_tests:
+        description: 'UI 스모크 테스트(LevainCalcUITests)도 돌린다'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 이미지에 든 가장 새 정식 Xcode — Xcode 27이 이미지에 들어오면 저절로 그것을 쓴다
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_[0-9]*.app | grep -vi -e beta -e release_candidate | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: LevainCore tests
+        working-directory: ios/LevainCore
+        run: swift test
+
+      - name: Build app (iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/app-build.log"
+
+      # 아직 막지 않는다 — 러너의 Swift가 로컬(Xcode 27)과 달라 로컬에서 재현할 수 없는 경고로 빨개질 수 있다.
+      # 러너에 Xcode 27이 들어오면 실패로 바꾼다
+      - name: Compiler warnings (non-blocking)
+        run: |
+          grep -E '^/.+:[0-9]+:[0-9]+: warning: ' "$RUNNER_TEMP/app-build.log" | sort -u | while IFS= read -r line; do
+            file=${line%%:*}
+            rest=${line#*:}
+            echo "::warning file=${file#"$GITHUB_WORKSPACE"/},line=${rest%%:*}::${line#*: warning: }"
+          done || true
+
+      # L("…")/LF("…")의 한국어 키마다 Localization.swift의 영어 사전(en)에 항목이 있는지 (로컬에서도 같은 명령)
+      - name: Localization check
+        run: python3 ios/scripts/check_l10n.py
+
+  # build-and-test와 나란히 — 영어 사전 누락으로 그 작업이 실패해도 스모크 테스트는 돈다
+  ui-tests:
+    if: github.event_name == 'workflow_dispatch' && inputs.ui_tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_[0-9]*.app | grep -vi -e beta -e release_candidate | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      # 가장 새 iOS 런타임의 첫 iPhone
+      - name: UI smoke tests
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          def version(key):
+              return [int(n) for n in re.findall(r"\d+", key.rsplit("iOS", 1)[-1])]
+          for key in sorted((k for k in runtimes if ".iOS-" in k), key=version, reverse=True):
+              phones = [d["udid"] for d in runtimes[key] if d["name"].startswith("iPhone")]
+              if phones:
+                  print(phones[0])
+                  break
+          ')
+          test -n "$UDID"
+          xcrun simctl list devices | grep "$UDID"
+          xcodebuild test -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
+            -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -resultBundlePath "$RUNNER_TEMP/LevainCalcUITests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO -only-testing:LevainCalcUITests
+
+      # 탭별 스크린샷(한국어·영어)이 결과 번들에 첨부돼 있다
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LevainCalcUITests.xcresult
+          path: ${{ runner.temp }}/LevainCalcUITests.xcresult
+          if-no-files-found: ignore

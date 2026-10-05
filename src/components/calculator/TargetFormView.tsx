@@ -41,7 +41,7 @@ export function TargetFormView({ target, onChange }: Props) {
               value={target.pieceWeight}
               onChange={(pieceWeight) => patch({ pieceWeight })}
             />
-            <p className="col-span-2 text-xs tabular-nums text-ink/60">
+            <p className="col-span-2 text-xs tabular-nums text-ink/70">
               총 반죽 무게 = {fmtGrams(target.pieces * target.pieceWeight, 1)} g
             </p>
           </div>

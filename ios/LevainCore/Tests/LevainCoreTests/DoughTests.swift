@@ -431,3 +431,84 @@ struct FixedPff {
         }
     }
 }
+
+@Suite("배율 조정 — scaleDough")
+struct Scaling {
+    /// 밀가루 2종 + 바시나주 + 우유·계란 + 이스트 + 기타 재료
+    func fullInput() -> DoughInput {
+        makeInput(
+            flours: [
+                Flour(id: "a", name: "T65", grams: 800),
+                Flour(id: "b", name: "호밀", grams: 100),
+            ],
+            bassinage: 40,
+            levain: Levain(type: .dur, hydration: 0.6, grams: 180, flourName: "T80"),
+            liquids: [
+                Liquid(id: "m", name: "우유", grams: 60, waterRatio: 0.88),
+                Liquid(id: "e", name: "계란", grams: 50, waterRatio: 0.76),
+            ],
+            yeast: Yeast(type: .instant, grams: 3),
+            extras: [Extra(id: "x", name: "호두", grams: 120)])
+    }
+
+    @Test("×1은 입력 그대로")
+    func identity() {
+        #expect(scaleDough(fullInput(), by: 1) == fullInput())
+    }
+
+    @Test("×0.5·×1.5·×3에서 모든 %가 보존되고 총 반죽 무게만 배가 된다")
+    func preservesPercentages() {
+        let input = fullInput()
+        let before = computeStats(input)
+        for k in [0.5, 1.5, 3.0] {
+            let after = computeStats(scaleDough(input, by: k))
+            #expect(abs(after.hydrationPct - before.hydrationPct) < 1e-9)
+            #expect(abs(after.saltPct - before.saltPct) < 1e-9)
+            #expect(abs(after.pffPct - before.pffPct) < 1e-9)
+            #expect(abs(after.yeastPct - before.yeastPct) < 1e-9)
+            #expect(after.pcts.keys.sorted() == before.pcts.keys.sorted())
+            for (id, pct) in before.pcts { #expect(abs(after.pct(id) - pct) < 1e-9) }
+            #expect(abs(after.doughWeight - k * before.doughWeight) < 1e-9)
+        }
+    }
+
+    @Test("그램만 바뀌고 id·이름·르방 수분율·waterRatio·이스트 타입은 그대로")
+    func keepsIdentity() {
+        let input = fullInput()
+        let out = scaleDough(input, by: 2)
+        #expect(out.flours.map(\.id) == input.flours.map(\.id))
+        #expect(out.flours.map(\.name) == input.flours.map(\.name))
+        #expect(out.flours.map(\.grams) == [1600, 200])
+        #expect(out.water == 1240)
+        #expect(out.bassinage == 80)
+        #expect(out.salt == 40)
+        #expect(out.levain == Levain(type: .dur, hydration: 0.6, grams: 360, flourName: "T80"))
+        #expect(out.liquids.map(\.id) == ["m", "e"])
+        #expect(out.liquids.map(\.waterRatio) == [0.88, 0.76])
+        #expect(out.liquids.map(\.grams) == [120, 100])
+        #expect(out.yeast == Yeast(type: .instant, grams: 6))
+        #expect(out.extras == [Extra(id: "x", name: "호두", grams: 240)])
+    }
+
+    @Test("×2 → ×0.5 왕복이 원본을 복원한다")
+    func roundTrip() {
+        let input = fullInput()
+        let back = scaleDough(scaleDough(input, by: 2), by: 0.5)
+        for (a, b) in zip(back.flours, input.flours) { #expect(near(a.grams, b.grams, 1e-9)) }
+        #expect(near(back.water, input.water, 1e-9))
+        #expect(near(back.bassinage, input.bassinage, 1e-9))
+        #expect(near(back.salt, input.salt, 1e-9))
+        #expect(near(back.levain.grams, input.levain.grams, 1e-9))
+        for (a, b) in zip(back.liquids, input.liquids) { #expect(near(a.grams, b.grams, 1e-9)) }
+        #expect(near(back.yeast.grams, input.yeast.grams, 1e-9))
+        for (a, b) in zip(back.extras, input.extras) { #expect(near(a.grams, b.grams, 1e-9)) }
+    }
+
+    @Test("0·음수·NaN·무한대 배율은 아무것도 바꾸지 않는다")
+    func invalidFactorIsNoOp() {
+        let input = fullInput()
+        for k in [0, -2, Double.nan, Double.infinity] {
+            #expect(scaleDough(input, by: k) == input)
+        }
+    }
+}

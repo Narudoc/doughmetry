@@ -62,6 +62,36 @@ export const defaultCalcState = (): CalcState => ({
   pieces: 0,
 });
 
+/** 새 배합용 빈 입력 (iOS CalcState.emptyDoughInput과 같다) */
+const emptyDoughInput = (): DoughInput => ({
+  flours: [{ id: newId(), name: '', grams: 0 }],
+  water: 0,
+  bassinage: 0,
+  salt: 0,
+  levain: { type: 'liquide', hydration: 1, grams: 0 },
+  liquids: [],
+  yeast: { type: 'fresh', grams: 0 },
+  extras: [],
+});
+
+export const emptyCalcState = (): CalcState => ({
+  ...defaultCalcState(),
+  name: '',
+  input: emptyDoughInput(),
+});
+
+/** 새 배합 시작 전에 묻는 문구 (iOS와 같다) */
+export const NEW_CALC_PROMPT = '새 배합을 시작할까요? 저장하지 않은 입력은 지워집니다.';
+
+/**
+ * 계산기 초기화 — 빈 배합 또는 예시 배합(캉파뉴)으로 새로 시작하고 레시피 연결을 끊는다 (iOS resetCalc(empty:)).
+ * 시작한 그대로는 저장하지 않은 입력이 없다
+ */
+export function resetCalcState(empty: boolean): CalcState {
+  const state = empty ? emptyCalcState() : defaultCalcState();
+  return { ...state, savedSnapshot: calcSnapshot(state) };
+}
+
 /** 저장된 draft가 v1 형태여도 새 필드를 기본값으로 채워 살린다 */
 export function sanitizeDoughInput(x: unknown): DoughInput | null {
   if (typeof x !== 'object' || x === null) return null;
@@ -94,6 +124,10 @@ export function sanitizeSettings(loaded: unknown): Settings | null {
   return {
     precision: s.precision,
     pctBasis: s.pctBasis === 'added' ? 'added' : 'total',
+    lastExportAt:
+      typeof s.lastExportAt === 'string' && !Number.isNaN(Date.parse(s.lastExportAt))
+        ? s.lastExportAt
+        : undefined,
   };
 }
 

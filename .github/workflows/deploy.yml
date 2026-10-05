@@ -3,6 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    # iOS만 바뀐 푸시는 웹을 다시 배포하지 않는다 (ios.yml이 맡는다). App Store용 privacy·support 페이지는 public/에 있다
+    paths-ignore: ['ios/**', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:

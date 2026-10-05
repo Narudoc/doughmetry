@@ -8,9 +8,13 @@ cd "$(dirname "$0")/.."
 BUILD_NUMBER="${1:-$(date +%Y%m%d%H%M)}"
 ARCHIVE="build/LevainCalc.xcarchive"
 
+./AppStore/preflight.sh repo
+
 xcodebuild -project LevainCalc.xcodeproj -scheme LevainCalc -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" \
   -allowProvisioningUpdates CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive
+
+./AppStore/preflight.sh archive "$ARCHIVE"
 
 xcodebuild -exportArchive -archivePath "$ARCHIVE" \
   -exportOptionsPlist AppStore/ExportOptions.plist -exportPath build/export \

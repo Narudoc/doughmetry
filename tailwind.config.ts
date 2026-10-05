@@ -11,7 +11,7 @@ export default {
           DEFAULT: '#1E4034',
           deep: '#142E25',
         },
-        brass: '#9A6B32',
+        brass: '#8A5C26',
         line: '#D9D3C4',
         danger: '#9E3B2F',
       },

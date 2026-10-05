@@ -72,3 +72,45 @@ struct WaterTemperatureTests {
         #expect(t < 0)
     }
 }
+
+@Suite("온도 단위 (°C 저장 · °F 표시)")
+struct TemperatureUnitTests {
+    @Test("절대 온도는 ×1.8 + 32, 온도 차(마찰계수)는 ×1.8만 — 왕복하면 원래 값")
+    func conversions() {
+        #expect(abs(fahrenheit(fromCelsius: 25) - 77) < 1e-9)
+        #expect(abs(fahrenheit(fromCelsius: 0) - 32) < 1e-9)
+        #expect(abs(fahrenheit(fromCelsius: 40) - 104) < 1e-9)
+        #expect(abs(celsius(fromFahrenheit: 77) - 25) < 1e-9)
+        #expect(abs(fahrenheitDelta(fromCelsius: 2) - 3.6) < 1e-9)
+        #expect(abs(fahrenheitDelta(fromCelsius: 8) - 14.4) < 1e-9)
+        #expect(abs(celsiusDelta(fromFahrenheit: 3.6) - 2) < 1e-9)
+        for c in [-10.0, 0, 4, 22.5, 26, 40] {
+            #expect(abs(celsius(fromFahrenheit: fahrenheit(fromCelsius: c)) - c) < 1e-9)
+            #expect(abs(celsiusDelta(fromFahrenheit: fahrenheitDelta(fromCelsius: c)) - c) < 1e-9)
+        }
+    }
+
+    @Test("°F로 바꾼 입력으로 풀어도 °C 결과를 °F로 바꾼 값과 같다 — 르방 유무 모두, 마찰계수는 차이로 환산")
+    func solveInFahrenheit() {
+        for levain in [24.0, nil] as [Double?] {
+            for friction in [2.0, 8, 0] {
+                let c = WaterTemperatureSpec(
+                    desiredDoughTemp: 25, flourTemp: 22, roomTemp: 24, levainTemp: levain,
+                    frictionFactor: friction)
+                let f = WaterTemperatureSpec(
+                    desiredDoughTemp: fahrenheit(fromCelsius: c.desiredDoughTemp),
+                    flourTemp: fahrenheit(fromCelsius: c.flourTemp),
+                    roomTemp: fahrenheit(fromCelsius: c.roomTemp),
+                    levainTemp: c.levainTemp.map { fahrenheit(fromCelsius: $0) },
+                    frictionFactor: fahrenheitDelta(fromCelsius: c.frictionFactor))
+                let expected = fahrenheit(fromCelsius: solveWaterTemperature(c))
+                #expect(abs(solveWaterTemperature(f) - expected) < 1e-9)
+
+                // 마찰계수를 절대 온도처럼(+32) 바꾸면 32°F 어긋난다
+                var wrong = f
+                wrong.frictionFactor = fahrenheit(fromCelsius: c.frictionFactor)
+                #expect(abs(solveWaterTemperature(wrong) - (expected - 32)) < 1e-9)
+            }
+        }
+    }
+}

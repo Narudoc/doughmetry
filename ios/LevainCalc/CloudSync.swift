@@ -42,50 +42,63 @@ final class CloudSync {
     private var observers: [NSObjectProtocol] = []
     /// 원격 변경 콜백 (AppModel이 설정) — 메인 액터에서 호출된다
     private var onRemoteChange: (@MainActor () -> Void)?
-    /// 마지막으로 동기화를 일으킨 원격 문서 상태 (remoteState)
-    private var lastRemoteState: String?
+    /// 마지막으로 동기화를 일으킨 원격 문서 상태 (remoteState) — nil이면 다음 갱신에서 거르지 않는다
+    private var lastRemoteState: LibrarySync.RemoteFileState?
+    /// 마지막으로 기록한 업로드 오류 — 같은 오류를 갱신마다 다시 남기지 않는다
+    private var lastUploadError: String?
 
     var isAvailable: Bool { containerURL != nil }
 
-    /// iCloud 메타데이터에 library.json이 존재하는가 (아직 내려받지 않았어도 true)
-    private var remoteFileKnown: Bool {
-        guard let query else { return false }
-        query.disableUpdates()
-        defer { query.enableUpdates() }
-        return query.results.contains { item in
-            (item as? NSMetadataItem)?.value(forAttribute: NSMetadataItemFSNameKey) as? String
-                == Self.fileName
-        }
-    }
-
-    /// 원격 문서의 내용 변경 시각·내려받기 상태·충돌 여부 요약 — 셋이 그대로면 다시 읽어도 결과가 같다.
-    /// 속성을 알 수 없으면 nil (그때는 거르지 않고 동기화한다)
-    private var remoteState: String? {
+    /// 쿼리 결과의 library.json 항목을 읽는다 — 읽는 동안 갱신을 멈춘다. 쿼리가 없으면 nil
+    private func withLibraryItem<T>(_ body: (NSMetadataItem?) -> T) -> T? {
         guard let query else { return nil }
         query.disableUpdates()
         defer { query.enableUpdates() }
-        guard
-            let item = query.results.lazy.compactMap({ $0 as? NSMetadataItem }).first(where: {
-                $0.value(forAttribute: NSMetadataItemFSNameKey) as? String == Self.fileName
-            })
-        else { return "absent" }
-        let changed = item.value(forAttribute: NSMetadataItemFSContentChangeDateKey) as? Date
-        let download = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String
-        guard changed != nil || download != nil else { return nil }
-        let failed = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingErrorKey) != nil
-        let conflicts =
-            item.value(forAttribute: NSMetadataUbiquitousItemHasUnresolvedConflictsKey) as? Bool ?? false
-        return "\(changed?.timeIntervalSinceReferenceDate ?? 0)|\(download ?? "")|\(failed)|\(conflicts)"
+        let item = query.results.lazy.compactMap({ $0 as? NSMetadataItem }).first(where: {
+            $0.value(forAttribute: NSMetadataItemFSNameKey) as? String == Self.fileName
+        })
+        return body(item)
+    }
+
+    /// iCloud 메타데이터에 library.json이 존재하는가 (아직 내려받지 않았어도 true)
+    private var remoteFileKnown: Bool {
+        withLibraryItem { $0 != nil } ?? false
+    }
+
+    /// 원격 문서의 내용 변경 시각·내려받기 상태·충돌 여부 — 그대로면 다시 읽어도 결과가 같다
+    private var remoteState: LibrarySync.RemoteFileState {
+        withLibraryItem { item -> LibrarySync.RemoteFileState in
+            guard let item else { return .absent }
+            let changed = item.value(forAttribute: NSMetadataItemFSContentChangeDateKey) as? Date
+            let download = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String
+            guard changed != nil || download != nil else { return .unknown }
+            return .present(
+                changed: changed, download: download,
+                failed: item.value(forAttribute: NSMetadataUbiquitousItemDownloadingErrorKey) != nil,
+                conflicts: item.value(forAttribute: NSMetadataUbiquitousItemHasUnresolvedConflictsKey) as? Bool
+                    ?? false)
+        } ?? .unknown
     }
 
     /// iCloud가 library.json 내려받기에 실패했다고 알린 상태 (NSMetadataUbiquitousItemDownloadingErrorKey)
     private var remoteDownloadFailed: Bool {
-        guard let query else { return false }
-        query.disableUpdates()
-        defer { query.enableUpdates() }
-        return query.results.lazy.compactMap({ $0 as? NSMetadataItem }).contains {
-            $0.value(forAttribute: NSMetadataItemFSNameKey) as? String == Self.fileName
-                && $0.value(forAttribute: NSMetadataUbiquitousItemDownloadingErrorKey) != nil
+        withLibraryItem { $0?.value(forAttribute: NSMetadataUbiquitousItemDownloadingErrorKey) != nil } ?? false
+    }
+
+    /// 업로드 실패 기록 — 기기에 쓴 뒤 업로드가 막히면(저장 공간 부족 NSUbiquitousFileNotUploadedDueToQuotaError 등)
+    /// 화면은 '동기화됨'으로 남으므로 적어도 진단 기록에는 남긴다. 같은 오류는 한 번만
+    private func logUploadState() {
+        let upload = withLibraryItem { item -> (error: String?, uploaded: Bool?) in
+            let error = item?.value(forAttribute: NSMetadataUbiquitousItemUploadingErrorKey) as? NSError
+            return (error.map(errorCode), item?.value(forAttribute: NSMetadataUbiquitousItemIsUploadedKey) as? Bool)
+        }
+        guard let upload, upload.error != lastUploadError else { return }
+        lastUploadError = upload.error
+        if let error = upload.error {
+            Log.sync.error(
+                "upload failed: \(error, privacy: .public) uploaded=\(upload.uploaded.map { "\($0)" } ?? "?", privacy: .public)")
+        } else {
+            Log.sync.notice("upload error cleared")
         }
     }
 
@@ -140,13 +153,12 @@ final class CloudSync {
     }
 
     /// 첫 수집 완료·원격 메타데이터 갱신. 갱신은 이 앱이 쓴 파일의 업로드 진행률이 바뀔 때마다도 오므로,
-    /// 원격 문서 상태가 그대로면 전체 동기화(조정 읽기·병합)를 다시 돌리지 않는다
+    /// 원격 문서 상태가 그대로면 전체 동기화(조정 읽기·병합)를 다시 돌리지 않는다 (LibrarySync.shouldSync)
     private func queryDidChange() {
+        logUploadState()
         let state = remoteState
-        // 충돌 판이 남아 있는 동안은 거르지 않는다 — 정리하지 않고 둔 판 때문에 표시가 계속 켜져 있으면
-        // 새 충돌 판이 와도 상태 요약이 그대로라 놓친다
-        let hasConflicts = state?.hasSuffix("|true") ?? false
-        if hasGathered, let state, !hasConflicts, state == lastRemoteState { return }
+        guard LibrarySync.shouldSync(state: state, last: lastRemoteState, hasGathered: hasGathered) else { return }
+        Log.sync.notice("remote changed: \(state.logSummary, privacy: .public) gathered=\(self.hasGathered)")
         hasGathered = true
         lastRemoteState = state
         onRemoteChange?()
@@ -177,19 +189,11 @@ final class CloudSync {
         var isEmpty: Bool { versions.isEmpty }
     }
 
-    /// 원격 문서 스냅샷
+    /// 원격 문서 스냅샷 — 내용과 판정은 LibrarySync.snapshot, 여기는 정리할 판 객체만 더 든다
     struct RemoteSnapshot: Sendable {
-        /// iCloud 현재 판 — 병합 대상이자, 병합 결과를 다시 써야 하는지 비교하는 대상
-        var current: LibraryDocument
-        /// 두 기기가 따로 쓴 판(미해결 충돌 판) — 로컬·현재 판과 함께 LibrarySync.merge(_:) 한 번으로 합친다
-        var conflicts: [LibraryDocument]
-        /// 새 버전 앱이 쓴 판이 섞였다 — 이 기기는 합치지도 덮어쓰지도 않는다 (LibrarySync.decodeReport)
-        var isNewerFormat: Bool
-        /// conflicts 중 정리해도 되는 판 — 병합 결과를 원격에 쓴 뒤에만 정리한다
+        var snapshot: LibrarySync.Snapshot
+        /// snapshot.resolvable에 해당하는 충돌 판 — 병합 결과를 원격에 쓴 뒤에만 정리한다
         var resolvable: ConflictVersions
-        /// 정리하지 않고 그대로 두는 충돌 판 수 — 이번에 읽지 못했거나 일부 항목이 손상된 판.
-        /// 새 버전 앱이 쓴 판은 빼고 센다 (isNewerFormat이 따로 알린다 — 앱을 업데이트하면 합쳐진다)
-        var keptConflictCount: Int
     }
 
     /// 조정 접근 콜백을 받는 큐 — 메인 스레드를 막지 않는다
@@ -208,8 +212,9 @@ final class CloudSync {
     /// 비동기 조정 접근 + 제한 시간. 시간이 지나면 조정자를 취소하고 timedOut을 던진다 —
     /// 오프라인에서 조정 읽기가 내려받기를 끝없이 기다리면 동기화가 '동기화 중'에 멈추고 다음 동기화도 돌지 못한다.
     /// 조정자는 접근 블록을 정확히 한 번 부르므로(취소되면 NSUserCancelledError로) continuation도 한 번만 재개된다.
-    nonisolated private static func coordinate<T>(
-        _ intents: [NSFileAccessIntent], timeout: Duration, _ body: @escaping () throws -> T
+    /// body는 ioQueue에서 한 번 실행된다 — 호출 측이 그 뒤로 만지지 않는 값만 잡을 것.
+    nonisolated private static func coordinate<T: Sendable>(
+        _ intents: [NSFileAccessIntent], timeout: Duration, _ body: @escaping @Sendable () throws -> T
     ) async throws -> T {
         let box = CoordinatorBox()
         let timer = Task {
@@ -256,8 +261,10 @@ final class CloudSync {
             // 충돌 판 하나를 읽지 못하면(내려받기 실패·그새 지워짐) 한꺼번에 건 조정 읽기 전체가 실패한다 —
             // 그 판 하나 때문에 동기화가 영영 멈추지 않도록 문서만 다시 읽는다. 그 판은 병합하지도 정리하지도 않는다
             if versions.isEmpty || error is SyncError { throw error }
+            Log.sync.notice(
+                "reading \(versions.versions.count) conflict versions failed (\(errorCode(error), privacy: .public)) — reading current only")
             var snapshot = try await coordinatedSnapshot(url: url, known: known, versions: ConflictVersions(versions: []))
-            snapshot?.keptConflictCount = versions.versions.count
+            snapshot?.snapshot.keptConflictCount = versions.versions.count
             return snapshot
         }
     }
@@ -269,29 +276,29 @@ final class CloudSync {
     ) async throws -> RemoteSnapshot? {
         let item = NSFileAccessIntent.readingIntent(with: url, options: [])
         let versionIntents = versions.versions.map { NSFileAccessIntent.readingIntent(with: $0.url, options: []) }
-        return try await coordinate([item] + versionIntents, timeout: readTimeout) { () throws -> RemoteSnapshot? in
-            guard FileManager.default.fileExists(atPath: item.url.path) else {
-                if known { throw SyncError.notDownloaded }
-                return nil
+        let snapshot = try await coordinate([item] + versionIntents, timeout: readTimeout) {
+            () throws -> LibrarySync.Snapshot? in
+            // 문서가 없으면 충돌 판도 읽지 않는다 (원격 없음 또는 notDownloaded)
+            var currentData: Data?
+            var versionData: [Data?] = []
+            if FileManager.default.fileExists(atPath: item.url.path) {
+                currentData = try Data(contentsOf: item.url)
+                versionData = versionIntents.map { try? Data(contentsOf: $0.url) }
             }
-            let report = LibrarySync.decodeReport(try Data(contentsOf: item.url))
-            // 읽지 못한 판은 병합에도 정리에도 넣지 않는다
-            var versionData: [Data] = []
-            var readVersions: [NSFileVersion] = []
-            for (version, intent) in zip(versions.versions, versionIntents) {
-                guard let data = try? Data(contentsOf: intent.url) else { continue }
-                versionData.append(data)
-                readVersions.append(version)
+            do {
+                return try LibrarySync.snapshot(currentData: currentData, known: known, versionData: versionData)
+            } catch LibrarySync.SnapshotError.notDownloaded {
+                throw SyncError.notDownloaded
             }
-            let conflicts = LibrarySync.conflictDocuments(versionData)
-            return RemoteSnapshot(
-                current: report.document,
-                conflicts: conflicts.documents,
-                isNewerFormat: report.isNewerFormat || conflicts.isNewerFormat,
-                resolvable: ConflictVersions(versions: conflicts.resolvable.map { readVersions[$0] }),
-                keptConflictCount: versions.versions.count - conflicts.resolvable.count
-                    - conflicts.newerFormatCount)
         }
+        guard let snapshot else { return nil }
+        if snapshot.currentIsCorrupt {
+            // 빈 문서로 읽었으므로 이번 동기화가 병합 결과로 그 파일을 덮어쓴다
+            Log.sync.error("remote library.json is not JSON — treated as empty")
+        }
+        return RemoteSnapshot(
+            snapshot: snapshot,
+            resolvable: ConflictVersions(versions: snapshot.resolvable.map { versions.versions[$0] }))
     }
 
     /// 병합해 원격에 반영한 충돌 판을 정리한다 — 읽을 때 들고 온 판만 지우므로 그 뒤 새로 생긴 판은 남는다.
@@ -303,23 +310,33 @@ final class CloudSync {
 
     nonisolated private static func resolve(_ conflicts: ConflictVersions, at url: URL) async {
         let intent = NSFileAccessIntent.writingIntent(with: url, options: [])
-        try? await coordinate([intent], timeout: writeTimeout) {
-            // 그새 다른 기기가 정리한 판은 건드리지 않는다 — 지금도 미해결인 판 중 들고 온 것과 같은 판만
-            // (NSFileVersion의 ==는 같은 판인지를 비교한다, NSFileVersion.h)
-            for version in NSFileVersion.unresolvedConflictVersionsOfItem(at: intent.url) ?? []
-            where conflicts.versions.contains(version) {
-                version.isResolved = true
-                try? version.remove()
+        do {
+            try await coordinate([intent], timeout: writeTimeout) {
+                // 그새 다른 기기가 정리한 판은 건드리지 않는다 — 지금도 미해결인 판 중 들고 온 것과 같은 판만
+                // (NSFileVersion의 ==는 같은 판인지를 비교한다, NSFileVersion.h)
+                for version in NSFileVersion.unresolvedConflictVersionsOfItem(at: intent.url) ?? []
+                where conflicts.versions.contains(version) {
+                    version.isResolved = true
+                    do {
+                        try version.remove()
+                    } catch {
+                        Log.sync.error("removing a conflict version failed: \(errorCode(error), privacy: .public)")
+                    }
+                }
             }
+        } catch {
+            Log.sync.error("resolving conflict versions failed: \(errorCode(error), privacy: .public)")
         }
     }
 
     func writeRemote(_ doc: LibraryDocument) async throws {
         guard let url = documentURL else { return }
-        try await Self.write(try LibrarySync.encode(doc), to: url)
+        try await Self.write(doc, to: url)
     }
 
-    nonisolated private static func write(_ data: Data, to url: URL) async throws {
+    /// 인코딩도 여기서 — 라이브러리 전체 인코딩을 메인 액터에서 하지 않는다
+    nonisolated private static func write(_ doc: LibraryDocument, to url: URL) async throws {
+        let data = try LibrarySync.encode(doc)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let intent = NSFileAccessIntent.writingIntent(with: url, options: .forReplacing)
@@ -337,5 +354,19 @@ final class CloudSync {
         lastSyncAt = Date()
         status = .idle
         refreshStatus()  // 동기화 중 토글을 껐으면 .disabled로
+    }
+}
+
+extension LibrarySync.RemoteFileState {
+    /// 진단 기록용 요약
+    var logSummary: String {
+        switch self {
+        case .absent: return "absent"
+        case .unknown: return "unknown"
+        case let .present(changed, download, failed, conflicts):
+            let status = download.map { $0.replacingOccurrences(of: "NSMetadataUbiquitousItemDownloadingStatus", with: "") }
+            return "changed=\(changed.map { "\(Int($0.timeIntervalSince1970))" } ?? "?") download=\(status ?? "?")"
+                + " failed=\(failed) conflicts=\(conflicts)"
+        }
     }
 }

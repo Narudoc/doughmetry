@@ -9,8 +9,14 @@ struct IngredientFormSections: View {
     let precision: Precision
     let basis: PctBasis
 
+    /// footer의 % 기준 메뉴가 바꾸는 앱 설정 (설정 시트의 "% 표기"와 같은 값)
+    @Environment(AppModel.self) private var model
     /// 입력 옆 % 열 — StatValue(14pt)와 같은 비율로 넓혀야 큰 글자에서 숫자가 끊기지 않는다
     @ScaledMetric(relativeTo: .subheadline) private var pctWidth: CGFloat = 60
+    /// 이름 칸 옆 그램 + % 열 — 그램 칸이 소금 행 등 라벨 있는 행의 입력 칸과 같은 세로줄에 서도록
+    @ScaledMetric(relativeTo: .body) private var gramsColumnWidth: CGFloat = 204
+    /// 큰 글자에서 그램 열이 넓어져도 이름 칸이 이만큼은 남는다 (그램 열이 대신 줄어든다)
+    @ScaledMetric(relativeTo: .subheadline) private var nameMinWidth: CGFloat = 72
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 접근성 글자 크기에선 입력 옆 보조 수치를 아랫줄로 — 한 줄에 두면 입력 칸이 화면 밖으로 밀린다
@@ -19,11 +25,74 @@ struct IngredientFormSections: View {
             ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 2)) : AnyLayout(HStackLayout())
     }
 
-    private func pctRow<Field: View>(_ pct: Double, @ViewBuilder field: () -> Field) -> some View {
+    /// 이름 | 그램 | % 한 줄 (접근성 글자 크기에선 이름을 윗줄로). ViewThatFits를 쓰지 않는다 —
+    /// 이름을 칠 때마다 가지가 바뀌면 입력 중인 칸이 새로 만들어져 키보드·포커스를 잃는다
+    private var nameRowLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
+    }
+
+    private var gramsColumn: CGFloat? { typeSize.isAccessibilitySize ? nil : gramsColumnWidth }
+
+    /// 행 구분선은 행 안 첫 Text(그램 칸의 단위 "g")에 맞춰지므로 행 앞에서 시작하도록 고정
+    private func nameRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        nameRowLayout(content)
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+    }
+
+    private func nameField(_ placeholder: String, text: Binding<String>, label: String) -> some View {
+        TextField(placeholder, text: text)
+            .accessibilityLabel(label)
+            .font(.subheadline)
+            .lineLimit(1)
+            .frame(minWidth: nameMinWidth, maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var basisName: String {
+        basis == .totalFlour ? L("총 밀가루 기준") : L("베이커스 퍼센트")
+    }
+
+    /// % 기준 바꾸기 — 숫자를 보는 자리에서. 한 번 눌러 뒤집히는 토글이 아니라 메뉴 속 선택이라
+    /// 지금 기준이 늘 보이고 실수로 바뀌지 않는다
+    private var basisMenu: some View {
+        Menu {
+            Picker(L("% 표기"), selection: Binding(get: { basis }, set: { model.pctBasis = $0 })) {
+                Text(L("총 밀가루 기준")).tag(PctBasis.totalFlour)
+                Text(L("베이커스 퍼센트")).tag(PctBasis.addedFlour)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(L("% 표기") + ": " + basisName)
+                Image(systemName: "chevron.up.chevron.down")
+                    .imageScale(.small)
+            }
+            .font(.footnote.weight(.medium))
+            .frame(minHeight: 36)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L("% 표기"))
+        .accessibilityValue(basisName)
+    }
+
+    private func pctRow<Field: View>(
+        _ pct: Double, levain: Bool = false, @ViewBuilder field: () -> Field
+    ) -> some View {
         rowLayout {
             field()
             StatValue(value: fmtPct(pct), size: 14)
                 .frame(width: typeSize.isAccessibilitySize ? nil : pctWidth, alignment: .trailing)
+                .accessibilityLabel(spokenPct(pct, levain: levain))
+        }
+    }
+
+    /// 화면의 "%"만으론 무엇의 몇 %인지 알 수 없다 — VoiceOver엔 기준을 붙여 읽는다
+    private func spokenPct(_ pct: Double, levain: Bool) -> String {
+        let p = fmtPct(pct)
+        switch (levain, basis) {
+        case (true, .totalFlour): return LF("PFF %@ — 총 밀가루 중 르방 속 밀가루", p)
+        case (true, .addedFlour): return LF("르방, 첨가 밀가루의 %@", p)
+        case (false, .totalFlour): return LF("총 밀가루의 %@", p)
+        case (false, .addedFlour): return LF("첨가 밀가루의 %@", p)
         }
     }
 
@@ -48,14 +117,18 @@ struct IngredientFormSections: View {
     private var floursSection: some View {
         Section {
             ForEach($input.flours) { $flour in
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField(L("밀가루 이름 (T65, 호밀…)"), text: flourNameBinding($flour.name))
-                        .font(.subheadline)
+                nameRow {
+                    nameField(
+                        L("밀가루 (T65…)"), text: flourNameBinding($flour.name),
+                        label: L("밀가루 이름 (T65, 호밀…)"))
                     pctRow(stats.uiPct(grams: flour.grams, basis: basis)) {
                         NumberField(
                             label: "", value: $flour.grams,
                             accessibilityName: flourLabel(flour))
+                        .accessibilityIdentifier("ingredient.flourGrams")
                     }
+                    .frame(maxWidth: gramsColumn)
+                    .layoutPriority(1)
                 }
                 // onDelete의 시스템 "삭제"는 앱 언어가 아니라 번들 현지화를 따른다.
                 // 앱 전체 tint(bottle)가 destructive의 빨강을 덮으므로 색을 직접 준다
@@ -74,10 +147,13 @@ struct IngredientFormSections: View {
         } header: {
             Text(L("밀가루 (첨가)"))
         } footer: {
-            Text(
-                basis == .addedFlour
-                    ? L("%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.")
-                    : L("%는 총 밀가루(첨가 + 르방 속) 기준입니다."))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    basis == .addedFlour
+                        ? L("%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.")
+                        : L("%는 총 밀가루(첨가 + 르방 속) 기준입니다."))
+                basisMenu
+            }
         }
     }
 
@@ -86,6 +162,7 @@ struct IngredientFormSections: View {
     private var waterSection: some View {
         Section(L("물 · 소금")) {
             NumberField(label: L("본반죽 물"), value: $input.water)
+                .accessibilityIdentifier("ingredient.water")
             VStack(alignment: .leading, spacing: 2) {
                 NumberField(label: L("바시나주"), value: $input.bassinage)
                 Text(L("bassinage — 본반죽 후 추가하는 물"))
@@ -148,7 +225,7 @@ struct IngredientFormSections: View {
     private var levainSection: some View {
         Section {
             levainPresetPicker
-            pctRow(stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis)) {
+            pctRow(stats.uiLevainPct(levainGrams: input.levain.grams, basis: basis), levain: true) {
                 NumberField(label: L("르방 무게"), value: $input.levain.grams)
             }
             NumberField(
@@ -156,32 +233,41 @@ struct IngredientFormSections: View {
                 value: Binding(
                     get: { pctFromRatio(input.levain.hydration) },
                     set: { setLevainHydration(max(0.01, $0 / 100)) }),
-                unit: "%", maxValue: 1000)
+                unit: "%", maxValue: 1000, accessibilityName: L("르방 수분율"))
             TextField(
                 L("르방 밀가루 (표시용)"),
                 text: Binding(
                     get: { input.levain.flourName ?? "" },
                     set: { input.levain.flourName = $0.isEmpty ? nil : $0 }))
+                .accessibilityLabel(L("르방 밀가루 (표시용)"))
                 .font(.subheadline)
-            HStack(spacing: 16) {
+            (typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                : AnyLayout(HStackLayout(spacing: 16))) {
                 HStack(spacing: 4) {
                     Text(L("속 밀가루")).font(.caption).foregroundStyle(.secondary)
                     StatValue(value: fmtGrams(stats.levainFlour, precision) + " g", size: 13)
                 }
+                .accessibilityElement(children: .combine)
                 HStack(spacing: 4) {
                     Text(L("속 물")).font(.caption).foregroundStyle(.secondary)
                     StatValue(value: fmtGrams(stats.levainWater, precision) + " g", size: 13)
                 }
+                .accessibilityElement(children: .combine)
             }
         } header: {
             BilingualLabel(
                 L("르방"),
-                fr: input.levain.hydration >= 0.75 ? "levain liquide" : "levain dur")
+                fr: levainFr(input.levain.hydration))
         } footer: {
-            Text(
-                basis == .addedFlour
-                    ? L("%는 첨가 밀가루 대비 르방 무게입니다.")
-                    : L("%는 PFF — 총 밀가루 중 르방 속 밀가루의 비율."))
+            // PFF(10%)와 르방 무게 비율(22%)을 헷갈리는 자리라 여기서도 기준을 바꿀 수 있게
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    basis == .addedFlour
+                        ? L("%는 첨가 밀가루 대비 르방 무게입니다.")
+                        : L("%는 PFF — 총 밀가루 중 르방 속 밀가루의 비율."))
+                basisMenu
+            }
         }
     }
 
@@ -190,26 +276,31 @@ struct IngredientFormSections: View {
     private var liquidsSection: some View {
         Section {
             ForEach($input.liquids) { $liquid in
+                let liquidName = liquid.name.isEmpty ? L("액체") : liquid.name
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField(L("이름"), text: $liquid.name)
-                        .font(.subheadline)
-                    let liquidName = liquid.name.isEmpty ? L("액체") : liquid.name
-                    NumberField(label: "", value: $liquid.grams, accessibilityName: liquidName)
+                    nameRowLayout {
+                        nameField(L("이름"), text: $liquid.name, label: L("액체 재료 이름"))
+                        NumberField(label: "", value: $liquid.grams, accessibilityName: liquidName)
+                            .frame(maxWidth: gramsColumn)
+                            .layoutPriority(1)
+                    }
                     rowLayout {
                         NumberField(
-                            label: L("수분율"),
+                            label: L("수분 함량"),
                             value: Binding(
                                 get: { pctFromRatio(liquid.waterRatio) },
                                 set: { liquid.waterRatio = min(1, max(0, $0 / 100)) }),
-                            unit: "%", accessibilityName: "\(liquidName) \(L("수분율"))")
+                            unit: "%", accessibilityName: LF("%@ 수분 함량", liquidName))
                         HStack(spacing: 4) {
                             Text(L("수분")).font(.caption).foregroundStyle(.secondary)
                             StatValue(
                                 value: fmtGrams(liquid.grams * liquid.waterRatio, precision) + " g",
                                 size: 13)
                         }
+                        .accessibilityElement(children: .combine)
                     }
                 }
+                .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
                 .swipeActions {
                     Button(L("삭제"), role: .destructive) { [id = liquid.id] in
                         input.liquids.removeAll { $0.id == id }
@@ -287,14 +378,15 @@ struct IngredientFormSections: View {
     private var extrasSection: some View {
         Section {
             ForEach($input.extras) { $extra in
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField(L("이름 (호두, 건포도…)"), text: $extra.name)
-                        .font(.subheadline)
+                nameRow {
+                    nameField(L("재료 (호두…)"), text: $extra.name, label: L("이름 (호두, 건포도…)"))
                     pctRow(stats.uiPct(grams: extra.grams, basis: basis)) {
                         NumberField(
                             label: "", value: $extra.grams,
                             accessibilityName: extra.name.isEmpty ? L("기타 재료") : extra.name)
                     }
+                    .frame(maxWidth: gramsColumn)
+                    .layoutPriority(1)
                 }
                 .swipeActions {
                     Button(L("삭제"), role: .destructive) { [id = extra.id] in

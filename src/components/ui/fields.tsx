@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const inputBase =
   'w-full min-h-[44px] rounded border border-line bg-white px-3 text-base ' +
@@ -13,8 +13,9 @@ export function parseDecimalInput(s: string): number {
   return Number(s.replace(',', '.'));
 }
 
-function formatForEdit(v: number): string {
-  if (!Number.isFinite(v)) return '';
+/** 0은 빈 칸(자리 표시자 0)으로 보인다 — 글자 '0' 앞에 커서가 놓여 400이 4000이 되는 일을 막는다 (iOS NumberField와 같다) */
+export function formatForEdit(v: number): string {
+  if (!Number.isFinite(v) || v === 0) return '';
   return String(Math.round(v * 1000) / 1000);
 }
 
@@ -42,6 +43,7 @@ export function NumberField({
 }: NumberFieldProps) {
   const [text, setText] = useState(() => formatForEdit(value));
   const [focused, setFocused] = useState(false);
+  const pointerFocus = useRef(false);
 
   useEffect(() => {
     if (!focused) setText(formatForEdit(value));
@@ -64,18 +66,37 @@ export function NumberField({
         type="text"
         inputMode="decimal"
         value={text}
+        placeholder="0"
         aria-label={ariaLabel ?? label}
         disabled={disabled}
-        onFocus={() => setFocused(true)}
+        onPointerDown={(e) => {
+          pointerFocus.current = document.activeElement !== e.currentTarget;
+        }}
+        onFocus={(e) => {
+          setFocused(true);
+          // iOS Safari는 포커스 직후 커서를 놓으며 선택을 풀므로 다음 프레임에 다시 선택한다
+          const el = e.currentTarget;
+          el.select();
+          requestAnimationFrame(() => {
+            if (document.activeElement === el) el.setSelectionRange(0, el.value.length);
+          });
+        }}
+        onMouseUp={(e) => {
+          // 눌러서 들어온 클릭의 mouseup이 선택을 커서로 접지 않게 한다 — 이미 편집 중이면 클릭한 곳에 커서를 둔다
+          if (!pointerFocus.current) return;
+          pointerFocus.current = false;
+          e.preventDefault();
+        }}
         onBlur={() => {
+          pointerFocus.current = false;
           setFocused(false);
           setText(formatForEdit(value));
         }}
         onChange={(e) => handleChange(e.target.value)}
-        className={`${inputBase} text-right tabular-nums ${unit ? 'pr-9' : ''} disabled:bg-paper disabled:text-ink/50`}
+        className={`${inputBase} text-right tabular-nums placeholder:text-ink/70 ${unit ? 'pr-9' : ''} disabled:bg-paper disabled:text-ink/50`}
       />
       {unit && (
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-ink/50">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-ink/70">
           {unit}
         </span>
       )}

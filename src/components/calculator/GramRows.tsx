@@ -42,7 +42,7 @@ export function GramRows({ rows, onChange, addLabel, namePlaceholder, pcts, minR
             ariaLabel={`${row.name || namePlaceholder} 무게`}
           />
           {pcts && (
-            <span className="w-14 shrink-0 text-right text-xs tabular-nums text-ink/60">
+            <span className="w-14 shrink-0 text-right text-xs tabular-nums text-ink/70">
               {fmtPct(pcts.get(row.id) ?? 0)}
             </span>
           )}

@@ -25,6 +25,80 @@ struct TimelineTests {
         #expect(s.first?.start == parseISO("2026-09-06T10:20:00Z"))  // 18:00 − 7h40m
     }
 
+    @Test("기준을 시작 ↔ 완성으로 바꿔도 일정은 그대로다 (같은 시각을 새 기준으로 옮겨 적음)")
+    func anchorKindKeepsSchedule() {
+        let plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        var finish = plan
+        finish.setAnchorKind(finish: true)
+        #expect(finish.anchor == .finish("2026-09-06T15:40:00Z"))
+        #expect(scheduleTimeline(finish) == scheduleTimeline(plan))
+
+        var back = finish
+        back.setAnchorKind(finish: false)
+        #expect(back.anchor == .start("2026-09-06T08:00:00Z"))
+        #expect(back == plan)
+
+        // 이미 그 기준이면 그대로
+        var same = plan
+        same.setAnchorKind(finish: false)
+        #expect(same == plan)
+        var sameFinish = finish
+        sameFinish.setAnchorKind(finish: true)
+        #expect(sameFinish == finish)
+
+        // 읽을 수 없는 시각은 건드리지 않는다
+        var broken = TimelinePlan.defaultPlan(startingAt: "x")
+        broken.setAnchorKind(finish: true)
+        #expect(broken.anchor == .start("x"))
+
+        // 단계가 없으면 시작 = 완성
+        var empty = TimelinePlan(stages: [], anchor: .start("2026-09-06T08:00:00Z"))
+        empty.setAnchorKind(finish: true)
+        #expect(empty.anchor == .finish("2026-09-06T08:00:00Z"))
+    }
+
+    @Test("새 단계 기본 길이 — 르방 빌드 6시간, 냉장 발효 12시간, 나머지 30분")
+    func defaultMinutes() {
+        #expect(TimelineStage.defaultMinutes(for: .levainBuild) == 360)
+        #expect(TimelineStage.defaultMinutes(for: .coldRetard) == 720)
+        for kind in StageKind.allCases where kind != .levainBuild && kind != .coldRetard {
+            #expect(TimelineStage.defaultMinutes(for: kind) == 30, "\(kind)")
+        }
+    }
+
+    @Test("르방 빌드는 맨 앞에 한 번만 — 완성 기준이면 시작(르방 먹일 시각)이 앞당겨지고, 시작 기준이면 뒤 단계가 밀린다")
+    func prependLevainBuild() {
+        var finish = TimelinePlan.defaultPlan(startingAt: "x")
+        finish.anchor = .finish("2026-09-06T18:00:00Z")
+        let added = finish.prependLevainBuild()
+        #expect(added)
+        #expect(finish.stages.count == 9)
+        #expect(finish.stages.first?.kind == .levainBuild)
+        #expect(finish.stages.first?.minutes == 360)
+        let f = scheduleTimeline(finish)
+        #expect(f.first?.start == parseISO("2026-09-06T04:20:00Z"))  // 10:20 − 6h
+        #expect(f[1].start == parseISO("2026-09-06T10:20:00Z"))  // 오토리즈는 그대로
+        #expect(f.last?.end == parseISO("2026-09-06T18:00:00Z"))
+        let addedAgain = finish.prependLevainBuild()
+        #expect(!addedAgain)
+        #expect(finish.stages.count == 9)
+
+        var start = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        start.prependLevainBuild()
+        let s = scheduleTimeline(start)
+        #expect(s.first?.start == parseISO("2026-09-06T08:00:00Z"))
+        #expect(s[1].start == parseISO("2026-09-06T14:00:00Z"))
+        #expect(s.last?.end == parseISO("2026-09-06T21:40:00Z"))
+
+        // 사용자가 이미 넣어 둔 르방 빌드가 있으면(맨 앞이 아니어도) 하나 더 넣지 않는다
+        var existing = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        existing.stages.insert(TimelineStage(kind: .levainBuild, minutes: 240), at: 2)
+        let before = existing
+        let addedToExisting = existing.prependLevainBuild()
+        #expect(!addedToExisting)
+        #expect(existing == before)
+    }
+
     @Test("0분·음수 단계는 길이 0으로 취급되고 순서는 유지된다")
     func zeroStage() {
         let plan = TimelinePlan(

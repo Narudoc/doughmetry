@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CalcState } from './state';
+import { computeStats } from './lib/dough';
 import {
   calcSnapshot,
   calcStateFromRecipe,
   currentDoughInput,
   defaultCalcState,
   isCalcDirty,
+  resetCalcState,
+  sanitizeSettings,
 } from './state';
 import type { Recipe } from './types';
 
@@ -99,5 +102,55 @@ describe('isCalcDirty (불러오기 전 저장하지 않은 입력 확인 — iO
     const r = recipe();
     const loaded = calcStateFromRecipe(r);
     expect(isCalcDirty(loaded, [{ ...r, name: '이름 바꾼 바게트' }])).toBe(false);
+  });
+});
+
+describe('resetCalcState (새 배합 — iOS resetCalc(empty:)와 같다)', () => {
+  it('빈 배합·예시 배합 모두 레시피 연결이 없고, 시작한 그대로는 깨끗하다', () => {
+    for (const empty of [true, false]) {
+      const s = resetCalcState(empty);
+      expect(s.recipeId).toBeUndefined();
+      expect(s.mode).toBe('A');
+      expect(isCalcDirty(s, [recipe()])).toBe(false);
+      // draft로 저장됐다 다시 읽혀도
+      expect(isCalcDirty(JSON.parse(JSON.stringify(s)), [])).toBe(false);
+    }
+  });
+
+  it('빈 배합은 이름·재료가 비어 있고 예시 배합은 캉파뉴다', () => {
+    const blank = resetCalcState(true);
+    expect(blank.name).toBe('');
+    expect(blank.input.flours).toHaveLength(1);
+    expect(blank.input.flours[0]).toMatchObject({ name: '', grams: 0 });
+    expect(blank.input.water).toBe(0);
+    expect(blank.input.levain.grams).toBe(0);
+    expect(blank.pieces).toBe(0);
+    expect(resetCalcState(false).name).toBe('캉파뉴');
+  });
+
+  it('시작한 뒤 무엇이든 고치면 저장하지 않은 입력이다', () => {
+    const blank = resetCalcState(true);
+    expect(isCalcDirty({ ...blank, input: { ...blank.input, water: 400 } }, [])).toBe(true);
+    expect(isCalcDirty({ ...blank, name: '바게트' }, [])).toBe(true);
+    const example = resetCalcState(false);
+    expect(isCalcDirty({ ...example, pieces: 2 }, [])).toBe(true);
+  });
+
+  it('빈 배합의 지표는 NaN이 아니라 0이다', () => {
+    const stats = computeStats(resetCalcState(true).input);
+    expect(stats.hydrationPct).toBe(0);
+    expect(stats.pffPct).toBe(0);
+    expect(stats.saltPct).toBe(0);
+    expect(stats.doughWeight).toBe(0);
+  });
+});
+
+describe('sanitizeSettings', () => {
+  it('마지막 백업 시각은 해석되는 문자열일 때만 남긴다', () => {
+    const at = '2026-09-30T10:00:00.000Z';
+    expect(sanitizeSettings({ precision: 1, pctBasis: 'total', lastExportAt: at })?.lastExportAt).toBe(at);
+    expect(sanitizeSettings({ precision: 1, pctBasis: 'total', lastExportAt: 'nope' })?.lastExportAt).toBeUndefined();
+    expect(sanitizeSettings({ precision: 0.1, pctBasis: 'added', lastExportAt: 42 })?.lastExportAt).toBeUndefined();
+    expect(sanitizeSettings({ precision: 0.1 })).toEqual({ precision: 0.1, pctBasis: 'total', lastExportAt: undefined });
   });
 });

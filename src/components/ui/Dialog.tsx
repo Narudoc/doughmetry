@@ -135,7 +135,7 @@ function DialogPanel({
       >
         <h2 className="font-display text-lg font-semibold text-bottle">{title}</h2>
         <div className="mt-3">{children}</div>
-        {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
+        {footer && <div className="mt-5 flex flex-wrap justify-end gap-2">{footer}</div>}
       </div>
     </div>
   );
@@ -147,6 +147,8 @@ interface ConfirmDialogProps {
   title: string;
   message: ReactNode;
   confirmLabel?: string;
+  /** 되돌릴 수 없는 동작이 아니면 primary */
+  confirmVariant?: 'danger' | 'primary';
   onConfirm: () => void;
 }
 
@@ -156,6 +158,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = '삭제',
+  confirmVariant = 'danger',
   onConfirm,
 }: ConfirmDialogProps) {
   return (
@@ -167,7 +170,7 @@ export function ConfirmDialog({
         <>
           <Button onClick={onClose}>취소</Button>
           <Button
-            variant="danger"
+            variant={confirmVariant}
             onClick={() => {
               onConfirm();
               onClose();

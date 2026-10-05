@@ -439,3 +439,119 @@ public enum LibrarySync {
         }
     }
 }
+
+// MARK: - iCloud 동기화 판정 (파일 계층은 앱의 CloudSync, 실행은 AppModel.runSync)
+
+extension LibrarySync {
+    /// 원격 문서(iCloud 현재 판 + 미해결 충돌 판)를 읽은 결과
+    public struct Snapshot: Equatable, Sendable {
+        /// iCloud 현재 판 — 병합 대상이자, 병합 결과를 다시 써야 하는지 비교하는 대상
+        public var current: LibraryDocument
+        /// 현재 판이 JSON이 아니어서 빈 문서로 읽었다 — 다음 쓰기가 그 파일을 덮어쓴다
+        public var currentIsCorrupt: Bool
+        /// 두 기기가 따로 쓴 판 — 로컬·현재 판과 함께 merge(_:) 한 번으로 합친다
+        public var conflicts: [LibraryDocument]
+        /// 새 버전 앱이 쓴 판이 섞였다 — 이 기기는 합치지도 덮어쓰지도 않는다 (decodeReport)
+        public var isNewerFormat: Bool
+        /// 병합 결과를 원격에 쓴 뒤 정리해도 되는 충돌 판 — snapshot(versionData:)에 넘긴 순서의 인덱스
+        public var resolvable: [Int]
+        /// 정리하지 않고 그대로 두는 충돌 판 수 — 이번에 읽지 못했거나 일부 항목이 손상된 판.
+        /// 새 버전 앱이 쓴 판은 빼고 센다 (isNewerFormat이 따로 알린다 — 앱을 업데이트하면 합쳐진다)
+        public var keptConflictCount: Int
+
+        public init(
+            current: LibraryDocument, currentIsCorrupt: Bool = false, conflicts: [LibraryDocument] = [],
+            isNewerFormat: Bool = false, resolvable: [Int] = [], keptConflictCount: Int = 0
+        ) {
+            self.current = current
+            self.currentIsCorrupt = currentIsCorrupt
+            self.conflicts = conflicts
+            self.isNewerFormat = isNewerFormat
+            self.resolvable = resolvable
+            self.keptConflictCount = keptConflictCount
+        }
+    }
+
+    public enum SnapshotError: Error, Equatable {
+        /// iCloud 메타데이터에는 문서가 있는데 이 기기에 내려오지 않았다 — "원격 없음"으로 보면
+        /// 로컬 문서로 iCloud의 유일한 사본을 덮어쓰므로 동기화를 미룬다
+        case notDownloaded
+    }
+
+    /// 조정 읽기로 얻은 바이트 → 스냅샷. currentData가 nil이면 파일이 없는 것:
+    /// 메타데이터에도 없으면(known == false) 원격 없음(nil), 있으면 notDownloaded.
+    /// versionData의 nil(읽지 못한 판)은 병합에도 정리에도 넣지 않는다.
+    public static func snapshot(currentData: Data?, known: Bool, versionData: [Data?]) throws -> Snapshot? {
+        guard let currentData else {
+            if known { throw SnapshotError.notDownloaded }
+            return nil
+        }
+        let report = decodeReport(currentData)
+        let readIndices = versionData.indices.filter { versionData[$0] != nil }
+        let conflicts = conflictDocuments(readIndices.compactMap { versionData[$0] })
+        return Snapshot(
+            current: report.document,
+            currentIsCorrupt: (try? JSONSerialization.jsonObject(with: currentData)) == nil,
+            conflicts: conflicts.documents,
+            isNewerFormat: report.isNewerFormat || conflicts.isNewerFormat,
+            resolvable: conflicts.resolvable.map { readIndices[$0] },
+            keptConflictCount: versionData.count - conflicts.resolvable.count - conflicts.newerFormatCount)
+    }
+
+    /// 한 번의 동기화에서 할 일
+    public struct SyncPlan: Equatable, Sendable {
+        /// 새 버전 앱이 쓴 문서가 섞였다 — 아무것도 하지 않는다 (나머지 필드는 의미 없음).
+        /// 모르는 필드를 뺀 사본이 원격과 같은 updatedAt으로 로컬에 남으면, 업데이트 뒤 병합 동률에서
+        /// 그 사본이 이겨 원격의 필드를 지운다
+        public var abortNewerFormat: Bool
+        public var merged: LibraryDocument
+        /// 병합 결과가 정규화한 로컬과 다르다 — 로컬 상태를 바꾸고 library.json에 쓴다
+        public var applyLocally: Bool
+        /// 병합 결과가 iCloud 현재 판과 다르다. 원격 문서가 없으면 로컬이 비지 않았을 때만 (새 기기 보호)
+        public var writeRemote: Bool
+        /// 충돌 판 정리 — 원격 쓰기가 성공했거나 필요 없을 때만 실행한다 (내용이 이미 현재 판에 있어도 정리한다)
+        public var resolveConflictsAfterWrite: Bool
+    }
+
+    /// 로컬은 정규화(코덱 왕복 + 정규 순서)해 원격과 같은 형태로 비교한다 — 그래야 같은 내용이 `==`로 같아
+    /// 두 기기가 서로 다시 쓰는 일이 없다. 충돌 판까지 한 번에 병합한다 (둘씩 합치면 로그를 잃는다)
+    public static func plan(local: LibraryDocument, remote: Snapshot?) -> SyncPlan {
+        if let remote, remote.isNewerFormat {
+            return SyncPlan(
+                abortNewerFormat: true, merged: local, applyLocally: false, writeRemote: false,
+                resolveConflictsAfterWrite: false)
+        }
+        let local = normalized(local)
+        let merged = merge([local] + (remote.map { [$0.current] + $0.conflicts } ?? []))
+        return SyncPlan(
+            abortNewerFormat: false,
+            merged: merged,
+            applyLocally: merged != local,
+            writeRemote: remote.map { merged != $0.current } ?? !merged.isEmpty,
+            resolveConflictsAfterWrite: !(remote?.resolvable.isEmpty ?? true))
+    }
+
+    /// iCloud 메타데이터(NSMetadataQuery)가 알려 준 원격 문서 상태 — 그대로면 다시 읽어도 결과가 같다
+    public enum RemoteFileState: Equatable, Sendable {
+        case absent
+        /// 속성을 알 수 없다 — 이때는 거르지 않고 동기화한다
+        case unknown
+        case present(changed: Date?, download: String?, failed: Bool, conflicts: Bool)
+
+        public var hasConflicts: Bool {
+            if case .present(_, _, _, true) = self { return true }
+            return false
+        }
+    }
+
+    /// 메타데이터 갱신마다 전체 동기화를 다시 돌릴지. 갱신은 이 기기가 쓴 파일의 업로드 진행률이 바뀔 때도 오므로
+    /// 상태가 그대로면 거른다. 단 첫 수집 전, 상태를 모를 때, 기억을 지웠을 때(last == nil — 동기화 실패 뒤),
+    /// 충돌 판이 남아 있을 때는 거르지 않는다 — 정리하지 않고 둔 판 때문에 표시가 계속 켜져 있으면
+    /// 새 충돌 판이 와도 상태가 그대로라 놓친다
+    public static func shouldSync(
+        state: RemoteFileState, last: RemoteFileState?, hasGathered: Bool
+    ) -> Bool {
+        guard hasGathered, state != .unknown, !state.hasConflicts else { return true }
+        return state != last
+    }
+}

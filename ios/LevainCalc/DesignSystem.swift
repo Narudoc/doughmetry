@@ -7,15 +7,21 @@ extension Color {
     static let paper = Color(light: 0xF5F2EA, dark: 0x1C1B16)
     static let ink = Color(light: 0x22271F, dark: 0xE9E5D9)
     static let bottle = Color(light: 0x1E4034, dark: 0x8FB8A5)
-    static let brass = Color(light: 0x9A6B32, dark: 0xD3A662)
+    /// 대비 증가(설정 → 손쉬운 사용)에선 한 단계 더 진하게/밝게 — 요약 바 재질 위에서도 4.5:1을 넉넉히 넘도록
+    static let brass = Color(
+        light: 0x8A5C26, dark: 0xD3A662, highContrastLight: 0x7A5222, highContrastDark: 0xE0B676)
     static let line = Color(light: 0xD9D3C4, dark: 0x3B382E)
     static let danger = Color(light: 0x9E3B2F, dark: 0xD97A6C)
     /// 카드(입력 섹션) 배경 — 웹의 흰 카드에 해당
     static let card = Color(light: 0xFFFFFF, dark: 0x26241D)
 
-    init(light: UInt32, dark: UInt32) {
+    init(light: UInt32, dark: UInt32, highContrastLight: UInt32? = nil, highContrastDark: UInt32? = nil) {
         self.init(uiColor: UIColor { trait in
-            let hex = trait.userInterfaceStyle == .dark ? dark : light
+            let isDark = trait.userInterfaceStyle == .dark
+            let hex =
+                trait.accessibilityContrast == .high
+                ? (isDark ? (highContrastDark ?? dark) : (highContrastLight ?? light))
+                : (isDark ? dark : light)
             return UIColor(
                 red: CGFloat((hex >> 16) & 0xFF) / 255,
                 green: CGFloat((hex >> 8) & 0xFF) / 255,
@@ -66,12 +72,47 @@ struct BilingualLabel: View {
         self.fr = fr
     }
 
+    /// 라벨을 되풀이하는 원어는 줄이거나 뺀다 — 영어 "Bassinage" + "bassinage", "Levain" + "levain liquide"
+    private var gloss: String? {
+        guard let fr else { return nil }
+        if fr.caseInsensitiveCompare(ko) == .orderedSame { return nil }
+        let prefix = ko + " "
+        if fr.count > prefix.count,
+            fr.prefix(prefix.count).caseInsensitiveCompare(prefix) == .orderedSame
+        {
+            return String(fr.dropFirst(prefix.count))
+        }
+        return fr
+    }
+
     var body: some View {
-        if let fr {
-            Text("\(ko) ").foregroundStyle(.primary)
-                + Text(fr).italic().font(.caption).foregroundStyle(.secondary)
+        if let gloss {
+            (Text("\(ko) ").foregroundStyle(.primary)
+                + Text(gloss).italic().font(.caption).foregroundStyle(.secondary))
+                .accessibilityLabel("\(ko), \(gloss)")
         } else {
             Text(ko)
+        }
+    }
+}
+
+extension View {
+    /// 넓은 창(regular 폭)에서 폼·목록을 읽기 좋은 폭(700pt)으로 가운데에 모은다 — compact(iPhone)는 그대로.
+    /// 결과 바(ResultBar)의 maxWidth와 같은 값이어야 한다
+    func readableFormWidth() -> some View { modifier(ReadableFormWidth()) }
+}
+
+private struct ReadableFormWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    func body(content: Content) -> some View {
+        if sizeClass == .regular {
+            GeometryReader { proxy in
+                content.contentMargins(
+                    .horizontal, max(20, (proxy.size.width - 700) / 2), for: .scrollContent)
+            }
+        } else {
+            content
         }
     }
 }

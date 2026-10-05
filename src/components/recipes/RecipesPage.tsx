@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RecipesApi } from '../../hooks/useRecipes';
 import type { DoughInput } from '../../lib/dough';
 import { computeStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtDate, fmtGrams, fmtPct } from '../../lib/format';
 import { newId } from '../../lib/id';
-import { OcrError, recognizeImage, type OcrPhase } from '../../lib/ocr';
+import { OCR_FIRST_DOWNLOAD_MB, OcrError, recognizeImage, type OcrPhase } from '../../lib/ocr';
 import { cleanForParsing, parseRecipeText } from '../../lib/recipeParser';
-import { exportJson, importJson } from '../../lib/storage';
+import { OCR_READY_KEY, backupNudge, exportJson, importJson, loadJson, saveJson } from '../../lib/storage';
 import { doughInputFromRecipe } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { Button } from '../ui/Button';
@@ -20,8 +20,12 @@ interface Props {
   settings: Settings;
   onOpenInCalculator: (r: Recipe) => void;
   onSendToConverter: (r: Recipe) => void;
+  /** 전체 내보내기(백업)를 마쳤다 — 백업 안내의 기준 시각이 된다 */
+  onExportedAll: () => void;
   toast: (message: string) => void;
 }
+
+type CardAction = 'open' | 'convert' | 'rename' | 'duplicate' | 'export' | 'delete';
 
 function downloadText(filename: string, text: string) {
   const blob = new Blob([text], { type: 'application/json' });
@@ -33,7 +37,14 @@ function downloadText(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConverter, toast }: Props) {
+export function RecipesPage({
+  api,
+  settings,
+  onOpenInCalculator,
+  onSendToConverter,
+  onExportedAll,
+  toast,
+}: Props) {
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<Recipe | null>(null);
@@ -50,6 +61,7 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
     recognizedText?: string;
   } | null>(null);
   const [ocr, setOcr] = useState<{ progress: number; phase: OcrPhase } | null>(null);
+  const [ocrNoticeOpen, setOcrNoticeOpen] = useState(false);
 
   // 어느 탭에서 저장했든 여기서 알린다 — 이 페이지는 다른 탭을 보는 동안에도 마운트되어 있다
   useEffect(() => {
@@ -60,6 +72,32 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
     () => [...new Set(api.recipes.flatMap((r) => r.tags ?? []))].sort(),
     [api.recipes],
   );
+
+  const nudge = useMemo(
+    () => backupNudge(api.recipes, settings.lastExportAt, new Date()),
+    [api.recipes, settings.lastExportAt],
+  );
+
+  const exportAll = () => {
+    downloadText('doughmetry-recipes.json', exportJson(api.recipes));
+    onExportedAll();
+    toast('전체 레시피를 JSON으로 내보냈습니다');
+  };
+
+  // 카드는 memo로 감싸고 동작은 하나의 안정된 함수로 넘긴다 — 계산기 입력마다 모든 카드가 다시 그려지지 않게
+  const actionsRef = useRef<Record<CardAction, (r: Recipe) => void>>(null!);
+  actionsRef.current = {
+    open: onOpenInCalculator,
+    convert: onSendToConverter,
+    rename: setRenameTarget,
+    delete: setDeleteTarget,
+    duplicate: (r) => {
+      api.duplicate(r.id);
+      toast(`'${r.name}' 레시피를 복제했습니다`);
+    },
+    export: (r) => downloadText(`${r.name}.json`, exportJson([r])),
+  };
+  const onCardAction = useCallback((k: CardAction, r: Recipe) => actionsRef.current[k](r), []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -112,13 +150,25 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
       return;
     }
     setAiImportFail(null);
-    setReviewDraft({ name: parsed.name ?? '', input: parsed.input, recognizedText: text });
+    setReviewDraft({
+      name: parsed.name ?? '',
+      input: parsed.input,
+      note: parsed.methodNote ?? '',
+      pieces: parsed.pieces ?? 0,
+      recognizedText: text,
+    });
+  };
+
+  const pickImage = () => {
+    if (loadJson<boolean>(OCR_READY_KEY) === true) imageRef.current?.click();
+    else setOcrNoticeOpen(true);
   };
 
   const handleImageFile = async (file: File) => {
-    setOcr({ progress: 0, phase: 'loading' });
+    setOcr({ progress: 0, phase: 'download' });
     try {
       const text = await recognizeImage(file, (progress, phase) => setOcr({ progress, phase }));
+      saveJson(OCR_READY_KEY, true);
       // iOS와 동일하게 '글자 없음'은 사진 경로에서만 판정한다
       if (text.trim() === '') {
         setAiImportFail({ message: '사진에서 글자를 찾지 못했습니다.' });
@@ -130,22 +180,29 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
         message:
           e instanceof OcrError && e.kind === 'unreadable-image'
             ? '이미지를 읽을 수 없습니다. 다른 사진으로 다시 시도하세요.'
-            : '문자 인식(OCR) 모듈을 불러오지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.',
+            : `문자 인식 데이터(첫 사용 시 약 ${OCR_FIRST_DOWNLOAD_MB} MB)를 내려받지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.`,
       });
     } finally {
       setOcr(null);
     }
   };
 
-  const handleReviewSave = (name: string, input: DoughInput) => {
+  const handleReviewSave = (
+    name: string,
+    input: DoughInput,
+    note: string | undefined,
+    pieces: number | undefined,
+  ) => {
     const now = new Date().toISOString();
     const recipe: Recipe = {
       id: newId(),
       schemaVersion: 2,
       name,
+      note,
       createdAt: now,
       updatedAt: now,
       ...structuredClone(input),
+      pieces,
     };
     api.save(recipe);
     toast(`'${name}' 레시피를 가져왔습니다`);
@@ -161,10 +218,12 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
           ariaLabel="레시피 검색"
           className="min-w-[200px] flex-1"
         />
-        <Button disabled={ocr !== null} onClick={() => imageRef.current?.click()}>
+        <Button disabled={ocr !== null} onClick={pickImage}>
           {ocr === null
             ? '사진에서 가져오기'
-            : `${ocr.phase === 'loading' ? '인식 데이터 준비 중' : '사진 인식 중'}… ${Math.round(ocr.progress * 100)}%`}
+            : ocr.phase === 'download'
+              ? '인식 엔진 내려받는 중…'
+              : `${ocr.phase === 'loading' ? '인식 데이터 준비 중' : '사진 인식 중'}… ${Math.round(ocr.progress * 100)}%`}
         </Button>
         <Button disabled={ocr !== null} onClick={() => setTextImportOpen(true)}>
           텍스트에서 가져오기
@@ -172,13 +231,7 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
         <Button disabled={ocr !== null} onClick={() => fileRef.current?.click()}>
           JSON 가져오기
         </Button>
-        <Button
-          disabled={api.recipes.length === 0}
-          onClick={() => {
-            downloadText('doughmetry-recipes.json', exportJson(api.recipes));
-            toast('전체 레시피를 JSON으로 내보냈습니다');
-          }}
-        >
+        <Button disabled={api.recipes.length === 0} onClick={exportAll}>
           전체 내보내기
         </Button>
         <input
@@ -205,6 +258,25 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
         />
       </div>
 
+      {nudge.show && (
+        <div className="space-y-2 rounded border border-line bg-white p-3 text-sm text-ink">
+          <p>
+            레시피는 이 브라우저에만 저장됩니다. Safari 등 브라우저는 한동안 방문하지 않은 사이트의 데이터를
+            지울 수 있어요 — 마지막 백업 이후 바뀐 레시피 {nudge.changed}개.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="primary" onClick={exportAll}>
+              전체 내보내기
+            </Button>
+            <span className="text-xs tabular-nums text-ink/70">
+              {settings.lastExportAt
+                ? `마지막 백업: ${fmtDate(settings.lastExportAt)}`
+                : '아직 백업한 적 없음'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {api.writeFailed && (
         <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
           이 브라우저 저장 공간에 쓰지 못했습니다 — 최근 변경은 새로 고치면 사라지니 전체 내보내기로 백업하세요.
@@ -222,8 +294,8 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
           <p className="font-medium text-danger">{aiImportFail.message}</p>
           {aiImportFail.recognizedText && (
             <details>
-              <summary className="cursor-pointer text-xs text-ink/60">인식된 원본 텍스트</summary>
-              <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-white p-2 text-xs text-ink/60">
+              <summary className="cursor-pointer text-xs text-ink/70">인식된 원본 텍스트</summary>
+              <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-white p-2 text-xs text-ink/70">
                 {aiImportFail.recognizedText}
               </pre>
             </details>
@@ -248,8 +320,9 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
         </div>
       )}
 
+      <h2 className="sr-only">저장된 레시피 목록</h2>
       {filtered.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-line bg-white/50 p-8 text-center text-sm text-ink/50">
+        <p className="rounded-lg border border-dashed border-line bg-white/50 p-8 text-center text-sm text-ink/70">
           {api.recipes.length === 0
             ? '저장된 레시피가 없습니다. 계산기에서 레시피를 만들어 저장해 보세요.'
             : '검색 결과가 없습니다.'}
@@ -257,20 +330,7 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {filtered.map((r) => (
-            <RecipeCard
-              key={r.id}
-              recipe={r}
-              precision={settings.precision}
-              onOpen={() => onOpenInCalculator(r)}
-              onConvert={() => onSendToConverter(r)}
-              onRename={() => setRenameTarget(r)}
-              onDuplicate={() => {
-                api.duplicate(r.id);
-                toast(`'${r.name}' 레시피를 복제했습니다`);
-              }}
-              onExport={() => downloadText(`${r.name}.json`, exportJson([r]))}
-              onDelete={() => setDeleteTarget(r)}
-            />
+            <RecipeCard key={r.id} recipe={r} precision={settings.precision} onAction={onCardAction} />
           ))}
         </ul>
       )}
@@ -300,6 +360,15 @@ export function RecipesPage({ api, settings, onOpenInCalculator, onSendToConvert
             toast(`'${deleteTarget.name}' 레시피를 삭제했습니다`);
           }
         }}
+      />
+      <ConfirmDialog
+        open={ocrNoticeOpen}
+        onClose={() => setOcrNoticeOpen(false)}
+        title="사진에서 가져오기"
+        message={`처음 한 번 문자 인식 데이터 약 ${OCR_FIRST_DOWNLOAD_MB} MB를 내려받습니다. 이후에는 브라우저에 저장되어 바로 인식합니다. (Wi-Fi 권장)`}
+        confirmLabel="계속"
+        confirmVariant="primary"
+        onConfirm={() => imageRef.current?.click()}
       />
       <TextImportDialog
         open={textImportOpen}
@@ -363,6 +432,25 @@ function TextImportDialog({
         placeholder={'레시피 텍스트를 붙여넣으세요\n\n예)\n캉파뉴\nT65 900g\n물 620g\n소금 20g\n르방 리퀴드 200g'}
         className="w-full rounded border border-line bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
       />
+      {/* 클립보드 읽기를 지원하는 브라우저만 — 저장은 여전히 확인 다이얼로그를 거친다 */}
+      {text.trim() === '' && typeof navigator.clipboard?.readText === 'function' && (
+        <Button
+          className="mt-2"
+          onClick={async () => {
+            let pasted: string;
+            try {
+              pasted = await navigator.clipboard.readText();
+            } catch {
+              return; // 권한 거부 — 직접 붙여넣으면 된다
+            }
+            if (pasted.trim() === '') return;
+            onClose();
+            onSubmit(pasted);
+          }}
+        >
+          붙여넣고 분석
+        </Button>
+      )}
     </Dialog>
   );
 }
@@ -387,32 +475,18 @@ function TagChip({ label, active, onClick }: { label: string; active: boolean; o
 interface CardProps {
   recipe: Recipe;
   precision: Precision;
-  onOpen: () => void;
-  onConvert: () => void;
-  onRename: () => void;
-  onDuplicate: () => void;
-  onExport: () => void;
-  onDelete: () => void;
+  onAction: (action: CardAction, recipe: Recipe) => void;
 }
 
-function RecipeCard({
-  recipe,
-  precision,
-  onOpen,
-  onConvert,
-  onRename,
-  onDuplicate,
-  onExport,
-  onDelete,
-}: CardProps) {
+const RecipeCard = memo(function RecipeCard({ recipe, precision, onAction }: CardProps) {
   const stats = useMemo(() => computeStats(doughInputFromRecipe(recipe)), [recipe]);
   const levainLabel = recipe.levain.type === 'liquide' ? '리퀴드' : '뒤흐';
 
   return (
     <li className="rounded-lg border border-line bg-white p-4">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold">{recipe.name}</h3>
-        <span className="shrink-0 text-xs tabular-nums text-ink/50">{fmtDate(recipe.updatedAt)}</span>
+        <h3 className="min-w-0 font-semibold [overflow-wrap:anywhere]">{recipe.name}</h3>
+        <span className="shrink-0 text-xs tabular-nums text-ink/70">{fmtDate(recipe.updatedAt)}</span>
       </div>
       {recipe.tags && recipe.tags.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
@@ -427,27 +501,32 @@ function RecipeCard({
         수분율 {fmtPct(stats.hydrationPct)} · {fmtGrams(stats.doughWeight, precision)} g · 르방{' '}
         {levainLabel} {(recipe.levain.hydration * 100).toFixed(0)}%
       </p>
-      {recipe.note && <p className="mt-1 truncate text-xs text-ink/50">{recipe.note}</p>}
+      {recipe.note && <p className="mt-1 truncate text-xs text-ink/70">{recipe.note}</p>}
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <Button small onClick={onOpen}>
+        <Button small onClick={() => onAction('open', recipe)}>
           계산기로
         </Button>
-        <Button small onClick={onConvert}>
+        <Button small onClick={() => onAction('convert', recipe)}>
           변환기로
         </Button>
-        <Button small variant="ghost" onClick={onRename}>
+        <Button small variant="ghost" onClick={() => onAction('rename', recipe)}>
           이름 변경
         </Button>
-        <Button small variant="ghost" onClick={onDuplicate}>
+        <Button small variant="ghost" onClick={() => onAction('duplicate', recipe)}>
           복제
         </Button>
-        <Button small variant="ghost" onClick={onExport}>
+        <Button small variant="ghost" onClick={() => onAction('export', recipe)}>
           JSON
         </Button>
-        <Button small variant="ghost" className="text-danger hover:bg-danger/5" onClick={onDelete}>
+        <Button
+          small
+          variant="ghost"
+          className="text-danger hover:bg-danger/5"
+          onClick={() => onAction('delete', recipe)}
+        >
           삭제
         </Button>
       </div>
     </li>
   );
-}
+});

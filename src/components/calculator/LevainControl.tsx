@@ -2,6 +2,7 @@ import { DEFAULT_LEVAIN_HYDRATION, levainTypeFor } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct } from '../../lib/format';
 import type { Levain, LevainType } from '../../types';
+import { Fr } from '../ui/Fr';
 import { Segmented } from '../ui/Segmented';
 import { NumberField, TextField } from '../ui/fields';
 
@@ -38,7 +39,7 @@ export function LevainControl({
             value: 'liquide',
             label: (
               <span>
-                리퀴드 <span className="italic opacity-70">liquide</span> 100%
+                리퀴드 <Fr>liquide</Fr> 100%
               </span>
             ),
           },
@@ -46,7 +47,7 @@ export function LevainControl({
             value: 'dur',
             label: (
               <span>
-                뒤흐 <span className="italic opacity-70">dur</span> 50%
+                뒤흐 <Fr>dur</Fr> 50%
               </span>
             ),
           },
@@ -75,7 +76,7 @@ export function LevainControl({
         onChange={(flourName) => onChange({ ...levain, flourName: flourName || undefined })}
         placeholder="T65"
       />
-      <p className="text-xs tabular-nums text-ink/60">
+      <p className="text-xs tabular-nums text-ink/70">
         {basisAdded ? (
           <>
             속 밀가루 {fmtGrams(breakdown.flour, precision)} g · 속 물{' '}

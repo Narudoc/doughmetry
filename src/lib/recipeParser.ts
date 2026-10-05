@@ -17,8 +17,12 @@ export interface ParsedRecipeText {
   input: DoughInput;
   /** 재료로 인식된 줄 수 — 0이면 인식 실패로 판단 */
   matchedLineCount: number;
-  /** 르방 수분율을 텍스트가 직접 밝혔는지(30~150% 또는 리퀴드/뒤흐 키워드) — 기본값·빌드 섹션 추정은 false */
+  /** 르방 수분율을 텍스트가 직접 밝혔는지(30~150%, 리퀴드/뒤흐 키워드, 풀리시·비가) — 기본값·빌드 섹션 추정은 false */
   levainHydrationExplicit: boolean;
+  /** 공정(만드는 법) 머리글부터 끝까지의 원문 — 레시피 노트로 저장한다. 없으면 null */
+  methodNote: string | null;
+  /** 분량 표기("2개 분량", "2 loaves", 배합표의 "분할 2개 — 개당")에서 읽은 분할 개수. 없으면 null */
+  pieces: number | null;
 }
 
 /** pct: %, mass: 무게 단위(g로 환산), measure: 컵·스푼·개수(그램이 아님), bare: 단위 없음 */
@@ -64,12 +68,12 @@ const OZ_UNITS = new Set(['oz', 'ounce', 'ounces']);
  * 3: 단위 — 단어 중간("500g을", "gâteau")은 단위가 아니다
  */
 const NUMBER_PATTERN =
-  /(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}\/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u00A0\u202F\u2009][0-9]{3})+(?=[ \t\u00A0\u202F\u2009]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u00A0\u202F\u2009][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u00A0\u202F\u2009]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/giu;
+  /(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}\/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u00A0\u202F\u2009][0-9]{3})+(?=[ \t\u00A0\u202F\u2009]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u00A0\u202F\u2009][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u00A0\u202F\u2009]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/giu;
 
 /**
  * 줄 단위 숫자 토큰.
  * "T65"처럼 영문자에 붙은 숫자는 양이 아니므로 제외 — 경계 문자를 함께 매칭한다.
- * 단위: % 는 수분율, kg류·oz·lb 는 g로 환산, 컵·스푼·개수는 그램이 아니다.
+ * 단위: % 는 수분율, kg류·oz·lb 는 g로 환산, 컵·스푼·개수·배합("1배합")은 그램이 아니다.
  */
 function numberTokens(line: string): NumberToken[] {
   const tokens: NumberToken[] = [];
@@ -166,18 +170,41 @@ function matchesFlour(line: string): boolean {
   ]);
 }
 
+const POOLISH_KEYWORDS = ['풀리시', '풀리쉬', '폴리쉬', '폴리시', 'poolish'];
+
 const LEVAIN_KEYWORDS = [
-  '르방', 'levain', '스타터', 'starter', '발효종', '사전반죽', '풀리시', 'poolish', 'biga',
+  '르방', 'levain', '스타터', 'starter', '발효종', '사전반죽', 'biga', ...POOLISH_KEYWORDS,
 ];
+
+/**
+ * 비가(biga) — '비가'는 흔한 낱말("비가 와서 …", "비가 3일째 …")이라 줄 머리에서 양(숫자 + 단위 또는
+ * 숫자만)·괄호·쌍점·'만들기'가 뒤따르거나 그 낱말만 있을 때만 발효종으로 본다
+ */
+function matchesBiga(line: string): boolean {
+  return (
+    contains(line, ['biga']) ||
+    /^[^\p{L}\p{N}]*비가(?=[ \t]*(?:[(:]|만들기|$|[0-9][0-9.,]*[ \t]*(?:%|kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?)?(?![\p{L}\p{N}])))/iu.test(
+      line,
+    )
+  );
+}
 
 /** 르방(사전발효종) 줄·이름 — '르뱅쿠키'는 과자 이름, 'leavening'은 팽창제라 제외 */
 function matchesLevain(line: string): boolean {
   return (
     contains(line, LEVAIN_KEYWORDS) ||
+    matchesBiga(line) ||
     containsWord(line, 'ferment') ||
     containsWord(line, 'leaven') ||
     /르뱅(?!\s*쿠키)/u.test(line)
   );
+}
+
+/** 수분율을 밝히지 않은 풀리시·비가의 관례 수분율 — 풀리시 100%, 비가 50% */
+function prefermentHydration(line: string): number | undefined {
+  if (contains(line, POOLISH_KEYWORDS)) return 1.0;
+  if (matchesBiga(line)) return 0.5;
+  return undefined;
 }
 
 /** 물 — 물엿·시럽과 '물'이 들어간 다른 단어(곡물·식물성 …)는 제외, eau는 단어 단위(gâteau 방지) */
@@ -188,6 +215,14 @@ function matchesWater(line: string): boolean {
     containsWord(line, 'eau')
   );
 }
+
+function matchesSalt(line: string): boolean {
+  return contains(line, ['소금', '천일염', '소곰']) || containsWord(line, 'salt') || containsWord(line, 'sel');
+}
+
+const BASSINAGE_KEYWORDS = ['바시나주', '바시나쥬', 'bassinage', '조절수', '조정수'];
+const MILK_KEYWORDS = ['우유', 'milk', 'lait'];
+const EGG_KEYWORDS = ['계란', '달걀', '전란', 'egg', 'oeuf', 'œuf'];
 
 // ── 전처리 ──────────────────────────────────────────────────────────
 
@@ -217,12 +252,16 @@ export function cleanForParsing(text: string): string {
 /**
  * 온도 표기 제거 — "물 350g (30°C)"·"물 350g 30도" 같은 줄이 오염되지 않도록
  * 괄호 안 온도와 "30°C"/"30℃"/"30도" 토큰을 걷어낸다
- * ("도" 뒤에 글자가 이어지면(포도·도우 등) 매칭하지 않는다)
+ * ("도" 뒤에 글자가 이어지면(포도·도우 등) 매칭하지 않는다).
+ * 범위("24-25도씨", "24~25℃")는 앞 수까지 지운다 — 대시는 붙여 쓴 것만 (시간 범위와 같은 규칙)
  */
 function stripTemperatures(line: string): string {
   return line
     .replace(/\([^)]*(?:°|℃|온도|[0-9][ \t]*도)[^)]*\)/g, '')
-    .replace(/[0-9]+(?:[.,][0-9]+)?[ \t]*(?:°[CcFf]?|℃|도씨?(?![가-힣A-Za-z]))/g, '');
+    .replace(
+      /(?:[0-9]+(?:[.,][0-9]+)?(?:[ \t]*(?:°[CcFf]?|℃|도))?(?:[ \t]*[~〜～][ \t]*|[–-]))?[0-9]+(?:[.,][0-9]+)?[ \t]*(?:°[CcFf]?|℃|도씨?(?![가-힣A-Za-z]))/g,
+      '',
+    );
 }
 
 /**
@@ -267,6 +306,17 @@ function splitSegments(line: string): string[] {
 function shouldSkip(line: string): boolean {
   const t = line.trim();
   if (t === '') return true;
+  // 앱 배합표의 르방 속 밀가루·물 행("  ↳ 속 밀가루  100.0 g  (PFF 9.1%)", "↳ Flour in levain …") —
+  // 르방 무게에 이미 들어 있다. OCR이 화살표를 놓쳐도 앱 라벨(Localization의 속 밀가루·속 물, 옛 영문
+  // "Flour inside" 포함)로 거른다
+  if (t.startsWith('↳')) return true;
+  if (
+    /(?<!\p{L})속\s*(?:밀가루|물)(?!\p{L})|(?<!\p{L})(?:flour|water)\s+in(?:side|\s+levain)(?!\p{L})/iu.test(
+      t.replace(/\([^)]*\)/gu, ' '),
+    )
+  ) {
+    return true;
+  }
   // 합계 표기는 괄호 밖·머리 기호("- ", "• ") 뒤에서 본다 — "물 700g (총 수분율 75%)"는 재료 줄.
   // 괄호 밖에 양이 없으면("재료 (총 960g)"·"(합계 960g)") 괄호 안까지 본다
   let outer = t.replace(/\([^)]*\)/gu, ' ');
@@ -275,10 +325,25 @@ function shouldSkip(line: string): boolean {
   if (/(?<![가-힣A-Za-z0-9])총|총\s*(?:계|량|중량|무게)|합\s*계|^계(?![가-힣A-Za-z0-9])/u.test(outer)) {
     return true;
   }
-  if (!matchesLevain(outer) && /전체\s*반죽|반죽\s*(?:무게|중량)|분할/u.test(outer)) return true;
+  if (
+    !matchesLevain(outer) &&
+    /전체\s*반죽|반죽\s*(?:무게|중량)|분할|(?<!\p{L})divide(?!\p{L})/iu.test(outer)
+  ) {
+    return true;
+  }
   if (contains(outer, ['total', '재 료', '베이커', 'baker'])) return true;
-  if (contains(t, ['수분율', 'hydration', '온도']) && !hasAmount(numberTokens(t))) {
-    return true; // "수분율 75%" 같은 통계·표기 줄
+  // "수분율 75%" 같은 통계·표기 줄 — 통계 낱말 말고 다른 글자가 남으면("75% Hydration Sourdough") 제목일 수 있다.
+  // 온도 줄("반죽 온도 24℃")은 글자가 남아도 통계 줄이다
+  if (
+    !hasAmount(numberTokens(t)) &&
+    (contains(t, ['온도']) ||
+      (contains(t, ['수분율', 'hydration', 'hydratation', 'PFF']) &&
+        t.replace(
+          /수분율|hydration|hydratation|levain|르방|르뱅|리퀴드|liquide|뒤흐|dur|스타터|starter|발효종|사전반죽|풀리시|풀리쉬|폴리쉬|폴리시|poolish|biga|비가|pff|반죽|dough|재료|ingredients?|[^\p{L}]/giu,
+          '',
+        ) === ''))
+  ) {
+    return true;
   }
   // "물 340g에 르방을 풀어주세요" 같은 서술문 — 합계 판정처럼 괄호 밖에서 본다.
   // "물 350g (나눠 넣습니다)"의 괄호 속 메모는 재료 줄을 지우지 않는다
@@ -291,10 +356,11 @@ function shouldSkip(line: string): boolean {
 /** 숫자·단위를 걷어낸 재료 이름 */
 function ingredientName(line: string): string {
   let s = line.replace(
-    /(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:\/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?/giu,
+    /(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:\/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?/giu,
     '',
   );
   s = s.replace(/\([ \t]*\)/g, '');
+  s = stripLeadingSymbols(s);
   return trimCharacters(s, ' \t\u00A0\u202F\u2009:·.-—|');
 }
 
@@ -307,9 +373,131 @@ function trimCharacters(s: string, chars: string): string {
   return s.slice(start, end);
 }
 
-/** 제목 후보에서 "G." "1)" 같은 머리 기호 제거 */
+/** 제목 후보에서 "G." "1)" 같은 머리 기호와 앱 배합표 제목 줄의 꾸밈("〔캉파뉴〕 fiche technique") 제거 */
 function cleanTitle(line: string): string {
-  return line.trim().replace(/^[A-Za-z0-9]{1,3}[.)][ \t]*/, '').trim();
+  return line
+    .trim()
+    .replace(/^[A-Za-z0-9]{1,3}[.)][ \t]*/, '')
+    .replace(/[〔〕【】「」]/gu, '')
+    .replace(/[ \t]*fiche[ \t]+technique[ \t]*$/iu, '')
+    .trim();
+}
+
+/** 줄 머리의 이모지·글머리표("🍞 ", "▪️", "• ", "✔️ ") — 여는 괄호는 남긴다 */
+function stripLeadingSymbols(s: string): string {
+  return s.replace(/^[^\p{L}\p{N}(]+/u, '');
+}
+
+/** 제목 후보에서 걷어낼 분량 괄호 하나 — "무화과 호두 캄파뉴 (2개 분량)" */
+const SERVINGS_PARENTHETICAL = /\([^)]*(?:분량|인분|loaf|loaves|servings?)[^)]*\)/iu;
+/** 개수만 적은 괄호("캄파뉴 (2개)")는 재료보다 앞선 줄에서만 분량으로 본다 — 재료 사이의 "계란 (2개)"는 재료 줄 */
+const COUNT_PARENTHETICAL = /\([^)]*(?:분량|인분|개|판|덩어리|덩이|loaf|loaves|servings?)[^)]*\)/iu;
+
+/**
+ * 그램 없는 줄이 레시피 이름이면 그 이름, 아니면 null.
+ * % 표기만 있는 줄("캉파뉴 75%")은 재료보다 앞설 때만 이름이 된다 — 재료 사이의 "PFF 20%"는 이름이 아니다
+ */
+function titleCandidate(line: string, matched: number): string | null {
+  const s = line.replace(matched === 0 ? COUNT_PARENTHETICAL : SERVINGS_PARENTHETICAL, '');
+  const tokens = numberTokens(s);
+  if (!(tokens.length === 0 || (matched === 0 && tokens.every((t) => t.kind === 'pct')))) {
+    return null;
+  }
+  const t = stripLeadingSymbols(cleanTitle(s));
+  if (graphemeCount(t) < 2) return null;
+  // 베이커스 % 표의 재료 한 줄("강력분 100%", "르방 20%")은 이름이 아니다
+  if (tokens.length > 0) {
+    const rest = ingredientName(t)
+      .replace(/(?<!\p{L})(?:liquide|dur|리퀴드|뒤흐)(?!\p{L})/giu, '')
+      .trim();
+    if (
+      !/\s/u.test(rest) &&
+      (matchesFlour(rest) || matchesLevain(rest) || matchesWater(rest) || matchesSalt(rest))
+    ) {
+      return null;
+    }
+  }
+  // "…레시피 공유해요 🙌" 같은 서술문은 이름이 아니다 — 끝의 이모지·문장부호를 걷어내고 본다
+  const end = t.replace(/[^\p{L}\p{N}!?]+$/u, '');
+  if (isChatty(end)) return null;
+  // 주소가 든 줄(앱 공유 텍스트의 끝줄 "— Doughmetry · narudoc.github.io/…", 블로그 링크)은 이름이 아니다
+  if (WEB_ADDRESS.test(t)) return null;
+  return t;
+}
+
+/**
+ * 서술문 끝 — 요·죠·!·?는 늘, 다·네는 앞 글자가 '니'이거나 받침이 ㄴ·ㅄ·ㅆ일 때만
+ * (한다·섞는다·없다·구웠다·맛있네·입니다). '파네토네'·'할라피뇨 체다' 같은 빵 이름은 남긴다
+ */
+function isChatty(end: string): boolean {
+  if (/[요죠!?]$/u.test(end)) return true;
+  if (!/[다네]$/u.test(end)) return false;
+  const cs = [...end];
+  const prev = cs[cs.length - 2];
+  if (!prev) return false;
+  if (prev === '니') return true;
+  const c = prev.codePointAt(0)! - 0xac00;
+  return c >= 0 && c < 11172 && [4, 18, 20].includes(c % 28);
+}
+
+const WEB_ADDRESS =
+  /https?:\/\/|www\.|(?<![\p{L}\p{N}])[a-z0-9-]+\.(?:com|net|org|io|kr|co|me|app|ly)(?![\p{L}\p{N}])/iu;
+
+/**
+ * 물 줄에 붙은 바시나주 부연 — "물 340g (+ 바시나주 25g)", "물 340g + 바시나주 25g",
+ * "물 365g (바시나주 25g 포함)". 키워드 앞이 물 줄이고 앞뒤에 각자 양이 있을 때만 나눈다
+ * ('포함'이면 앞의 양에서 뺀다). 아니면 null — 줄 전체가 바시나주다
+ */
+function bassinageClause(line: string): { water: number; bassinage: number } | null {
+  const lower = line.toLowerCase();
+  let at = -1;
+  let len = 0;
+  for (const k of BASSINAGE_KEYWORDS) {
+    const i = lower.indexOf(k.toLowerCase());
+    if (i >= 0 && (at < 0 || i < at)) {
+      at = i;
+      len = k.length;
+    }
+  }
+  if (at < 0) return null;
+  const head = line.slice(0, at);
+  const tail = line.slice(at + len);
+  const water = pickGrams(head);
+  const extra = pickGrams(tail);
+  if (!matchesWater(head) || water === undefined || water <= 0) return null;
+  if (extra === undefined || extra <= 0) return null;
+  if (tail.includes('포함')) return water > extra ? { water: water - extra, bassinage: extra } : null;
+  return { water, bassinage: extra };
+}
+
+/** 분량 표기 — "빵 2개 분량", "2 loaves", 앱 배합표의 "분할 2개 — 개당"·"Divide by 2 — each" */
+const SERVINGS =
+  /(?:빵\s*)?(?<![0-9])([0-9]{1,2})\s*(?:개|덩이|덩어리)\s*분량|(?<![\p{L}\p{N}])([0-9]{1,2})\s+loaves?(?!\p{L})|(?:분할\s*([0-9]{1,2})\s*개|(?<!\p{L})divide\s+by\s+([0-9]{1,2}))\s*[—–-]\s*(?:개당|each)/iu;
+
+function servings(line: string): number | null {
+  const m = SERVINGS.exec(line);
+  if (!m) return null;
+  for (const g of m.slice(1)) {
+    if (g === undefined) continue;
+    const n = Number(g);
+    if (n >= 1 && n <= 99) return n;
+  }
+  return null;
+}
+
+/**
+ * 공정 서술부를 노트로 — SNS 토큰만 걷어내고 시간·온도("1시간", "230도")는 남긴다.
+ * 앞뒤 빈 줄은 버리고 이어진 빈 줄은 하나로
+ */
+function methodText(lines: string[]): string | null {
+  const out: string[] = [];
+  for (const raw of lines) {
+    const l = stripSocialTokens(raw).trim();
+    if (l === '' && (out.length === 0 || out[out.length - 1] === '')) continue;
+    out.push(l);
+  }
+  while (out.length > 0 && out[out.length - 1] === '') out.pop();
+  return out.length > 0 ? out.join('\n') : null;
 }
 
 /** Swift String.count(자소 클러스터 수)와 동일한 길이 — 이모지 하나는 1 */
@@ -366,6 +554,8 @@ export function parseRecipeText(text: string): ParsedRecipeText {
   const yeast: Yeast = { type: 'fresh', grams: 0 };
   const extras: Extra[] = [];
   let matched = 0;
+  let pieces: number | null = null;
+  let methodStart: number | null = null;
 
   // 섹션 상태 — 르방 빌드 섹션 재료는 본반죽에 합산하지 않는다
   type Section = 'main' | 'levainBuild' | 'stopped';
@@ -373,16 +563,20 @@ export function parseRecipeText(text: string): ParsedRecipeText {
   let buildFlour = 0;
   let buildWater = 0;
   let buildTotal = 0;
+  // 풀리시·비가의 관례 수분율 — 빌드 섹션의 물/밀가루 비가 있으면 그쪽이 먼저다
+  let prefermentDefault: number | undefined;
 
   // 전처리 + 구분자 분할
-  const segments: { text: string; hadDuration: boolean }[] = [];
-  for (const rawLine of text.normalize('NFC').split(NEWLINES)) {
+  const rawLines = text.normalize('NFC').split(NEWLINES);
+  const segments: { text: string; hadDuration: boolean; lineIndex: number }[] = [];
+  for (const [lineIndex, rawLine] of rawLines.entries()) {
     // "G." "1)" 같은 머리 기호를 먼저 떼야 헤더("1. 재료")를 제대로 거른다
     const pre = stripTemperatures(stripSocialTokens(cleanTitle(rawLine)));
+    if (pieces === null) pieces = servings(pre);
     const line = stripDurations(pre);
     // 시간·차수만 남았던 공정 줄("벌크 발효 4시간", "1차 발효")은 제목 후보가 아니다
     const hadDuration = line !== pre;
-    for (const part of splitSegments(line)) segments.push({ text: part, hadDuration });
+    for (const part of splitSegments(line)) segments.push({ text: part, hadDuration, lineIndex });
   }
 
   for (const segment of segments) {
@@ -409,14 +603,9 @@ export function parseRecipeText(text: string): ParsedRecipeText {
         section = 'main';
       } else if (matched >= 2 && isMethodHeader(line)) {
         section = 'stopped';
-      } else if (
-        name === null &&
-        numberTokens(line).length === 0 &&
-        section === 'main' &&
-        !segment.hadDuration
-      ) {
-        const t = cleanTitle(line);
-        if (graphemeCount(t) >= 2) name = t;
+        methodStart = segment.lineIndex;
+      } else if (name === null && section === 'main' && !segment.hadDuration) {
+        name = titleCandidate(line, matched);
       }
       continue;
     }
@@ -436,8 +625,14 @@ export function parseRecipeText(text: string): ParsedRecipeText {
       continue;
     }
 
-    if (contains(line, ['바시나주', '바시나쥬', 'bassinage', '조절수', '조정수'])) {
-      bassinage += grams;
+    if (contains(line, BASSINAGE_KEYWORDS)) {
+      const clause = bassinageClause(line);
+      if (clause) {
+        water += clause.water;
+        bassinage += clause.bassinage;
+      } else {
+        bassinage += grams;
+      }
     } else if (matchesLevain(line)) {
       levainGrams += grams;
       levainName = ingredientName(line);
@@ -455,26 +650,25 @@ export function parseRecipeText(text: string): ParsedRecipeText {
         // (예: "르방 100g (20%)") — 무시하고 기본 수분율을 유지한다
         levainHydration = percent / 100;
         levainHydrationExplicit = true;
+      } else {
+        const h = prefermentHydration(line);
+        if (h !== undefined) prefermentDefault = h;
       }
-    } else if (
-      contains(line, ['소금', '천일염', '소곰']) ||
-      containsWord(line, 'salt') ||
-      containsWord(line, 'sel')
-    ) {
+    } else if (matchesSalt(line)) {
       salt += grams;
     } else if (contains(line, ['이스트', 'yeast', 'levure', '효모']) || containsWord(line, 'IDY')) {
       yeast.grams += grams;
       if (contains(line, ['인스턴트', '드라이', 'instant', 'dry', 'sèche']) || containsWord(line, 'IDY')) {
         yeast.type = 'instant';
       }
-    } else if (contains(line, ['우유', 'milk', 'lait'])) {
+    } else if (contains(line, MILK_KEYWORDS)) {
       liquids.push({
         id: newId(),
         name: ingredientName(line),
         grams,
         waterRatio: LIQUID_PRESETS.milk.waterRatio,
       });
-    } else if (contains(line, ['계란', '달걀', '전란', 'egg', 'oeuf', 'œuf'])) {
+    } else if (contains(line, EGG_KEYWORDS)) {
       liquids.push({
         id: newId(),
         name: ingredientName(line),
@@ -493,12 +687,20 @@ export function parseRecipeText(text: string): ParsedRecipeText {
   // 르방 빌드 섹션 정산:
   // 본반죽에 르방 g가 명시돼 있으면 빌드 재료는 그 내역이므로 버리고,
   // 없으면 빌드 총량이 곧 르방이다. 수분율은 빌드의 물/밀가루 비로 추정.
+  let usedBuildRatio = false;
   if (buildTotal > 0) {
     if (levainGrams === 0) levainGrams = buildTotal;
     if (!levainHydrationExplicit && buildFlour > 0) {
       const h = buildWater / buildFlour;
-      if (h >= 0.3 && h <= 1.5) levainHydration = h;
+      if (h >= 0.3 && h <= 1.5) {
+        levainHydration = h;
+        usedBuildRatio = true;
+      }
     }
+  }
+  if (!levainHydrationExplicit && !usedBuildRatio && prefermentDefault !== undefined) {
+    levainHydration = prefermentDefault;
+    levainHydrationExplicit = true;
   }
 
   // "르방 리퀴드" 자체는 표시용 이름으로 의미 없음
@@ -519,5 +721,12 @@ export function parseRecipeText(text: string): ParsedRecipeText {
     yeast,
     extras,
   };
-  return { name, input, matchedLineCount: matched, levainHydrationExplicit };
+  return {
+    name,
+    input,
+    matchedLineCount: matched,
+    levainHydrationExplicit,
+    methodNote: methodStart === null ? null : methodText(rawLines.slice(methodStart)),
+    pieces,
+  };
 }

@@ -16,8 +16,14 @@ export class OcrError extends Error {
   }
 }
 
-/** 'loading' = 인식 엔진·언어 데이터 준비(첫 사용 시 내려받기), 'recognizing' = 글자 인식 */
-export type OcrPhase = 'loading' | 'recognizing';
+/**
+ * 'download' = 인식 엔진(worker·core) 받기 — importScripts라 바이트 진행률이 없다,
+ * 'loading' = 언어 데이터 준비(첫 사용 시 내려받기), 'recognizing' = 글자 인식
+ */
+export type OcrPhase = 'download' | 'loading' | 'recognizing';
+
+/** 첫 사용 때 CDN에서 받는 인식 엔진 + 언어 데이터(kor·eng·fra)의 대략적인 크기 */
+export const OCR_FIRST_DOWNLOAD_MB = 9;
 
 export async function recognizeImage(
   file: File,
@@ -31,6 +37,9 @@ export async function recognizeImage(
         if (m.status === 'recognizing text') onProgress?.(m.progress, 'recognizing');
         // 언어 데이터는 파일 단위로만 진행률을 알려 준다 (바이트 단위 아님)
         else if (m.status === 'loading language traineddata') onProgress?.(m.progress, 'loading');
+        else if (m.status === 'loading tesseract core' || m.status === 'initializing tesseract') {
+          onProgress?.(m.progress, 'download');
+        }
       },
     });
   } catch (e) {

@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "도우메트리 · Doughmetry",
+  "short_name": "도우메트리",
+  "description": "사워도우(팽 오 르방) 베이커스 퍼센트 계산기 · 르방 리퀴드/뒤흐 변환기 — Sourdough baker's-percentage calculator & levain converter",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F2EA",
+  "theme_color": "#1E4034",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

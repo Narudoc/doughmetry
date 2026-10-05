@@ -5,6 +5,7 @@ import {
   loadRecipeList,
   mergeImported,
   reloadRecipes,
+  requestPersistentStorage,
   updateRecipes,
 } from '../lib/storage';
 import type { Recipe } from '../types';
@@ -66,6 +67,7 @@ export function useRecipes(): RecipesApi {
         };
         return existing ? prev.map((p) => (p.id === next.id ? next : p)) : [...prev, next];
       });
+      if (latest.current.persisted) requestPersistentStorage();
     },
     [mutate],
   );

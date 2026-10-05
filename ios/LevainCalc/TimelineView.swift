@@ -95,7 +95,7 @@ enum TimelineNotifier {
     private static func makeContent(stage: TimelineStage, next: TimelineStage?) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = next.map { LF("다음 단계: %@", stageName($0)) } ?? L("완성! 빵을 꺼낼 시간")
-        content.body = LF("%@ 끝", stageName(stage))
+        content.body = stage.kind == .levainBuild ? L("르방 빌드 끝 — 피크인지 확인하세요") : LF("%@ 끝", stageName(stage))
         content.sound = .default
         content.userInfo = [
             "kind": stage.kind.rawValue, "custom": stage.customName,
@@ -269,7 +269,14 @@ struct TimelineView: View {
     @State private var scheduleError: String?
     @State private var scheduledFeedback = false
     @State private var showAddStage = false
+    @State private var didPrependLevainBuild = false
     @FocusState private var focusedName: String?
+    /// 르방 빌드 계산기에서 들어오면 맨 앞에 르방 빌드 단계를 넣는다 (피크 알림)
+    private let prependLevainBuild: Bool
+
+    init(prependLevainBuild: Bool = false) {
+        self.prependLevainBuild = prependLevainBuild
+    }
 
     private var anchorIsFinish: Bool {
         if case .finish = store.plan.anchor { return true }
@@ -305,10 +312,7 @@ struct TimelineView: View {
             Section {
                 Picker(L("기준"), selection: Binding(
                     get: { anchorIsFinish ? 1 : 0 },
-                    set: { v in
-                        let d = anchorDate.wrappedValue
-                        store.plan.anchor = v == 1 ? .finish(isoString(from: d)) : .start(isoString(from: d))
-                    })
+                    set: { v in store.plan.setAnchorKind(finish: v == 1) })
                 ) {
                     Text(L("시작 시각")).tag(0)
                     Text(L("완성 시각")).tag(1)
@@ -341,12 +345,13 @@ struct TimelineView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             if s.stage.kind == .custom {
                                 TextField(L("사용자 단계"), text: customName(id))
+                                    .accessibilityLabel(L("사용자 단계"))
                                     .focused($focusedName, equals: id)
                                     .submitLabel(.done)
                             } else {
                                 Text(stageName(s.stage))
                             }
-                            Text("\(fmtClock(s.start)) → \(fmtClock(s.end))")
+                            Text(caption(s))
                                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -378,8 +383,13 @@ struct TimelineView: View {
                 Menu {
                     ForEach(StageKind.allCases, id: \.self) { kind in
                         Button(stageName(TimelineStage(kind: kind, minutes: 0))) {
-                            let stage = TimelineStage(kind: kind, minutes: kind == .coldRetard ? 720 : 30)
-                            store.plan.stages.append(stage)
+                            let stage = TimelineStage(kind: kind, minutes: TimelineStage.defaultMinutes(for: kind))
+                            // 르방은 늘 맨 먼저 만든다
+                            if kind == .levainBuild {
+                                store.plan.stages.insert(stage, at: 0)
+                            } else {
+                                store.plan.stages.append(stage)
+                            }
                             if kind == .custom { focusedName = stage.id }
                         }
                     }
@@ -390,7 +400,7 @@ struct TimelineView: View {
                 HStack {
                     Text(L("단계"))
                     Spacer()
-                    LocalizedEditButton().font(.caption)
+                    LocalizedEditButton()
                 }
             } footer: {
                 Text(L("길게 눌러 순서를 바꾸고, 밀어서 삭제합니다. 냉장 발효는 12시간(720분)이 기본입니다."))
@@ -433,6 +443,7 @@ struct TimelineView: View {
                 Text(L("각 단계가 끝나는 시각에 다음 단계 알림이 옵니다. 앱을 닫아도 울립니다."))
             }
         }
+        .readableFormWidth()
         .navigationTitle(L("타임라인"))
         .navigationBarTitleDisplayMode(.inline)
         .keyboardDoneButton()
@@ -440,7 +451,16 @@ struct TimelineView: View {
         .sensoryFeedback(.success, trigger: scheduledFeedback)
         .task {
             TimelineNotifier.presentInForeground()
+            // 대기 알림 확인보다 먼저 넣는다 — 그 확인이 늦거나 돌아오지 않아도 단계는 바로 보이게.
+            // 한 번만: 돌아올 때마다 다시 넣으면 사용자가 지운 단계가 되살아난다
+            var prepended = false
+            if prependLevainBuild, !didPrependLevainBuild {
+                didPrependLevainBuild = true
+                prepended = store.plan.prependLevainBuild()
+            }
             await store.refreshPending()
+            // 넣을 땐 켜 둔 알림이 있는지 아직 몰라 재예약이 걸리지 않았다 — 있었으면 새 일정으로 다시 예약
+            if prepended, store.alertsArmed { _ = await store.scheduleAlerts() }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await store.refreshPending() } }
@@ -453,7 +473,10 @@ struct TimelineView: View {
         .alert(L("모든 단계가 이미 지났습니다"), isPresented: $allStagesPast) {
             Button(L("확인"), role: .cancel) {}
         } message: {
-            Text(L("시작 시각을 바꾸거나 '지금 시작'을 누른 뒤 다시 예약하세요."))
+            Text(
+                anchorIsFinish
+                    ? L("완성 시각을 늦추거나 '지금 시작'을 누른 뒤 다시 예약하세요.")
+                    : L("시작 시각을 바꾸거나 '지금 시작'을 누른 뒤 다시 예약하세요."))
         }
         .alert(
             L("알림을 예약하지 못했습니다"),
@@ -465,16 +488,40 @@ struct TimelineView: View {
         }
     }
 
+    /// 시각 안에서는 끊지 않는다. 날짜 접두어 뒤는 기본보다 큰 글자에서만 끊게 둔다 — 편집 모드의 좁은 칸에선
+    /// XL부터 "Tomorrow 8:00 AM"이 한 줄을 넘고, 그러면 iOS가 NBSP에서 끊는다 ("8:00 | AM")
     private func fmtClock(_ d: Date) -> String {
         let cal = Calendar.current
-        let time = fmtTime(d)
+        let time = nonBreaking(fmtTime(d))
         if cal.isDateInToday(d) { return time }
-        if cal.isDateInTomorrow(d) { return L("내일") + " " + time }
-        return fmtMonthDay(d) + " " + time
+        let day = cal.isDateInTomorrow(d) ? L("내일") : fmtMonthDay(d)
+        return nonBreaking(day) + (typeSize > .large ? " " : "\u{00A0}") + time
+    }
+
+    /// 시작–끝 시각. 날짜 접두어(내일/9. 12.)는 시작에 한 번만, 끝은 날이 바뀔 때만 붙인다
+    private func fmtRange(_ start: Date, _ end: Date) -> String {
+        let endStr =
+            Calendar.current.isDate(end, inSameDayAs: start) ? nonBreaking(fmtTime(end)) : fmtClock(end)
+        // 줄바꿈은 화살표 뒤에서 — "오후 | 11:06"이나 "Tomorrow | 12:10 AM"처럼 시각 중간에서 끊기지 않게
+        return fmtClock(start) + "\u{00A0}→ " + endStr
+    }
+
+    /// 단계 행의 시각 줄 — 1시간 이상인 단계는 시간 단위 길이를 덧붙인다 (720분 → 12시간).
+    /// 넘치면 "· 12시간"이 통째로 다음 줄로 간다
+    private func caption(_ s: ScheduledStage) -> String {
+        let range = fmtRange(s.start, s.end)
+        guard s.stage.minutes >= 60 else { return range }
+        return range + " ·\u{00A0}" + nonBreaking(fmtDuration(s.stage.minutes))
+    }
+
+    /// en 시각은 오전/오후 앞에 U+202F를 쓰는데, iOS는 거기서도 줄을 바꾼다
+    private func nonBreaking(_ s: String) -> String {
+        s.replacingOccurrences(of: " ", with: "\u{00A0}").replacingOccurrences(of: "\u{202F}", with: "\u{00A0}")
     }
 
     private func fmtDuration(_ minutes: Double) -> String {
         let m = clampedInt(minutes)
-        return m >= 60 ? LF("%d시간 %d분", m / 60, m % 60) : LF("%d분", m)
+        if m < 60 { return LF("%d분", m) }
+        return m % 60 == 0 ? LF("%d시간", m / 60) : LF("%d시간 %d분", m / 60, m % 60)
     }
 }

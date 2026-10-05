@@ -1,28 +1,33 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RecipesApi } from '../../hooks/useRecipes';
 import type { DoughInput } from '../../lib/dough';
-import { computeStats } from '../../lib/dough';
+import { computeStats, scaleDough } from '../../lib/dough';
+import { ficheText } from '../../lib/fiche';
 import { fmtGrams } from '../../lib/format';
 import { newId } from '../../lib/id';
 import type { CalcState } from '../../state';
 import {
   LOAD_OVER_DIRTY_PROMPT,
+  NEW_CALC_PROMPT,
   calcSnapshot,
   calcStateFromRecipe,
   currentDoughInput,
   currentPieces,
   isCalcDirty,
+  resetCalcState,
   targetSpecFromForm,
 } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { Button } from '../ui/Button';
-import { SaveRecipeDialog } from '../ui/Dialog';
+import { Dialog, SaveRecipeDialog } from '../ui/Dialog';
 import { Segmented } from '../ui/Segmented';
 import { NumberField, TextField } from '../ui/fields';
 import { BakersTable } from './BakersTable';
 import { IngredientForm } from './IngredientForm';
 import { PrintFiche } from './PrintFiche';
 import { ResultSummary } from './ResultSummary';
+import { ScaleDialog } from './ScaleDialog';
+import { SummaryBar } from './SummaryBar';
 import { TargetFormView } from './TargetFormView';
 
 interface Props {
@@ -41,10 +46,63 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
   const precision = settings.precision;
   const basis = settings.pctBasis;
   const [saveOpen, setSaveOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [scaleOpen, setScaleOpen] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const [summaryOnScreen, setSummaryOnScreen] = useState(false);
 
   const loadedRecipe = state.recipeId
     ? api.recipes.find((r) => r.id === state.recipeId)
     : undefined;
+  // 목표 역산 결과는 바시나주·액체·이스트·기타 재료가 없으므로 불러온 레시피를 덮어쓰면 그 재료가 사라진다
+  const canOverwrite = !!loadedRecipe && state.mode === 'A';
+  const newOverDirty = newOpen && isCalcDirty(state, api.recipes);
+
+  // 결과 요약이 화면에 보이는 동안에는 하단 요약 바가 같은 숫자를 겹쳐 보이지 않게 숨긴다
+  useEffect(() => {
+    const el = summaryRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setSummaryOnScreen(entry.isIntersecting && entry.intersectionRatio >= 0.5),
+      { threshold: [0, 0.5, 1] },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const showResults = () => {
+    const el = resultsRef.current;
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    el.focus({ preventScroll: true });
+  };
+
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const shareFiche = async () => {
+    const text = ficheText(state.name, dough, stats, { pieces, precision, basis });
+    if (canShare) {
+      try {
+        await navigator.share({ title: state.name.trim() || '배합표', text });
+        return;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('배합표를 복사했습니다');
+    } catch {
+      toast('복사하지 못했습니다');
+    }
+  };
+
+  const startNew = (empty: boolean) => {
+    onChange(resetCalcState(empty));
+    setNewOpen(false);
+    toast('새 배합을 시작했습니다');
+  };
 
   /** 저장하지 않은 입력이 있으면 덮어쓰기 전에 묻는다 (iOS calcIsDirty 확인과 같다) */
   const confirmLoad = () =>
@@ -60,7 +118,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     note?: string;
     overwrite: boolean;
   }) => {
-    const overwrite = data.overwrite && !!loadedRecipe;
+    const overwrite = data.overwrite && canOverwrite;
     const id = overwrite && loadedRecipe ? loadedRecipe.id : newId();
     const now = new Date().toISOString();
     const recipe: Recipe = {
@@ -140,6 +198,9 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
                 다시 불러오기
               </Button>
             )}
+            <Button variant="ghost" onClick={() => setNewOpen(true)}>
+              새 배합
+            </Button>
           </div>
           <TextField
             label="레시피 이름"
@@ -156,13 +217,18 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
                 precision={precision}
                 basis={basis}
               />
-              <NumberField
-                label="분할 개수 (0 = 사용 안 함)"
-                unit="개"
-                value={state.pieces}
-                onChange={(p) => onChange({ ...state, pieces: p })}
-                className="max-w-[200px]"
-              />
+              <div className="flex flex-wrap items-end gap-3">
+                <NumberField
+                  label="분할 개수 (0 = 사용 안 함)"
+                  unit="개"
+                  value={state.pieces}
+                  onChange={(p) => onChange({ ...state, pieces: p })}
+                  className="max-w-[200px]"
+                />
+                <Button disabled={!(stats.doughWeight > 0)} onClick={() => setScaleOpen(true)}>
+                  배율 조정
+                </Button>
+              </div>
             </>
           ) : (
             <TargetFormView
@@ -172,8 +238,14 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
           )}
         </div>
 
-        <div className="no-print space-y-4 lg:sticky lg:top-4 lg:self-start">
-          <ResultSummary stats={stats} pieces={pieces} precision={precision} basis={basis} />
+        <div
+          ref={resultsRef}
+          tabIndex={-1}
+          className="no-print space-y-4 focus:outline-none lg:sticky lg:top-4 lg:self-start"
+        >
+          <div ref={summaryRef}>
+            <ResultSummary stats={stats} pieces={pieces} precision={precision} basis={basis} />
+          </div>
           {(negativeWater || negativeFlour) && (
             <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
               {negativeWater && (
@@ -199,6 +271,9 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
             >
               변환기로 보내기
             </Button>
+            <Button disabled={negativeWater || negativeFlour} onClick={() => void shareFiche()}>
+              {canShare ? '공유' : '텍스트 복사'}
+            </Button>
             <Button onClick={() => window.print()}>인쇄</Button>
           </div>
         </div>
@@ -223,10 +298,51 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
         initialName={state.name}
         initialTags={loadedRecipe?.tags ?? []}
         initialNote={loadedRecipe?.note ?? ''}
-        allowOverwrite={!!loadedRecipe}
-        loadedName={loadedRecipe?.name}
+        allowOverwrite={canOverwrite}
+        loadedName={canOverwrite ? loadedRecipe?.name : undefined}
         onSave={handleSave}
       />
+
+      <ScaleDialog
+        open={scaleOpen}
+        onClose={() => setScaleOpen(false)}
+        doughWeight={stats.doughWeight}
+        pieces={state.pieces}
+        precision={precision}
+        onApply={(factor, p) => {
+          onChange({ ...state, input: scaleDough(state.input, factor), pieces: p ?? state.pieces });
+          toast('배율을 적용했습니다');
+        }}
+      />
+
+      <Dialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        title="새 배합"
+        footer={
+          <>
+            <Button onClick={() => setNewOpen(false)}>취소</Button>
+            <Button onClick={() => startNew(false)}>예시 배합으로 시작 (캉파뉴)</Button>
+            <Button variant={newOverDirty ? 'danger' : 'primary'} onClick={() => startNew(true)}>
+              빈 배합으로 시작
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink/80">
+          {newOverDirty ? NEW_CALC_PROMPT : '빈 배합 또는 예시 배합으로 새로 시작합니다.'}
+        </p>
+      </Dialog>
+
+      {!summaryOnScreen && (
+        <SummaryBar
+          stats={stats}
+          pieces={pieces}
+          precision={precision}
+          infeasible={negativeWater || negativeFlour}
+          onExpand={showResults}
+        />
+      )}
     </div>
   );
 }

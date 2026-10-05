@@ -6,13 +6,14 @@ import { GramRows } from './GramRows';
 import { LevainControl } from './LevainControl';
 import { LiquidRows } from './LiquidRows';
 import { YeastControl } from './YeastControl';
+import { Fr } from '../ui/Fr';
 import { NumberField } from '../ui/fields';
 
 export function SectionTitle({ ko, fr }: { ko: string; fr: string }) {
   return (
-    <h3 className="font-display text-sm font-semibold uppercase tracking-widest text-bottle">
-      {ko} <span className="ml-1 font-normal normal-case italic text-bottle/60">{fr}</span>
-    </h3>
+    <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-bottle">
+      {ko} <Fr className="ml-1 font-normal normal-case text-bottle/80">{fr}</Fr>
+    </h2>
   );
 }
 
@@ -42,7 +43,7 @@ export function IngredientForm({ input, onChange, stats, precision, basis }: Pro
           pcts={flourPcts}
           minRows={1}
         />
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/70">
           {basis === 'added'
             ? '%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.'
             : '%는 총 밀가루(첨가 + 르방 속) 기준입니다.'}
@@ -71,7 +72,7 @@ export function IngredientForm({ input, onChange, stats, precision, basis }: Pro
             onChange={(salt) => onChange({ ...input, salt })}
           />
         </div>
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/70">
           바시나주는 반죽 후반에 추가하는 물로, 총 수분율에 합산됩니다.
         </p>
       </section>
@@ -97,7 +98,7 @@ export function IngredientForm({ input, onChange, stats, precision, basis }: Pro
           precision={precision}
           pcts={liquidPcts}
         />
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/70">
           각 재료의 수분율만큼 총 수분율에 반영됩니다 (우유 88% · 계란 76%, USDA 기준).
         </p>
       </section>
@@ -121,7 +122,7 @@ export function IngredientForm({ input, onChange, stats, precision, basis }: Pro
           namePlaceholder="몰트, 씨앗…"
           pcts={extraPcts}
         />
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/70">
           기타 재료는 무게에만 합산되고 수분 계산에서 제외됩니다. 수분이 있는 재료는 위의 액체
           재료에 입력하세요.
         </p>

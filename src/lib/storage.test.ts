@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Recipe } from '../types';
 import type { KeyValueStore } from './storage';
 import {
+  backupNudge,
   exportJson,
   importJson,
   loadRecipeList,
@@ -418,5 +419,43 @@ describe('mergeImported (JSON 가져오기 병합 — iOS와 같은 규칙)', ()
     const res = mergeImported([sampleRecipe()], [at('2026-01-01T00:00:00.000Z', { id: 'new' })]);
     expect(res).toMatchObject({ added: 1, updated: 0, skipped: 0 });
     expect(res.recipes.map((r) => r.id)).toEqual(['r1', 'new']);
+  });
+});
+
+describe('backupNudge (전체 내보내기 안내)', () => {
+  const at = (id: string, updatedAt: string): Recipe => ({ ...sampleRecipe(), id, updatedAt });
+  const now = new Date('2026-10-01T12:00:00.000Z');
+
+  it('백업한 적이 없으면 레시피가 2개 이상일 때 보이고, 전부 바뀐 것으로 센다', () => {
+    expect(backupNudge([], undefined, now)).toEqual({ show: false, changed: 0 });
+    expect(backupNudge([at('a', '2026-09-01T00:00:00.000Z')], undefined, now)).toEqual({
+      show: false,
+      changed: 1,
+    });
+    const two = [at('a', '2026-09-01T00:00:00.000Z'), at('b', '2026-09-02T00:00:00.000Z')];
+    expect(backupNudge(two, undefined, now)).toEqual({ show: true, changed: 2 });
+  });
+
+  it('백업 이후 바뀐 것이 없으면 오래됐어도 보이지 않는다', () => {
+    const rs = [at('a', '2026-09-01T00:00:00.000Z'), at('b', '2026-09-02T00:00:00.000Z')];
+    expect(backupNudge(rs, '2026-09-03T00:00:00.000Z', now)).toEqual({ show: false, changed: 0 });
+  });
+
+  it('백업 이후 바뀐 것이 있으면 7일이 지나서야 보인다', () => {
+    const rs = [at('a', '2026-09-01T00:00:00.000Z'), at('b', '2026-09-28T00:00:00.000Z')];
+    expect(backupNudge(rs, '2026-09-24T12:00:00.000Z', now)).toEqual({ show: true, changed: 1 });
+    expect(backupNudge(rs, '2026-09-24T12:00:00.001Z', now)).toEqual({ show: false, changed: 1 });
+  });
+
+  it('시각은 문자열이 아니라 실제 시각으로 비교한다', () => {
+    // 같은 순간을 다른 시간대로 적은 것 — 바뀐 것이 아니다
+    const rs = [at('a', '2026-09-01T09:00:00+09:00')];
+    expect(backupNudge(rs, '2026-09-01T00:00:00.000Z', now).changed).toBe(0);
+  });
+
+  it('해석되지 않는 백업 시각은 백업한 적이 없는 것으로 본다', () => {
+    const rs = [at('a', '2026-09-01T00:00:00.000Z'), at('b', '2026-09-02T00:00:00.000Z')];
+    expect(backupNudge(rs, 'not-a-date', now)).toEqual({ show: true, changed: 2 });
+    expect(backupNudge(rs, '2026-09-01', now)).toEqual({ show: true, changed: 2 });
   });
 });

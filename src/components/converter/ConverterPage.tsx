@@ -6,6 +6,7 @@ import {
   computeStats,
   convertFixedMass,
   convertFixedPff,
+  levainTypeFor,
   withLevainMass,
 } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
@@ -51,7 +52,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
 
   // 반대 방향 프리셋: 현재 르방이 리퀴드 계열이면 뒤흐(50%)로, 아니면 리퀴드(100%)로
   const suggestTarget = (d: DoughInput) =>
-    setTargetHydrationPct(d.levain.hydration >= 0.75 ? 50 : 100);
+    setTargetHydrationPct(levainTypeFor(d.levain.hydration) === 'liquide' ? 50 : 100);
 
   // 드롭다운이 아닌 경로(계산기 배합·변환기로 보내기)는 recipeId 없이 불러 선택 표시를 지운다
   const adoptInput = (n: string, d: DoughInput, recipeId = '') => {
@@ -235,7 +236,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
             </label>
           )}
         </div>
-        <p className="text-xs text-ink/60">{MODE_DESC[convMode]}</p>
+        <p className="text-xs text-ink/70">{MODE_DESC[convMode]}</p>
       </section>
 
       {result.ok ? (
@@ -285,9 +286,9 @@ function InvariantChecklist({
   ];
   return (
     <section className="rounded-lg border border-line bg-white p-4">
-      <h3 className="font-display text-sm font-semibold uppercase tracking-widest text-bottle">
+      <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-bottle">
         보존되는 값
-      </h3>
+      </h2>
       <ul className="mt-2 grid gap-1.5 text-sm sm:grid-cols-2">
         {items.map((it) => {
           const kept = Math.abs(it.a - it.b) < 0.01;
@@ -400,7 +401,7 @@ function ErrorPanel({
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <span className="tabular-nums">
             변환 가능한 최대 르방: <strong>{fmtGrams(maxLevain, precision)} g</strong>
-            <span className="text-ink/50"> (총 밀가루·총 물 유지 기준)</span>
+            <span className="text-ink/70"> (총 밀가루·총 물 유지 기준)</span>
           </span>
           <Button small onClick={() => onApplyMax(maxLevain)}>
             최대 르방 질량 적용

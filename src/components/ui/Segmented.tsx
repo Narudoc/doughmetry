@@ -40,7 +40,7 @@ export function Segmented<T extends string>({
             className={[
               'rounded font-medium transition-colors motion-reduce:transition-none',
               small ? 'min-h-[36px] px-2.5 text-xs' : 'min-h-[44px] px-3 text-sm',
-              active ? 'bg-bottle text-paper' : 'text-ink/60 hover:text-ink',
+              active ? 'bg-bottle text-paper' : 'text-ink/70 hover:text-ink',
             ].join(' ')}
           >
             {o.label}

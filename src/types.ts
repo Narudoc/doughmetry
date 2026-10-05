@@ -65,4 +65,6 @@ export interface Settings {
   precision: 0.1 | 1;
   /** total: 총 밀가루 기준(프랑스식, 기본) / added: 첨가 밀가루 = 100% (베이커스 퍼센트) */
   pctBasis: PctBasis;
+  /** 마지막 전체 내보내기(백업) 시각 (ISO) — 백업 안내(storage.backupNudge)에 쓴다 */
+  lastExportAt?: string;
 }

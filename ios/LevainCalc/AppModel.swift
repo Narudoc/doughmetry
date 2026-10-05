@@ -2,12 +2,6 @@ import Foundation
 import LevainCore
 import Observation
 
-/// % 표기 기준 — 계산은 항상 총 밀가루 기준이고, 재료 옆 % 표시만 전환한다
-enum PctBasis: String, CaseIterable {
-    case totalFlour  // 총 밀가루 (프랑스식, 기본)
-    case addedFlour  // 첨가 밀가루 = 100% (베이커스 퍼센트)
-}
-
 /// 계산기 입력 모드
 enum CalcMode: String, Codable {
     case a // 재료 입력
@@ -118,23 +112,41 @@ final class AppModel {
     }
 
     // MARK: 저장 위치 — Application Support/levain-calc/
-    //   library.json : 레시피 + 로그 + 묘비 (LibraryDocument, iCloud 사본과 같은 형식)
+    //   library.json : 레시피 + 로그 + 묘비 (LibraryStore — LibraryDocument, iCloud 사본과 같은 형식)
     //   draft.json   : 계산기 작성 중 상태
-    //   recipes.json : 옛 형식(레시피 배열) — 최초 실행 시 library.json으로 이전
+    //   recipes.json : 옛 형식(레시피 배열) — 최초 실행 시 LibraryStore가 library.json으로 이전
 
-    private static var dir: URL {
+    nonisolated private static var dir: URL {
+        #if DEBUG
+        if let dir = uiTestDataDir { return dir }
+        #endif
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("levain-calc", isDirectory: true)
     }
-    private static var libraryURL: URL { dir.appendingPathComponent("library.json") }
-    private static var legacyRecipesURL: URL { dir.appendingPathComponent("recipes.json") }
-    private static var draftURL: URL { dir.appendingPathComponent("draft.json") }
+    nonisolated private static var draftURL: URL { dir.appendingPathComponent("draft.json") }
+
+    #if DEBUG
+    /// UI 테스트 격리 — 실행 인자 `-uiTestDataDir <경로>`(인자 도메인)로 저장 위치를 바꾸고 iCloud를 켜지 않는다.
+    /// 상대 경로는 앱 임시 폴더 아래로 (실기기 샌드박스에서도 쓸 수 있게)
+    nonisolated private static var uiTestDataDir: URL? {
+        guard let path = UserDefaults.standard.string(forKey: "uiTestDataDir"), !path.isEmpty else { return nil }
+        return path.hasPrefix("/")
+            ? URL(fileURLWithPath: path, isDirectory: true)
+            : FileManager.default.temporaryDirectory.appendingPathComponent(path, isDirectory: true)
+    }
+    #endif
+
+    private var store: LibraryStore
+    /// 라이브러리 쓰기(인코딩 포함)는 메인 액터 밖 이 직렬 큐에서 한다. 큐에 넣는 것은 메인 액터에서 await 전에
+    /// 동기적으로 하므로 변이 순서대로 쓰인다 — 낡은 스냅샷이 새것 뒤에 쓰이지 않는다 (apply()의 취소가 기대는 보장)
+    nonisolated private static let libraryWriteQueue = DispatchQueue(label: "library-write", qos: .utility)
 
     private var draftSaveTask: Task<Void, Never>?
     private var librarySaveTask: Task<Void, Never>?
     private var isLoading = false
 
     init() {
+        store = LibraryStore(directory: Self.dir)
         if let raw = UserDefaults.standard.object(forKey: "precision") as? Double,
             let p = Precision(rawValue: raw)
         {
@@ -164,45 +176,45 @@ final class AppModel {
     }
 
     private func load() {
-        if let data = try? Data(contentsOf: Self.libraryURL) {
-            if (try? JSONSerialization.jsonObject(with: data)) == nil {
-                // 손상된 파일은 옆으로 치워 두고(삭제 금지) 빈 라이브러리로 시작한다 —
-                // 그대로 두면 다음 저장이 사용자 데이터를 영구히 덮어쓴다
-                let aside = Self.dir.appendingPathComponent("library.corrupt-\(Int(Date().timeIntervalSince1970)).json")
-                try? FileManager.default.moveItem(at: Self.libraryURL, to: aside)
-            } else {
-                let doc = LibrarySync.decode(data)
-                if LibrarySync.droppedItemCount(in: data, decoded: doc) > 0 {
-                    Self.keepDroppedOriginal(data)
-                }
-                apply(doc)
-            }
-        } else if let data = try? Data(contentsOf: Self.legacyRecipesURL) {
-            // 옛 형식 이전 — 항목별 검증으로 살릴 수 있는 것은 전부 살린다
-            apply(LibrarySync.decode(data))
-            libraryWriteFailed = !Self.writeLibrary(document)
-        }
+        // 손상 파일·버려진 항목의 원본 보관과 옛 형식 이전은 LibraryStore가 한다 (삭제 금지)
+        let result = store.load()
+        Self.logLoad(result)
+        apply(result.document)
+        // 치우지 못한 손상 파일이 있으면 저장소가 쓰기를 거절한다 — 첫 편집 전부터 저장 실패를 알린다
+        libraryWriteFailed = store.isWriteBlocked || result.migrationWriteError != nil
         if let data = try? Data(contentsOf: Self.draftURL),
             let draft = try? JSONDecoder().decode(CalcState.self, from: data)
         {
-            // 복원한 draft는 기준으로 삼지 않는다 — 저장된 레시피와 같을 때만 calcIsDirty가 false
+            // 복원한 draft는 기준으로 삼지 않는다 — 저장된 레시피와 같을 때만 calcIsDirty가 false.
+            // 손대지 않은 예시·빈 배합은 예외 (새 배합 확인창이 지워질 입력이 없는데 경고하지 않게)
             calc = draft
+            if Self.isUntouchedStart(draft) { calcBaseline = draft }
         } else {
             calcBaseline = calc
         }
     }
 
-    /// 검증에 실패해 버려진 항목이 든 원본을 옆에 복사해 둔다 (삭제 금지, 같은 내용은 한 번만) —
-    /// 다음 저장이 library.json을 덮어쓰면 그 항목은 되찾을 길이 없다
-    private static func keepDroppedOriginal(_ data: Data) {
-        let fm = FileManager.default
-        let existing = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        let alreadyKept = existing.contains {
-            $0.lastPathComponent.hasPrefix("library.dropped-") && (try? Data(contentsOf: $0)) == data
+    private static func logLoad(_ r: LibraryStore.LoadResult) {
+        if let aside = r.corruptSetAside {
+            Log.storage.error("library.json was not JSON — set aside as \(aside.lastPathComponent, privacy: .public)")
         }
-        guard !alreadyKept else { return }
-        let aside = dir.appendingPathComponent("library.dropped-\(Int(Date().timeIntervalSince1970)).json")
-        try? data.write(to: aside, options: .atomic)
+        if let error = r.corruptSetAsideError {
+            Log.storage.error(
+                "could not set aside the corrupt library.json (\(errorCode(error), privacy: .public)) — local writes blocked")
+        }
+        if r.droppedItemCount > 0 {
+            let kept = r.droppedOriginalKept?.lastPathComponent ?? (r.droppedOriginalError == nil ? "an earlier copy" : "none")
+            Log.storage.error("\(r.droppedItemCount) invalid items dropped on load — original kept as \(kept, privacy: .public)")
+        }
+        if let error = r.droppedOriginalError {
+            Log.storage.error("keeping the original with dropped items failed: \(errorCode(error), privacy: .public)")
+        }
+        if r.migratedLegacy {
+            Log.storage.notice("migrated legacy recipes.json: \(r.document.recipes.count) recipes")
+        }
+        if let error = r.migrationWriteError {
+            Log.storage.error("writing migrated library.json failed: \(errorCode(error), privacy: .public)")
+        }
     }
 
     private func scheduleDraftSave() {
@@ -219,19 +231,28 @@ final class AppModel {
         librarySaveTask = Task { [document] in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            libraryWriteFailed = !Self.writeLibrary(document)
+            libraryWriteFailed = !(await persistLibrary(document))
             requestSync()
         }
     }
 
     /// 성공 여부를 돌려준다 — 실패해도 앱 동작은 계속하되 libraryWriteFailed로 사용자에게 알린다.
     /// 오류의 localizedDescription은 앱 언어가 아니라 실행 시점의 기기 언어로 나오므로 화면에 쓰지 않는다
-    private static func writeLibrary(_ doc: LibraryDocument) -> Bool {
+    private func persistLibrary(_ doc: LibraryDocument) async -> Bool {
+        let store = store
+        return await withCheckedContinuation { continuation in
+            Self.libraryWriteQueue.async {
+                continuation.resume(returning: Self.writeLibrary(doc, with: store))
+            }
+        }
+    }
+
+    nonisolated private static func writeLibrary(_ doc: LibraryDocument, with store: LibraryStore) -> Bool {
         do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try LibrarySync.encode(doc).write(to: libraryURL, options: .atomic)
+            try store.write(doc)
             return true
         } catch {
+            Log.storage.error("writing library.json failed: \(errorCode(error), privacy: .public)")
             return false
         }
     }
@@ -244,6 +265,7 @@ final class AppModel {
             try encoder.encode(value).write(to: url, options: .atomic)
         } catch {
             // 저장 실패 시에도 앱 동작은 계속 (웹의 saveJson과 동일한 태도)
+            Log.storage.error("writing \(url.lastPathComponent, privacy: .public) failed: \(errorCode(error), privacy: .public)")
         }
     }
 
@@ -253,6 +275,13 @@ final class AppModel {
     private var syncRequested = false
 
     private func startCloud() async {
+        #if DEBUG
+        // UI 테스트 실행은 iCloud(개발 컨테이너)와 절대 합치지 않는다 — 시뮬레이터가 iCloud에 로그인돼 있어도
+        if Self.uiTestDataDir != nil {
+            cloud.status = .unavailable
+            return
+        }
+        #endif
         await cloud.prepare()
         guard cloud.isAvailable else { return }
         cloud.onEnabled = { [weak self] in self?.requestSync() }
@@ -283,52 +312,65 @@ final class AppModel {
         cloud.status = .syncing
         do {
             let remote = try await cloud.readRemote()
-            cloud.keptConflictCount = remote?.keptConflictCount ?? 0
-            // 새 버전 앱이 쓴 문서는 합치지도 쓰지도 않는다 — 모르는 필드를 뺀 사본이 원격과 같은 updatedAt으로
-            // 로컬에 남으면, 업데이트 뒤 병합 동률에서 그 사본이 이겨 원격의 필드를 지운다
-            if remote?.isNewerFormat == true {
+            cloud.keptConflictCount = remote?.snapshot.keptConflictCount ?? 0
+            // 여기서부터 apply까지는 await 없이 메인 액터에서 한 번에 — 그 사이 사용자 편집이 끼어들 수 없다.
+            // 무엇을 할지는 LibrarySync.plan이 정한다 (정규화한 로컬 + 현재 판 + 충돌 판을 한 번에 병합)
+            let local = document
+            let plan = LibrarySync.plan(local: local, remote: remote?.snapshot)
+            // 새 버전 앱이 쓴 문서는 합치지도 쓰지도 않는다
+            if plan.abortNewerFormat {
+                Log.sync.notice("sync stopped: a newer app wrote the iCloud library")
                 cloud.fail(L("새 버전 앱에서 저장한 데이터가 있습니다 — 이 기기의 앱을 업데이트하면 동기화됩니다"))
                 return
             }
-            // 여기서부터 apply까지는 await 없이 메인 액터에서 한 번에 — 그 사이 사용자 편집이 끼어들 수 없다.
-            // 로컬은 정규화(코덱 왕복 + 정규 순서)해 원격과 같은 형태로 비교한다.
-            let local = LibrarySync.normalized(document)
-            // 충돌 판까지 한 번에 병합한다 — 둘씩 차례로 합치면 중간에 지워졌다 되살아난 레시피의 로그를 잃는다
-            let merged = LibrarySync.merge([local] + (remote.map { [$0.current] + $0.conflicts } ?? []))
             var localWriteFailed = false
-            if merged != local {
-                apply(merged)
-                libraryWriteFailed = !Self.writeLibrary(merged)
-                localWriteFailed = libraryWriteFailed
+            if plan.applyLocally {
+                apply(plan.merged)
+                let written = await persistLibrary(plan.merged)
+                libraryWriteFailed = !written
+                localWriteFailed = !written
             }
+            // 원격 쓰기 전에 남긴다 — 쓰기가 실패하면 catch에는 오류 코드만 남는다
+            Log.sync.notice(
+                """
+                sync plan: local \(local.logSummary, privacy: .public) remote \(remote?.snapshot.current.logSummary ?? "none", privacy: .public) \
+                conflicts \(remote?.snapshot.conflicts.count ?? 0) merged \(plan.merged.logSummary, privacy: .public) \
+                apply=\(plan.applyLocally) write=\(plan.writeRemote) resolve=\(plan.resolveConflictsAfterWrite) \
+                kept=\(remote?.snapshot.keptConflictCount ?? 0) localWriteFailed=\(localWriteFailed)
+                """)
             // 원격에 문서가 없고 로컬도 비었으면 아무것도 쓰지 않는다 (새 기기 보호).
             // 비교는 iCloud 현재 판과 한다 — 충돌 판에서 합친 내용도 현재 판에 써야 반영된다
-            let shouldWrite = remote.map { merged != $0.current } ?? !merged.isEmpty
-            if shouldWrite {
-                try await cloud.writeRemote(merged)
+            if plan.writeRemote {
+                try await cloud.writeRemote(plan.merged)
             }
             // 충돌 판은 그 내용이 현재 판에 들어간 뒤에만 정리한다 (쓰기가 실패하면 위에서 catch로 빠진다)
-            if let remote, !remote.resolvable.isEmpty {
+            if plan.resolveConflictsAfterWrite, let remote {
                 await cloud.resolveConflicts(remote.resolvable)
             }
             if localWriteFailed {
                 cloud.fail(L("기기에 저장하지 못했습니다 — 저장 공간을 확인하세요"))
             } else {
+                Log.sync.notice("synced")
                 cloud.markSynced()
             }
         } catch CloudSync.SyncError.notDownloaded {
+            Log.sync.notice("sync deferred: library.json not downloaded yet")
             cloud.forgetRemoteState()
             cloud.fail(L("iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다"))
         } catch CloudSync.SyncError.downloadFailed {
+            Log.sync.notice("sync deferred: iCloud reported a download error")
             cloud.forgetRemoteState()
             cloud.fail(L("iCloud에서 라이브러리를 내려받지 못했습니다 — 네트워크와 iCloud 저장 공간을 확인하세요. 다시 시도합니다"))
         } catch CloudSync.SyncError.timedOut {
+            Log.sync.notice("sync deferred: coordinated access timed out")
             cloud.forgetRemoteState()
             cloud.fail(L("iCloud에 연결하지 못해 동기화를 미뤘습니다 — 연결되면 다시 시도합니다"))
         } catch {
+            let code = errorCode(error)
+            Log.sync.error("sync failed: \(code, privacy: .public)")
             cloud.forgetRemoteState()
-            // localizedDescription은 앱 언어가 아니라 기기 언어로 나온다
-            cloud.fail(L("동기화하지 못했습니다 — 다음에 다시 시도합니다"))
+            // localizedDescription은 앱 언어가 아니라 기기 언어로 나온다 — 도메인·코드는 문의할 때 원인을 알려 준다
+            cloud.fail(LF("동기화하지 못했습니다 (%@) — 다음에 다시 시도합니다", code))
         }
     }
 
@@ -442,6 +484,24 @@ final class AppModel {
             let r = recipes.first(where: { $0.id == id })
         else { return true }
         return !(r.name == calc.name && r.doughInput == calc.input && (r.pieces ?? 0) == calc.pieces)
+    }
+
+    /// 새로 시작한 그대로인가 — 레시피 연결 없이 이름·목표 역산 입력·배합이 예시 또는 빈 배합과 같다 (생성 id는 무시).
+    /// 앱 언어가 바뀌어 예시 이름이 달라졌으면 고친 것으로 본다 (경고가 나는 쪽이 안전)
+    private static func isUntouchedStart(_ state: CalcState) -> Bool {
+        guard state.recipeId == nil, state.mode == .a, state.pieces == 0, state.target == TargetForm()
+        else { return false }
+        let input = withoutIds(state.input)
+        return (state.name == L("캉파뉴") && input == withoutIds(CalcState.defaultDoughInput()))
+            || (state.name.isEmpty && input == withoutIds(CalcState.emptyDoughInput()))
+    }
+
+    private static func withoutIds(_ input: DoughInput) -> DoughInput {
+        var copy = input
+        for i in copy.flours.indices { copy.flours[i].id = "" }
+        for i in copy.liquids.indices { copy.liquids[i].id = "" }
+        for i in copy.extras.indices { copy.extras[i].id = "" }
+        return copy
     }
 
     /// 계산기 내용을 레시피로 저장한 직후 호출 — 이후 바뀐 것만 '저장하지 않은 입력'이 된다

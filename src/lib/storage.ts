@@ -5,6 +5,8 @@ import { newId } from './id';
 export const RECIPES_KEY = 'levain-calc:recipes:v1';
 export const DRAFT_KEY = 'levain-calc:draft:v1';
 export const SETTINGS_KEY = 'levain-calc:settings:v1';
+/** 사진 인식 데이터를 한 번 받아 둔 적이 있다 — 첫 내려받기 안내를 다시 띄우지 않는다 (브라우저가 캐시를 지웠을 수도 있는 근사값) */
+export const OCR_READY_KEY = 'levain-calc:ocr-ready:v1';
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -343,6 +345,45 @@ export function mergeImported(prev: Recipe[], items: Recipe[]): ImportMergeResul
     }
   }
   return { recipes, added, updated, skipped };
+}
+
+// ── 백업 안내 ─────────────────────────────────────────────────────
+
+const BACKUP_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 전체 내보내기를 권할 때인가 — 레시피는 이 브라우저에만 있고 Safari 등은 한동안 방문하지 않은 사이트의 저장소를 지운다.
+ * changed: 마지막 백업 이후 바뀐 레시피 수 (백업한 적이 없으면 전부).
+ * 바뀐 것이 있고, 백업한 적이 없이 레시피가 2개 이상이거나 마지막 백업이 7일 이상 지났을 때 보인다
+ */
+export function backupNudge(
+  recipes: Recipe[],
+  lastExportAt: string | undefined,
+  now: Date,
+): { show: boolean; changed: number } {
+  const at = lastExportAt ?? '';
+  const exportedAt = ISO_DATE_TIME.test(at) ? Date.parse(at) : NaN;
+  if (Number.isNaN(exportedAt)) {
+    return { show: recipes.length >= 2, changed: recipes.length };
+  }
+  const changed = recipes.filter((r) => isNewer(r.updatedAt, at)).length;
+  return { show: changed > 0 && now.getTime() - exportedAt >= BACKUP_STALE_MS, changed };
+}
+
+/**
+ * 저장소를 '지속' 상태로 요청한다 (한 번만) — Chrome·Edge(북마크·설치한 사이트)와 Firefox(자체 확인 창)에 효과가 있고,
+ * Firefox가 묻기 때문에 페이지를 열 때가 아니라 저장하는 순간에 부른다. Safari는 홈 화면 웹 앱에만 허용한다
+ */
+let persistRequested = false;
+export function requestPersistentStorage(): void {
+  if (persistRequested) return;
+  persistRequested = true;
+  const storage = typeof navigator === 'undefined' ? undefined : navigator.storage;
+  if (!storage?.persist || !storage.persisted) return;
+  storage
+    .persisted()
+    .then((already) => (already ? undefined : storage.persist()))
+    .catch(() => undefined);
 }
 
 // ── JSON 내보내기 / 가져오기 ───────────────────────────────────────

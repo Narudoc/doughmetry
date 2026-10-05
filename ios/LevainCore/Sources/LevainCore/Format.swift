@@ -47,6 +47,38 @@ public func fmtSigned(_ g: Double, _ precision: Precision = .tenth) -> String {
     return g < 0 ? "\u{2212}\(abs)" : "+\(abs)"
 }
 
+/// % 표기 기준 — 계산은 항상 총 밀가루 기준이고, 재료 옆 % 표시만 전환한다 (웹 Settings.pctBasis).
+/// rawValue는 UserDefaults "pctBasis"에 저장된 값 그대로다 — 바꾸지 말 것
+public enum PctBasis: String, CaseIterable, Sendable {
+    case totalFlour  // 총 밀가루 (프랑스식, 기본)
+    case addedFlour  // 첨가 밀가루 = 100% (베이커스 퍼센트)
+}
+
+/// 표시 계층의 % 계산 — 설정(PctBasis)에 따라 분모만 달라진다 (웹 format.ts uiPct·rebasePct·uiLevainPct).
+/// 계산 코어의 지표(총 수분율·PFF)는 항상 총 밀가루 기준으로 유지된다.
+extension DoughStats {
+    public var addedFlourTotalForDisplay: Double { totalFlour - levainFlour }
+
+    public func uiPct(grams: Double, basis: PctBasis) -> Double {
+        let denom = basis == .addedFlour ? addedFlourTotalForDisplay : totalFlour
+        return denom > 1e-9 ? grams / denom * 100 : 0
+    }
+
+    /// 총 밀가루 기준으로 이미 계산된 %(saltPct 등)를 표시 기준으로 환산 (웹 format.ts rebasePct)
+    public func rebasePct(_ pctOfTotal: Double, basis: PctBasis) -> Double {
+        if basis == .totalFlour { return pctOfTotal }
+        let added = addedFlourTotalForDisplay
+        return added > 1e-9 ? pctOfTotal * totalFlour / added : 0
+    }
+
+    /// 계산기 입력 폼의 르방 % 칩 전용 — 총 밀가루 기준일 땐 PFF, 베이커스 퍼센트일 땐 르방 무게/첨가 밀가루
+    /// (폼 하단 설명이 이 뜻을 밝힌다). 배합표·레시피 상세의 르방 행은 웹 BakersTable처럼
+    /// uiPct(르방 무게) + "↳ 속 밀가루 (PFF)" 보조 행으로 나눠 보인다.
+    public func uiLevainPct(levainGrams: Double, basis: PctBasis) -> Double {
+        basis == .addedFlour ? uiPct(grams: levainGrams, basis: basis) : pffPct
+    }
+}
+
 /// 숫자 입력 해석 (웹 fields.tsx `parseDecimalInput`과 같은 규칙). 자릿수가 맞는 천 단위 구분("1,000",
 /// "12,345,678", "1,000.5")만 쉼표를 지우고, 그 밖의 쉼표는 소수점으로 본다("72,5", "0,125" — 쉼표 소수점 키패드).
 /// 해석할 수 없으면 nil. 숫자는 ASCII만 — Regex의 \d는 유니코드 숫자까지 받는다

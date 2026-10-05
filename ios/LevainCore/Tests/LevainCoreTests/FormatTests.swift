@@ -76,3 +76,57 @@ struct DecimalInputParsing {
         #expect(parseDecimalInput("1.000.5") == nil)
     }
 }
+
+// src/lib/format.test.ts의 uiPct·rebasePct·uiLevainPct와 같은 벡터
+@Suite("% 표기 기준 — 분모만 바뀌고 계산 지표는 그대로")
+struct PctBasisDisplay {
+    private let stats = computeStats(
+        DoughInput(
+            flours: [Flour(id: "f1", name: "T65", grams: 900)], water: 620, salt: 20,
+            levain: Levain(type: .liquide, hydration: 1, grams: 200)))
+
+    private func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
+
+    @Test("총 밀가루 기준은 첨가 + 르방 속 밀가루(1000g), 베이커스 퍼센트는 첨가 밀가루(900g)로 나눈다")
+    func denominators() {
+        #expect(near(stats.uiPct(grams: 620, basis: .totalFlour), 62))
+        #expect(near(stats.uiPct(grams: 620, basis: .addedFlour), 620.0 / 900 * 100))
+        #expect(fmtPct(stats.uiPct(grams: 620, basis: .addedFlour)) == "68.9%")
+        #expect(near(stats.uiPct(grams: 900, basis: .addedFlour), 100))
+        // 표시 기준과 무관하게 계산 지표는 총 밀가루 기준
+        #expect(near(stats.hydrationPct, 72))
+    }
+
+    @Test("총 밀가루 기준 % 환산 — 베이커스 퍼센트면 × 총 밀가루 / 첨가 밀가루")
+    func rebase() {
+        #expect(near(stats.saltPct, 2))
+        #expect(near(stats.rebasePct(stats.saltPct, basis: .totalFlour), 2))
+        #expect(near(stats.rebasePct(stats.saltPct, basis: .addedFlour), 20.0 / 900 * 100))
+        #expect(near(stats.rebasePct(stats.saltPct, basis: .addedFlour), stats.uiPct(grams: 20, basis: .addedFlour)))
+    }
+
+    @Test("르방 칩 — 총 밀가루 기준은 PFF, 베이커스 퍼센트는 르방 무게 / 첨가 밀가루")
+    func levainChip() {
+        #expect(near(stats.uiLevainPct(levainGrams: 200, basis: .totalFlour), 10))
+        #expect(near(stats.uiLevainPct(levainGrams: 200, basis: .addedFlour), 200.0 / 900 * 100))
+    }
+
+    @Test("밀가루가 없으면 0 (NaN이 아니다)")
+    func noFlour() {
+        let empty = computeStats(
+            DoughInput(
+                flours: [], water: 100, salt: 0,
+                levain: Levain(type: .liquide, hydration: 1, grams: 0)))
+        for basis in PctBasis.allCases {
+            #expect(empty.uiPct(grams: 100, basis: basis) == 0)
+            #expect(empty.rebasePct(0, basis: basis) == 0)
+            #expect(empty.uiLevainPct(levainGrams: 0, basis: basis) == 0)
+        }
+    }
+
+    @Test("저장값(UserDefaults \"pctBasis\")은 그대로 읽힌다")
+    func storedRawValues() {
+        #expect(PctBasis(rawValue: "totalFlour") == .totalFlour)
+        #expect(PctBasis(rawValue: "addedFlour") == .addedFlour)
+    }
+}

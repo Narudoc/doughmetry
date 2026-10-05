@@ -8,6 +8,7 @@ import {
   convertFixedPff,
   convertYeast,
   maxConvertibleLevain,
+  scaleDough,
   solveFromTarget,
   withLevainMass,
 } from './dough';
@@ -449,5 +450,86 @@ describe('보조 모드 — PFF 고정', () => {
     if (!applied.ok) return;
     const v = validateRecipe({ schemaVersion: 2, name: '적용', ...applied.output });
     expect(v.ok ? '' : v.reason).toBe('');
+  });
+});
+
+describe('배율 조정 — scaleDough', () => {
+  /** 밀가루 2종 + 바시나주 + 우유·계란 + 이스트 + 기타 재료 */
+  const fullInput = () =>
+    makeInput({
+      flours: [
+        { id: 'a', name: 'T65', grams: 800 },
+        { id: 'b', name: '호밀', grams: 100 },
+      ],
+      bassinage: 40,
+      levain: { type: 'dur', hydration: 0.6, grams: 180, flourName: 'T80' },
+      liquids: [
+        { id: 'm', name: '우유', grams: 60, waterRatio: 0.88 },
+        { id: 'e', name: '계란', grams: 50, waterRatio: 0.76 },
+      ],
+      yeast: { type: 'instant', grams: 3 },
+      extras: [{ id: 'x', name: '호두', grams: 120 }],
+    });
+
+  it('×1은 입력 그대로', () => {
+    expect(scaleDough(fullInput(), 1)).toEqual(fullInput());
+  });
+
+  it('×0.5·×1.5·×3에서 모든 %가 보존되고 총 반죽 무게만 배가 된다', () => {
+    const input = fullInput();
+    const before = computeStats(input);
+    for (const k of [0.5, 1.5, 3]) {
+      const after = computeStats(scaleDough(input, k));
+      expect(Math.abs(after.hydrationPct - before.hydrationPct)).toBeLessThan(1e-9);
+      expect(Math.abs(after.saltPct - before.saltPct)).toBeLessThan(1e-9);
+      expect(Math.abs(after.pffPct - before.pffPct)).toBeLessThan(1e-9);
+      expect(Math.abs(after.yeastPct - before.yeastPct)).toBeLessThan(1e-9);
+      for (const key of ['flourPcts', 'liquidPcts', 'extraPcts'] as const) {
+        expect(after[key].map((p) => p.id)).toEqual(before[key].map((p) => p.id));
+        after[key].forEach((p, i) => {
+          expect(Math.abs(p.pct - before[key][i].pct)).toBeLessThan(1e-9);
+        });
+      }
+      expect(Math.abs(after.doughWeight - k * before.doughWeight)).toBeLessThan(1e-9);
+    }
+  });
+
+  it('그램만 바뀌고 id·이름·르방 수분율·waterRatio·이스트 타입은 그대로', () => {
+    const input = fullInput();
+    const out = scaleDough(input, 2);
+    expect(out.flours.map((f) => f.id)).toEqual(input.flours.map((f) => f.id));
+    expect(out.flours.map((f) => f.name)).toEqual(input.flours.map((f) => f.name));
+    expect(out.flours.map((f) => f.grams)).toEqual([1600, 200]);
+    expect(out.water).toBe(1240);
+    expect(out.bassinage).toBe(80);
+    expect(out.salt).toBe(40);
+    expect(out.levain).toEqual({ type: 'dur', hydration: 0.6, grams: 360, flourName: 'T80' });
+    expect(out.liquids.map((l) => l.id)).toEqual(['m', 'e']);
+    expect(out.liquids.map((l) => l.waterRatio)).toEqual([0.88, 0.76]);
+    expect(out.liquids.map((l) => l.grams)).toEqual([120, 100]);
+    expect(out.yeast).toEqual({ type: 'instant', grams: 6 });
+    expect(out.extras).toEqual([{ id: 'x', name: '호두', grams: 240 }]);
+    // 원본은 그대로 (복사본을 돌려준다)
+    expect(input).toEqual(fullInput());
+  });
+
+  it('×2 → ×0.5 왕복이 원본을 복원한다', () => {
+    const input = fullInput();
+    const back = scaleDough(scaleDough(input, 2), 0.5);
+    back.flours.forEach((f, i) => expect(f.grams).toBeCloseTo(input.flours[i].grams, 9));
+    expect(back.water).toBeCloseTo(input.water, 9);
+    expect(back.bassinage).toBeCloseTo(input.bassinage, 9);
+    expect(back.salt).toBeCloseTo(input.salt, 9);
+    expect(back.levain.grams).toBeCloseTo(input.levain.grams, 9);
+    back.liquids.forEach((l, i) => expect(l.grams).toBeCloseTo(input.liquids[i].grams, 9));
+    expect(back.yeast.grams).toBeCloseTo(input.yeast.grams, 9);
+    back.extras.forEach((e, i) => expect(e.grams).toBeCloseTo(input.extras[i].grams, 9));
+  });
+
+  it('0·음수·NaN·무한대 배율은 아무것도 바꾸지 않는다', () => {
+    const input = fullInput();
+    for (const k of [0, -2, NaN, Infinity]) {
+      expect(scaleDough(input, k)).toEqual(input);
+    }
   });
 });

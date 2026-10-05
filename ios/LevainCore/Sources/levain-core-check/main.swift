@@ -169,5 +169,22 @@ case .success(let rs):
 case .failure: check("v1 가져오기", false)
 }
 
+print("배율 조정")
+for k in [0.5, 1.5, 3.0] {
+    let scaled = computeStats(scaleDough(base, by: k))
+    check(
+        "×\(k): 수분율·소금·PFF 보존, 총 반죽 ×\(k)",
+        near(scaled.hydrationPct, s.hydrationPct) && near(scaled.saltPct, s.saltPct)
+            && near(scaled.pffPct, s.pffPct) && near(scaled.doughWeight, s.doughWeight * k))
+}
+check("유한한 양수가 아니면 그대로", scaleDough(base, by: 0) == base && scaleDough(base, by: .nan) == base)
+
+print("AI 초안 교차 검증")
+let reconcileRules = RecipeTextParser.parse("강력분 900g\n물 620g\n르방 200g\n소금 20g")
+check("규칙 결과와 같은 초안은 통과", reconcileAIDraft(reconcileRules.input, rules: reconcileRules) == .success(reconcileRules.input))
+var waterDraft = reconcileRules.input
+waterDraft.water += 30
+check("물 +30 g 초안은 기각 (총 무게)", reconcileAIDraft(waterDraft, rules: reconcileRules) == .failure(.weight))
+
 print(failures == 0 ? "\n전체 통과 ✓" : "\n실패 \(failures)건 ✗")
 exit(failures == 0 ? 0 : 1)

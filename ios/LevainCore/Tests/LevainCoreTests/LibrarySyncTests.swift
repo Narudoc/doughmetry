@@ -624,3 +624,275 @@ struct LibrarySyncTests {
         #expect(x.logs.map(\.id) == ["L"])
     }
 }
+
+// MARK: - 동기화 판정 (AppModel.runSync · CloudSync가 실행만 한다)
+
+@Suite("동기화 계획 — 무엇을 로컬·원격에 쓰고 충돌 판을 정리할지")
+struct SyncPlanTests {
+    private let a = recipe("a", name: "A", updatedAt: "2026-09-03T10:00:00Z")
+    private let b = recipe("b", name: "B", updatedAt: "2026-09-02T00:00:00Z")
+
+    @Test("원격 문서가 없고 로컬도 비었으면 아무것도 쓰지 않는다 (새 기기 보호)")
+    func noRemoteEmptyLocal() {
+        let p = LibrarySync.plan(local: LibraryDocument(), remote: nil)
+        #expect(!p.abortNewerFormat && !p.applyLocally && !p.writeRemote && !p.resolveConflictsAfterWrite)
+    }
+
+    @Test("원격 문서가 없고 로컬에 내용이 있으면 원격에 쓴다")
+    func noRemoteNonEmptyLocal() {
+        let p = LibrarySync.plan(local: LibraryDocument(recipes: [a]), remote: nil)
+        #expect(p.writeRemote)
+        #expect(!p.applyLocally)
+        #expect(p.merged.recipes.map(\.id) == ["a"])
+    }
+
+    @Test("새 버전 앱이 쓴 문서가 섞이면 합치지도 쓰지도 정리하지도 않는다")
+    func newerFormatAborts() {
+        let remote = LibrarySync.Snapshot(
+            current: LibraryDocument(recipes: [b]), conflicts: [LibraryDocument(recipes: [a])],
+            isNewerFormat: true, resolvable: [0])
+        let p = LibrarySync.plan(local: LibraryDocument(recipes: [a]), remote: remote)
+        #expect(p.abortNewerFormat)
+        #expect(!p.applyLocally && !p.writeRemote && !p.resolveConflictsAfterWrite)
+    }
+
+    @Test("충돌 판에만 있는 레시피는 로컬이 현재 판과 같아도 원격에 쓴다")
+    func conflictOnlyRecipeIsWritten() {
+        let current = LibrarySync.normalized(LibraryDocument(recipes: [a]))
+        let remote = LibrarySync.Snapshot(
+            current: current, conflicts: [LibraryDocument(recipes: [a, b])], resolvable: [0])
+        let p = LibrarySync.plan(local: current, remote: remote)
+        #expect(p.writeRemote)
+        #expect(p.applyLocally)
+        #expect(Set(p.merged.recipes.map(\.id)) == ["a", "b"])
+        #expect(p.resolveConflictsAfterWrite)
+    }
+
+    @Test("충돌 판 내용이 이미 현재 판에 있으면 쓰지 않지만 정리는 한다")
+    func redundantConflictsResolvedWithoutWrite() {
+        let current = LibrarySync.normalized(LibraryDocument(recipes: [a, b]))
+        let remote = LibrarySync.Snapshot(
+            current: current, conflicts: [LibraryDocument(recipes: [a])], resolvable: [0])
+        let p = LibrarySync.plan(local: current, remote: remote)
+        #expect(!p.writeRemote)
+        #expect(!p.applyLocally)
+        #expect(p.resolveConflictsAfterWrite)
+    }
+
+    @Test("로컬이 현재 판의 코덱 왕복과 같으면 아무것도 쓰지 않는다 (기기 간 쓰기 반복 방지)")
+    func roundTripEqualIsQuiet() throws {
+        // 정규화 전 로컬: 순서가 다르고 이름에 공백 — 정규화하면 현재 판과 같다
+        var spaced = b
+        spaced.name = "  B "
+        let current = LibrarySync.decode(try LibrarySync.encode(LibraryDocument(recipes: [a, b])))
+        let p = LibrarySync.plan(
+            local: LibraryDocument(recipes: [spaced, a]), remote: LibrarySync.Snapshot(current: current))
+        #expect(!p.applyLocally)
+        #expect(!p.writeRemote)
+        #expect(!p.resolveConflictsAfterWrite)
+    }
+
+    @Test("원격에만 있는 묘비는 로컬에 반영한다")
+    func remoteTombstoneApplies() {
+        let tomb = Tombstone(id: "b", deletedAt: "2026-09-04T00:00:00Z")
+        let p = LibrarySync.plan(
+            local: LibraryDocument(recipes: [a, b]),
+            remote: LibrarySync.Snapshot(
+                current: LibrarySync.normalized(LibraryDocument(recipes: [a], deleted: [tomb]))))
+        #expect(p.applyLocally)
+        #expect(p.merged.recipes.map(\.id) == ["a"])
+        #expect(p.merged.deleted == [tomb])
+        #expect(!p.writeRemote)
+    }
+}
+
+@Suite("원격 스냅샷 판정 — 조정 읽기로 얻은 바이트를 해석한다")
+struct RemoteSnapshotTests {
+    private func encoded(_ doc: LibraryDocument) throws -> Data { try LibrarySync.encode(doc) }
+
+    @Test("파일이 없고 메타데이터에도 없으면 원격 없음")
+    func absent() throws {
+        #expect(try LibrarySync.snapshot(currentData: nil, known: false, versionData: []) == nil)
+    }
+
+    @Test("메타데이터에는 있는데 파일이 없으면 notDownloaded — 빈 원격으로 보고 덮어쓰지 않는다")
+    func knownButMissingThrows() {
+        #expect(throws: LibrarySync.SnapshotError.notDownloaded) {
+            try LibrarySync.snapshot(currentData: nil, known: true, versionData: [])
+        }
+    }
+
+    @Test("읽지 못한 충돌 판은 병합·정리에서 빠지고 남겨 둔 판으로 센다 — 정리 인덱스는 넘긴 순서 그대로")
+    func unreadableVersionsLeftOut() throws {
+        let current = LibraryDocument(recipes: [recipe("a", name: "A", updatedAt: "2026-09-03T10:00:00Z")])
+        let other = try encoded(LibraryDocument(recipes: [recipe("b", name: "B", updatedAt: "2026-09-02T00:00:00Z")]))
+        let s = try #require(
+            try LibrarySync.snapshot(currentData: try encoded(current), known: true, versionData: [nil, other]))
+        #expect(s.current == current)
+        #expect(!s.currentIsCorrupt)
+        #expect(s.conflicts.flatMap(\.recipes).map(\.id) == ["b"])
+        #expect(s.resolvable == [1])
+        #expect(s.keptConflictCount == 1)
+        #expect(!s.isNewerFormat)
+    }
+
+    @Test("남겨 두는 판 수 = 전체 − 정리할 판 − 새 버전 판")
+    func keptCount() throws {
+        let valid = try encoded(LibraryDocument(recipes: [recipe("b", name: "B", updatedAt: "2026-09-02T00:00:00Z")]))
+        let newer = Data(#"{"schemaVersion":\#(LibraryDocument.currentSchemaVersion + 1),"recipes":[],"logs":[],"deleted":[]}"#.utf8)
+        let badTombstone = Data(#"{"schemaVersion":1,"recipes":[],"logs":[],"deleted":[{"id":"z"}]}"#.utf8)
+        let s = try #require(
+            try LibrarySync.snapshot(
+                currentData: try encoded(LibraryDocument()), known: true,
+                versionData: [badTombstone, nil, newer, valid]))
+        #expect(s.resolvable == [3])
+        #expect(s.isNewerFormat)
+        #expect(s.keptConflictCount == 2)  // 묘비가 깨진 판 + 읽지 못한 판
+    }
+
+    @Test("현재 판이 JSON이 아니면 빈 문서로 읽고 손상으로 알린다")
+    func corruptCurrent() throws {
+        let s = try #require(
+            try LibrarySync.snapshot(currentData: Data("not json".utf8), known: true, versionData: []))
+        #expect(s.current.isEmpty)
+        #expect(s.currentIsCorrupt)
+    }
+}
+
+@Suite("원격 메타데이터 갱신 거르기")
+struct RemoteFileStateTests {
+    private let t = Date(timeIntervalSinceReferenceDate: 800_000_000)
+
+    @Test("상태가 그대로면 거르고, 바뀌거나 기억을 지웠으면 동기화한다")
+    func filtersUnchanged() {
+        let s = LibrarySync.RemoteFileState.present(changed: t, download: "current", failed: false, conflicts: false)
+        #expect(!LibrarySync.shouldSync(state: s, last: s, hasGathered: true))
+        #expect(LibrarySync.shouldSync(state: s, last: nil, hasGathered: true))
+        #expect(LibrarySync.shouldSync(state: .absent, last: s, hasGathered: true))
+        #expect(!LibrarySync.shouldSync(state: .absent, last: .absent, hasGathered: true))
+        let later = LibrarySync.RemoteFileState.present(
+            changed: t.addingTimeInterval(1), download: "current", failed: false, conflicts: false)
+        #expect(LibrarySync.shouldSync(state: later, last: s, hasGathered: true))
+    }
+
+    @Test("첫 수집 전·상태를 모를 때·충돌 판이 남아 있을 때는 거르지 않는다")
+    func neverFilters() {
+        let s = LibrarySync.RemoteFileState.present(changed: t, download: nil, failed: false, conflicts: false)
+        #expect(LibrarySync.shouldSync(state: s, last: s, hasGathered: false))
+        #expect(LibrarySync.shouldSync(state: .unknown, last: .unknown, hasGathered: true))
+        let c = LibrarySync.RemoteFileState.present(changed: t, download: nil, failed: false, conflicts: true)
+        #expect(c.hasConflicts && !s.hasConflicts)
+        #expect(LibrarySync.shouldSync(state: c, last: c, hasGathered: true))
+    }
+}
+
+// MARK: - 기기 안 저장 (LibraryStore)
+
+@Suite("기기 안 라이브러리 파일 — 사용자 데이터를 덮어쓰거나 지우지 않는다")
+struct LibraryStoreTests {
+    private let dir: URL
+
+    init() throws {
+        dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LibraryStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    private func files(prefix: String) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+    }
+
+    @Test("JSON이 아닌 library.json은 원본 그대로 library.corrupt-*로 치우고 빈 문서로 시작한다")
+    func corruptSetAside() throws {
+        let bytes = Data("{ 이건 JSON이 아니다".utf8)
+        var store = LibraryStore(directory: dir)
+        try bytes.write(to: store.libraryURL)
+        let r = store.load()
+        #expect(r.document.isEmpty)
+        let aside = try #require(r.corruptSetAside)
+        #expect(try Data(contentsOf: aside) == bytes)
+        #expect(aside.lastPathComponent.hasPrefix("library.corrupt-"))
+        #expect(!store.isWriteBlocked)
+        // 다음 저장은 새 library.json을 만들고 치워 둔 원본은 그대로
+        let doc = LibraryDocument(recipes: [recipe("a", name: "A", updatedAt: "2026-09-01T00:00:00Z")])
+        try store.write(doc)
+        #expect(try Data(contentsOf: aside) == bytes)
+        #expect(LibrarySync.decode(try Data(contentsOf: store.libraryURL)) == doc)
+    }
+
+    @Test("손상 파일을 치우지 못하면 쓰기를 거절해 그 파일을 덮어쓰지 않는다")
+    func corruptNotMovableBlocksWrites() throws {
+        let bytes = Data("not json".utf8)
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        var store = LibraryStore(directory: dir)
+        try bytes.write(to: store.libraryURL)
+        // 같은 이름의 사본이 이미 있어 옮기기가 실패한다
+        try Data("earlier".utf8).write(to: dir.appendingPathComponent("library.corrupt-1790000000.json"))
+        let r = store.load(now: now)
+        #expect(r.corruptSetAside == nil)
+        #expect(r.corruptSetAsideError != nil)
+        #expect(store.isWriteBlocked)
+        #expect(throws: LibraryStore.StoreError.self) {
+            try store.write(LibraryDocument(recipes: [recipe("a", name: "A", updatedAt: "2026-09-01T00:00:00Z")]))
+        }
+        #expect(try Data(contentsOf: store.libraryURL) == bytes)
+    }
+
+    @Test("검증에서 버려지는 항목이 있으면 원본을 library.dropped-*에 한 번만 보관한다")
+    func droppedOriginalKeptOnce() throws {
+        let ok = #"{"schemaVersion":2,"id":"r1","name":"좋은것","createdAt":"2026-09-01T00:00:00Z","updatedAt":"2026-09-01T00:00:00Z","flours":[{"id":"f","grams":900}],"water":620,"salt":20,"levain":{"hydration":1,"grams":200}}"#
+        let bad = #"{"schemaVersion":2,"id":"r2","name":"수분율0","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"hydration":0,"grams":200}}"#
+        let bytes = Data(#"{"schemaVersion":1,"recipes":[\#(ok),\#(bad)],"logs":[],"deleted":[]}"#.utf8)
+        var store = LibraryStore(directory: dir)
+        try bytes.write(to: store.libraryURL)
+
+        let first = store.load(now: Date(timeIntervalSince1970: 1_790_000_000))
+        #expect(first.document.recipes.map(\.id) == ["r1"])
+        #expect(first.droppedItemCount == 1)
+        let kept = try #require(first.droppedOriginalKept)
+        #expect(try Data(contentsOf: kept) == bytes)
+
+        // 다음 실행(다른 시각)에도 같은 원본이면 새 사본을 만들지 않는다
+        var again = LibraryStore(directory: dir)
+        let second = again.load(now: Date(timeIntervalSince1970: 1_790_000_100))
+        #expect(second.droppedItemCount == 1)
+        #expect(second.droppedOriginalKept == nil)
+        #expect(try files(prefix: "library.dropped-").count == 1)
+    }
+
+    @Test("옛 recipes.json만 있으면 library.json으로 옮긴다 (원본은 지우지 않는다)")
+    func legacyMigration() throws {
+        let legacy = Data(#"[{"schemaVersion":2,"name":"옛것","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"hydration":1,"grams":200}}]"#.utf8)
+        try legacy.write(to: dir.appendingPathComponent("recipes.json"))
+        var store = LibraryStore(directory: dir)
+        let r = store.load()
+        #expect(r.migratedLegacy)
+        #expect(r.migrationWriteError == nil)
+        #expect(r.document.recipes.map(\.name) == ["옛것"])
+        #expect(LibrarySync.decode(try Data(contentsOf: store.libraryURL)) == r.document)
+        #expect(try Data(contentsOf: dir.appendingPathComponent("recipes.json")) == legacy)
+        // 다음 실행은 library.json을 읽는다
+        var again = LibraryStore(directory: dir)
+        let next = again.load()
+        #expect(!next.migratedLegacy)
+        #expect(next.document == r.document)
+    }
+
+    @Test("쓰고 읽으면 같은 문서 — 폴더가 없어도 만든다")
+    func writeLoadRoundTrip() throws {
+        let nested = dir.appendingPathComponent("levain-calc", isDirectory: true)
+        let doc = LibraryDocument(
+            recipes: [recipe("a", name: "A", updatedAt: "2026-09-01T00:00:00Z")],
+            logs: [log("l1", recipeId: "a", note: "메모", updatedAt: "2026-09-02T00:00:00Z")],
+            deleted: [Tombstone(id: "x", deletedAt: "2026-09-03T00:00:00Z")])
+        try LibraryStore(directory: nested).write(doc)
+        var store = LibraryStore(directory: nested)
+        let r = store.load()
+        #expect(r.document == doc)
+        #expect(r.droppedItemCount == 0 && r.corruptSetAside == nil && !r.migratedLegacy)
+        // 파일이 없으면 빈 문서
+        var empty = LibraryStore(directory: dir.appendingPathComponent("none", isDirectory: true))
+        #expect(empty.load().document.isEmpty)
+    }
+}

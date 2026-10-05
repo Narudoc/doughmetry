@@ -9,9 +9,15 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /* lg 아래 고정 요약 막대(안전 영역 포함 ~90px) 밑으로 Tab 포커스가 숨지 않게 */
+    @apply max-lg:scroll-pb-24;
   }
   body {
-    @apply bg-paper font-body text-ink antialiased;
+    @apply bg-paper font-body text-ink antialiased break-keep break-words;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-ink/70;
   }
   :focus-visible {
     @apply outline-none ring-2 ring-brass ring-offset-2 ring-offset-paper;

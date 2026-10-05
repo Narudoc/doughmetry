@@ -106,12 +106,18 @@ export function BakersTable({ input, stats, precision, pieces, basis = 'total' }
     })),
   ];
 
+  const footNote =
+    pieces && pieces > 0
+      ? `분할 ${pieces} × ${fmtGrams(stats.doughWeight / pieces, precision)} g`
+      : '총 수분율 기준';
+
+  // 좁은 화면에서는 비고 열 대신 재료 이름 아래에 적는다 — 인쇄(PrintFiche)는 늘 비고 열을 쓴다
   return (
     <div className="overflow-x-auto">
-      <table className="bakers-table w-full min-w-[480px] border-collapse text-sm">
+      <table className="bakers-table w-full border-collapse text-sm">
         <caption className="mb-2 text-left font-display text-sm font-semibold uppercase tracking-widest text-bottle">
           베이커스 퍼센트{' '}
-          <span className="font-normal normal-case italic text-bottle/60">
+          <span className="font-normal normal-case italic text-bottle/80">
             {basis === 'added'
               ? '— %는 첨가 밀가루 대비 (베이커스 퍼센트)'
               : '— %는 총 밀가루(첨가 + 르방 속) 대비'}
@@ -121,35 +127,52 @@ export function BakersTable({ input, stats, precision, pieces, basis = 'total' }
           <tr className="bg-bottle text-left text-paper">
             <th className="rounded-l-sm px-3 py-2 font-medium">재료</th>
             <th className="px-3 py-2 text-right font-medium">무게 (g)</th>
-            <th className="px-3 py-2 text-right font-medium">%</th>
-            <th className="rounded-r-sm px-3 py-2 font-medium">비고</th>
+            <th className="rounded-r-sm px-3 py-2 text-right font-medium sm:rounded-none print:rounded-none">
+              %
+            </th>
+            <th className="hidden rounded-r-sm px-3 py-2 font-medium sm:table-cell print:table-cell">
+              비고
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.key} className={`border-b border-line ${r.indent ? 'text-ink/60' : ''}`}>
-              <td className={`px-3 py-2 ${r.indent ? 'pl-7 text-xs' : ''}`}>{r.name}</td>
+            <tr key={r.key} className={`border-b border-line ${r.indent ? 'text-ink/70' : ''}`}>
+              <td className={`px-3 py-2 ${r.indent ? 'pl-7 text-xs' : ''}`}>
+                {r.name}
+                {r.note && (
+                  <div className="text-xs text-ink/70 sm:hidden print:hidden">{r.note}</div>
+                )}
+              </td>
               <td className="px-3 py-2 text-right tabular-nums">{fmtGrams(r.grams, precision)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{fmtPct(r.pct)}</td>
-              <td className="px-3 py-2 text-xs text-ink/50">{r.note}</td>
+              <td className="hidden px-3 py-2 text-xs text-ink/70 sm:table-cell print:table-cell">
+                {r.note}
+              </td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-bottle font-semibold">
-            <td className="px-3 py-2">합계 (반죽)</td>
+            <td className="px-3 py-2">
+              합계 (반죽)
+              <div className="text-xs font-normal text-ink/70 sm:hidden print:hidden">{footNote}</div>
+            </td>
             <td className="px-3 py-2 text-right tabular-nums">
               {fmtGrams(stats.doughWeight, precision)}
             </td>
             <td className="px-3 py-2 text-right tabular-nums">{fmtPct(stats.hydrationPct)}</td>
-            <td className="px-3 py-2 text-xs text-ink/60">
-              {pieces && pieces > 0
-                ? `분할 ${pieces} × ${fmtGrams(stats.doughWeight / pieces, precision)} g`
-                : '총 수분율 기준'}
+            <td className="hidden px-3 py-2 text-xs text-ink/70 sm:table-cell print:table-cell">
+              {footNote}
             </td>
           </tr>
         </tfoot>
       </table>
+      {/* iOS 배합표 합계 footer와 같은 문장 */}
+      <p className="mt-2 text-xs text-ink/70">
+        총 수분율 = 총 물 ÷ 총 밀가루. 총 물에는 본반죽 물·바시나주·르방 속 물·액체 재료의 수분이 모두
+        들어가서, 본반죽 물 ÷ 밀가루로 적은 레시피의 수분율보다 높게 나옵니다.
+      </p>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDecimalInput } from './fields';
+import { formatForEdit, parseDecimalInput } from './fields';
 
 describe('parseDecimalInput', () => {
   it('자릿수가 맞는 천 단위 쉼표는 구분 기호로 읽는다', () => {
@@ -22,5 +22,18 @@ describe('parseDecimalInput', () => {
   it('해석할 수 없으면 NaN (이전 값 유지)', () => {
     expect(parseDecimalInput('1,000,5')).toBeNaN();
     expect(parseDecimalInput('1.000.5')).toBeNaN();
+  });
+});
+
+describe('formatForEdit', () => {
+  it('0은 빈 칸으로 보인다 — 자리 표시자 0 앞에 숫자가 덧붙지 않게', () => {
+    expect(formatForEdit(0)).toBe('');
+    expect(formatForEdit(340)).toBe('340');
+  });
+
+  it('소수는 셋째 자리까지, 해석할 수 없는 값은 빈 칸', () => {
+    expect(formatForEdit(72.5)).toBe('72.5');
+    expect(formatForEdit(1 / 3)).toBe('0.333');
+    expect(formatForEdit(Number.NaN)).toBe('');
   });
 });

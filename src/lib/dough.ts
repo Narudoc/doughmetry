@@ -342,3 +342,23 @@ export function withLevainMass(input: DoughInput, grams: number): DoughInput {
     ...cloneFixedParts(input),
   };
 }
+
+/**
+ * 배합 전체를 factor배로 — 그램 필드(밀가루·본반죽 물·바시나주·소금·르방·액체·이스트·기타)만 곱하고
+ * id·이름·르방 수분율·액체 waterRatio·이스트 타입은 그대로 둔다. 총 밀가루 기준 %는 모두 보존된다.
+ * factor가 0 이하이거나 유한하지 않으면 입력을 그대로 돌려준다. (Dough.swift scaleDough와 동일)
+ */
+export function scaleDough(input: DoughInput, factor: number): DoughInput {
+  if (!Number.isFinite(factor) || factor <= 0) return input;
+  return {
+    ...input,
+    flours: input.flours.map((f) => ({ ...f, grams: f.grams * factor })),
+    water: input.water * factor,
+    bassinage: input.bassinage * factor,
+    salt: input.salt * factor,
+    levain: { ...input.levain, grams: input.levain.grams * factor },
+    liquids: input.liquids.map((l) => ({ ...l, grams: l.grams * factor })),
+    yeast: { ...input.yeast, grams: input.yeast.grams * factor },
+    extras: input.extras.map((e) => ({ ...e, grams: e.grams * factor })),
+  };
+}

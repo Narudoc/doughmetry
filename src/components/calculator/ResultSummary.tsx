@@ -2,6 +2,7 @@ import type { DoughStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct, rebasePct } from '../../lib/format';
 import type { PctBasis } from '../../types';
+import { Fr } from '../ui/Fr';
 
 interface Props {
   stats: DoughStats;
@@ -13,7 +14,7 @@ interface Props {
 function Item({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs text-ink/60">{label}</dt>
+      <dt className="text-xs text-ink/70">{label}</dt>
       <dd className="mt-0.5 font-semibold tabular-nums">{value}</dd>
     </div>
   );
@@ -39,14 +40,14 @@ export function ResultSummary({ stats, pieces, precision, basis = 'total' }: Pro
   return (
     <section className="rounded-lg border border-line bg-white p-5">
       <div className="text-xs font-medium uppercase tracking-widest text-bottle">
-        총 수분율 <span className="normal-case italic text-bottle/60">hydratation totale</span>
+        총 수분율 <Fr className="normal-case text-bottle/80">hydratation totale</Fr>
       </div>
       <div className="mt-1 font-display text-5xl font-bold tabular-nums text-brass">
         {stats.hydrationPct.toFixed(1)}
         <span className="text-2xl">%</span>
       </div>
       {stats.liquidWater > 0 && (
-        <p className="mt-1 text-xs tabular-nums text-ink/50">
+        <p className="mt-1 text-xs tabular-nums text-ink/70">
           액체 재료 수분 {fmtGrams(stats.liquidWater, precision)} g 포함
         </p>
       )}

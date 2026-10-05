@@ -13,16 +13,23 @@ public struct ParsedRecipeText: Equatable, Sendable {
     public var input: DoughInput
     /// 재료로 인식된 줄 수 — 0이면 인식 실패로 판단
     public var matchedLineCount: Int
-    /// 르방 수분율을 텍스트가 직접 밝혔는지(30~150% 또는 리퀴드/뒤흐 키워드) — 기본값·빌드 섹션 추정은 false
+    /// 르방 수분율을 텍스트가 직접 밝혔는지(30~150%, 리퀴드/뒤흐 키워드, 풀리시·비가) — 기본값·빌드 섹션 추정은 false
     public var levainHydrationExplicit: Bool
+    /// 공정(만드는 법) 머리글부터 끝까지의 원문 — 레시피 노트로 저장한다. 없으면 nil
+    public var methodNote: String?
+    /// 분량 표기("2개 분량", "2 loaves", 배합표의 "분할 2개 — 개당")에서 읽은 분할 개수. 없으면 nil
+    public var pieces: Double?
 
     public init(
-        name: String?, input: DoughInput, matchedLineCount: Int, levainHydrationExplicit: Bool = false
+        name: String?, input: DoughInput, matchedLineCount: Int, levainHydrationExplicit: Bool = false,
+        methodNote: String? = nil, pieces: Double? = nil
     ) {
         self.name = name
         self.input = input
         self.matchedLineCount = matchedLineCount
         self.levainHydrationExplicit = levainHydrationExplicit
+        self.methodNote = methodNote
+        self.pieces = pieces
     }
 }
 
@@ -52,14 +59,14 @@ public enum RecipeTextParser {
 
     /// 줄 단위 숫자 토큰.
     /// "T65"처럼 영문자에 붙은 숫자는 양이 아니므로 제외 — 경계 문자를 함께 매칭한다.
-    /// 단위: % 는 수분율, kg류·oz·lb 는 g로 환산, 컵·스푼·개수는 그램이 아니다.
+    /// 단위: % 는 수분율, kg류·oz·lb 는 g로 환산, 컵·스푼·개수·배합("1배합")은 그램이 아니다.
     /// 캡처 1: 분수("1/2", "3 3/4") — 두 자리까지만, "350/370g" 같은 범위·두 배합 표기는 분수가 아니다
     /// 캡처 2: 수 — 천 단위 구분은 쉼표·NBSP류 공백, 일반 공백은 무게 단위가 뒤따르고 앞자리가 한 자리일 때만
     ///   ("1 000 g" — "type 65 500 g"·"Farine 100 500 g"의 앞 수는 별개)
     /// 캡처 3: 단위 — 단어 중간("500g을", "gâteau")은 단위가 아니다
     static func numberTokens(in line: String) -> [(value: Double, kind: NumberKind)] {
         var tokens: [(Double, NumberKind)] = []
-        let pattern = #/(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u{A0}\u{202F}\u{2009}][0-9]{3})+(?=[ \t\u{A0}\u{202F}\u{2009}]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u{A0}\u{202F}\u{2009}][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u{A0}\u{202F}\u{2009}]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/#
+        let pattern = #/(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u{A0}\u{202F}\u{2009}][0-9]{3})+(?=[ \t\u{A0}\u{202F}\u{2009}]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u{A0}\u{202F}\u{2009}][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u{A0}\u{202F}\u{2009}]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/#
             .ignoresCase()
             // 웹(/u 정규식)과 같은 코드포인트 단위 — 자소 단위면 "500️g"(숫자+VS16)의 마지막 0을 숫자로 못 읽는다
             .matchingSemantics(.unicodeScalar)
@@ -157,14 +164,33 @@ public enum RecipeTextParser {
         ])
     }
 
+    static let poolishKeywords = ["풀리시", "풀리쉬", "폴리쉬", "폴리시", "poolish"]
+
     static let levainKeywords = [
-        "르방", "levain", "스타터", "starter", "발효종", "사전반죽", "풀리시", "poolish", "biga",
-    ]
+        "르방", "levain", "스타터", "starter", "발효종", "사전반죽", "biga",
+    ] + poolishKeywords
+
+    /// 비가(biga) — '비가'는 흔한 낱말("비가 와서 …", "비가 3일째 …")이라 줄 머리에서 양(숫자 + 단위 또는
+    /// 숫자만)·괄호·쌍점·'만들기'가 뒤따르거나 그 낱말만 있을 때만 발효종으로 본다
+    static func matchesBiga(_ line: String) -> Bool {
+        contains(line, ["biga"])
+            || line.range(
+                of: #"(?i)^[^\p{L}\p{N}]*비가(?=[ \t]*(?:[(:]|만들기|$|[0-9][0-9.,]*[ \t]*(?:%|kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?)?(?![\p{L}\p{N}])))"#,
+                options: rx) != nil
+    }
 
     /// 르방(사전발효종) 줄·이름 — '르뱅쿠키'는 과자 이름, 'leavening'은 팽창제라 제외
     public static func matchesLevain(_ line: String) -> Bool {
-        contains(line, levainKeywords) || containsWord(line, "ferment") || containsWord(line, "leaven")
+        contains(line, levainKeywords) || matchesBiga(line)
+            || containsWord(line, "ferment") || containsWord(line, "leaven")
             || line.range(of: #"르뱅(?!\s*쿠키)"#, options: rx) != nil
+    }
+
+    /// 수분율을 밝히지 않은 풀리시·비가의 관례 수분율 — 풀리시 100%, 비가 50%
+    static func prefermentHydration(_ line: String) -> Double? {
+        if contains(line, poolishKeywords) { return 1.0 }
+        if matchesBiga(line) { return 0.5 }
+        return nil
     }
 
     /// 물 — 물엿·시럽과 '물'이 들어간 다른 단어(곡물·식물성 …)는 제외, eau는 단어 단위(gâteau 방지)
@@ -172,6 +198,23 @@ public enum RecipeTextParser {
         contains(line, ["물", "water"])
             && !contains(line, ["물엿", "시럽", "syrup", "곡물", "식물성", "동물성", "해산물"])
             || containsWord(line, "eau")
+    }
+
+    static func matchesSalt(_ line: String) -> Bool {
+        contains(line, ["소금", "천일염", "소곰"]) || containsWord(line, "salt") || containsWord(line, "sel")
+    }
+
+    static let bassinageKeywords = ["바시나주", "바시나쥬", "bassinage", "조절수", "조정수"]
+
+    /// 액체 재료 키워드 — 파서의 액체 분기와 AI 초안 보정(reconcileAIDraft)이 같은 표를 쓴다
+    static let milkKeywords = ["우유", "milk", "lait"]
+    static let eggKeywords = ["계란", "달걀", "전란", "egg", "oeuf", "œuf"]
+
+    /// 이름으로 고른 액체 프리셋(우유·계란) — 해당 없으면 nil
+    public static func liquidPreset(forName name: String) -> LiquidPreset? {
+        if contains(name, milkKeywords) { return .milk }
+        if contains(name, eggKeywords) { return .egg }
+        return nil
     }
 
     // MARK: 전처리
@@ -204,13 +247,14 @@ public enum RecipeTextParser {
 
     /// 온도 표기 제거 — "물 350g (30°C)"·"물 350g 30도" 같은 줄이 오염되지 않도록
     /// 괄호 안 온도와 "30°C"/"30℃"/"30도" 토큰을 걷어낸다
-    /// ("도" 뒤에 글자가 이어지면(포도·도우 등) 매칭하지 않는다)
+    /// ("도" 뒤에 글자가 이어지면(포도·도우 등) 매칭하지 않는다).
+    /// 범위("24-25도씨", "24~25℃")는 앞 수까지 지운다 — 대시는 붙여 쓴 것만 (시간 범위와 같은 규칙)
     static func stripTemperatures(_ line: String) -> String {
         var s = line
         s = s.replacingOccurrences(
             of: #"\([^)]*(?:°|℃|온도|[0-9][ \t]*도)[^)]*\)"#, with: "", options: rx)
         s = s.replacingOccurrences(
-            of: #"[0-9]+(?:[.,][0-9]+)?[ \t]*(?:°[CcFf]?|℃|도씨?(?![가-힣A-Za-z]))"#,
+            of: #"(?:[0-9]+(?:[.,][0-9]+)?(?:[ \t]*(?:°[CcFf]?|℃|도))?(?:[ \t]*[~〜～][ \t]*|[–-]))?[0-9]+(?:[.,][0-9]+)?[ \t]*(?:°[CcFf]?|℃|도씨?(?![가-힣A-Za-z]))"#,
             with: "", options: rx)
         return s
     }
@@ -250,6 +294,16 @@ public enum RecipeTextParser {
     static func shouldSkip(_ line: String) -> Bool {
         let t = line.trimmingCharacters(in: .whitespaces)
         if t.isEmpty { return true }
+        // 앱 배합표의 르방 속 밀가루·물 행("  ↳ 속 밀가루  100.0 g  (PFF 9.1%)", "↳ Flour in levain …") —
+        // 르방 무게에 이미 들어 있다. OCR이 화살표를 놓쳐도 앱 라벨(Localization의 속 밀가루·속 물, 옛 영문
+        // "Flour inside" 포함)로 거른다
+        if t.hasPrefix("↳") { return true }
+        if t.replacingOccurrences(of: #"\([^)]*\)"#, with: " ", options: rx).range(
+            of: #"(?i)(?<!\p{L})속\s*(?:밀가루|물)(?!\p{L})|(?<!\p{L})(?:flour|water)\s+in(?:side|\s+levain)(?!\p{L})"#,
+            options: rx) != nil
+        {
+            return true
+        }
         // 합계 표기는 괄호 밖·머리 기호("- ", "• ") 뒤에서 본다 — "물 700g (총 수분율 75%)"는 재료 줄.
         // 괄호 밖에 양이 없으면("재료 (총 960g)"·"(합계 960g)") 괄호 안까지 본다
         var outer = t.replacingOccurrences(of: #"\([^)]*\)"#, with: " ", options: rx)
@@ -264,15 +318,26 @@ public enum RecipeTextParser {
             return true
         }
         if !matchesLevain(outer),
-            outer.range(of: #"전체\s*반죽|반죽\s*(?:무게|중량)|분할"#, options: rx) != nil
+            outer.range(
+                of: #"(?i)전체\s*반죽|반죽\s*(?:무게|중량)|분할|(?<!\p{L})divide(?!\p{L})"#, options: rx) != nil
         {
             return true
         }
         if contains(outer, ["total", "재 료", "베이커", "baker"]) {
             return true
         }
-        if contains(t, ["수분율", "hydration", "온도"]), !hasAmount(numberTokens(in: t)) {
-            return true  // "수분율 75%" 같은 통계·표기 줄
+        // "수분율 75%" 같은 통계·표기 줄 — 통계 낱말 말고 다른 글자가 남으면("75% Hydration Sourdough") 제목일 수 있다.
+        // 온도 줄("반죽 온도 24℃")은 글자가 남아도 통계 줄이다
+        if !hasAmount(numberTokens(in: t)),
+            contains(t, ["온도"])
+                || contains(t, ["수분율", "hydration", "hydratation", "PFF"])
+                    && t.replacingOccurrences(
+                        of: #"(?i)수분율|hydration|hydratation|levain|르방|르뱅|리퀴드|liquide|뒤흐|dur|스타터|starter|발효종|사전반죽|풀리시|풀리쉬|폴리쉬|폴리시|poolish|biga|비가|pff|반죽|dough|재료|ingredients?|[^\p{L}]"#,
+                        with: "",
+                        options: rx
+                    ).isEmpty
+        {
+            return true
         }
         // "물 340g에 르방을 풀어주세요" 같은 서술문 — 합계 판정처럼 괄호 밖에서 본다.
         // "물 350g (나눠 넣습니다)"의 괄호 속 메모는 재료 줄을 지우지 않는다
@@ -290,18 +355,127 @@ public enum RecipeTextParser {
     static func ingredientName(from line: String) -> String {
         var s = line
         s = s.replacingOccurrences(
-            of: #"(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?"#,
+            of: #"(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?"#,
             with: "", options: [rx, .caseInsensitive])
         s = s.replacingOccurrences(of: #"\([ \t]*\)"#, with: "", options: rx)
+        s = stripLeadingSymbols(s)
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: " \t\u{00A0}\u{202F}\u{2009}:·.-—|"))
         return s
     }
 
-    /// 제목 후보에서 "G." "1)" 같은 머리 기호 제거
+    /// 제목 후보에서 "G." "1)" 같은 머리 기호와 앱 배합표 제목 줄의 꾸밈("〔캉파뉴〕 fiche technique") 제거
     static func cleanTitle(_ line: String) -> String {
         var s = line.trimmingCharacters(in: .whitespaces)
         s = s.replacingOccurrences(of: #"^[A-Za-z0-9]{1,3}[.)][ \t]*"#, with: "", options: rx)
+        s = s.replacingOccurrences(of: #"[〔〕【】「」]"#, with: "", options: rx)
+        s = s.replacingOccurrences(of: #"(?i)[ \t]*fiche[ \t]+technique[ \t]*$"#, with: "", options: rx)
         return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// 줄 머리의 이모지·글머리표("🍞 ", "▪️", "• ", "✔️ ") — 여는 괄호는 남긴다
+    static func stripLeadingSymbols(_ s: String) -> String {
+        s.replacingOccurrences(of: #"^[^\p{L}\p{N}(]+"#, with: "", options: rx)
+    }
+
+    /// 제목 후보에서 걷어낼 분량 괄호 하나 — "무화과 호두 캄파뉴 (2개 분량)"
+    static let servingsParenthetical = #"(?i)\([^)]*(?:분량|인분|loaf|loaves|servings?)[^)]*\)"#
+    /// 개수만 적은 괄호("캄파뉴 (2개)")는 재료보다 앞선 줄에서만 분량으로 본다 — 재료 사이의 "계란 (2개)"는 재료 줄
+    static let countParenthetical =
+        #"(?i)\([^)]*(?:분량|인분|개|판|덩어리|덩이|loaf|loaves|servings?)[^)]*\)"#
+
+    /// 그램 없는 줄이 레시피 이름이면 그 이름, 아니면 nil.
+    /// % 표기만 있는 줄("캉파뉴 75%")은 재료보다 앞설 때만 이름이 된다 — 재료 사이의 "PFF 20%"는 이름이 아니다
+    static func titleCandidate(_ line: String, matched: Int) -> String? {
+        var s = line
+        if let r = s.range(of: matched == 0 ? countParenthetical : servingsParenthetical, options: rx) {
+            s.removeSubrange(r)
+        }
+        let tokens = numberTokens(in: s)
+        guard tokens.isEmpty || (matched == 0 && tokens.allSatisfy { $0.kind == .percent }) else {
+            return nil
+        }
+        let t = stripLeadingSymbols(cleanTitle(s))
+        guard t.count >= 2 else { return nil }
+        // 베이커스 % 표의 재료 한 줄("강력분 100%", "르방 20%")은 이름이 아니다
+        if !tokens.isEmpty {
+            let rest = ingredientName(from: t)
+                .replacingOccurrences(of: #"(?i)(?<!\p{L})(?:liquide|dur|리퀴드|뒤흐)(?!\p{L})"#, with: "", options: rx)
+                .trimmingCharacters(in: .whitespaces)
+            if !rest.contains(where: \.isWhitespace),
+                matchesFlour(rest) || matchesLevain(rest) || matchesWater(rest) || matchesSalt(rest)
+            {
+                return nil
+            }
+        }
+        // "…레시피 공유해요 🙌" 같은 서술문은 이름이 아니다 — 끝의 이모지·문장부호를 걷어내고 본다
+        let end = t.replacingOccurrences(of: #"[^\p{L}\p{N}!?]+$"#, with: "", options: rx)
+        if isChatty(end) { return nil }
+        // 주소가 든 줄(앱 공유 텍스트의 끝줄 "— Doughmetry · narudoc.github.io/…", 블로그 링크)은 이름이 아니다
+        if t.range(of: webAddress, options: rx) != nil { return nil }
+        return t
+    }
+
+    /// 서술문 끝 — 요·죠·!·?는 늘, 다·네는 앞 글자가 '니'이거나 받침이 ㄴ·ㅄ·ㅆ일 때만
+    /// (한다·섞는다·없다·구웠다·맛있네·입니다). '파네토네'·'할라피뇨 체다' 같은 빵 이름은 남긴다
+    static func isChatty(_ end: String) -> Bool {
+        let scalars = Array(end.unicodeScalars)
+        guard let last = scalars.last else { return false }
+        if "요죠!?".unicodeScalars.contains(last) { return true }
+        guard last == "다" || last == "네", scalars.count >= 2 else { return false }
+        let prev = scalars[scalars.count - 2]
+        if prev == "니" { return true }
+        let c = Int(prev.value) - 0xAC00
+        return c >= 0 && c < 11172 && [4, 18, 20].contains(c % 28)
+    }
+
+    static let webAddress =
+        #"(?i)https?://|www\.|(?<![\p{L}\p{N}])[a-z0-9-]+\.(?:com|net|org|io|kr|co|me|app|ly)(?![\p{L}\p{N}])"#
+
+    /// 물 줄에 붙은 바시나주 부연 — "물 340g (+ 바시나주 25g)", "물 340g + 바시나주 25g",
+    /// "물 365g (바시나주 25g 포함)". 키워드 앞이 물 줄이고 앞뒤에 각자 양이 있을 때만 나눈다
+    /// ('포함'이면 앞의 양에서 뺀다). 아니면 nil — 줄 전체가 바시나주다
+    static func bassinageClause(_ line: String) -> (water: Double, bassinage: Double)? {
+        guard let kw = bassinageKeywords
+            .compactMap({ line.range(of: $0, options: .caseInsensitive) })
+            .min(by: { $0.lowerBound < $1.lowerBound })
+        else { return nil }
+        let head = String(line[..<kw.lowerBound])
+        let tail = String(line[kw.upperBound...])
+        guard matchesWater(head), let water = pickGrams(head), water > 0,
+            let extra = pickGrams(tail), extra > 0
+        else { return nil }
+        if tail.contains("포함") {
+            return water > extra ? (water - extra, extra) : nil
+        }
+        return (water, extra)
+    }
+
+    /// 분량 표기 — "빵 2개 분량", "2 loaves", 앱 배합표의 "분할 2개 — 개당"·"Divide by 2 — each"
+    static func servings(in line: String) -> Double? {
+        let pattern =
+            #"(?:빵\s*)?(?<![0-9])([0-9]{1,2})\s*(?:개|덩이|덩어리)\s*분량|(?<![\p{L}\p{N}])([0-9]{1,2})\s+loaves?(?!\p{L})|(?:분할\s*([0-9]{1,2})\s*개|(?<!\p{L})divide\s+by\s+([0-9]{1,2}))\s*[—–-]\s*(?:개당|each)"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+            let m = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line))
+        else { return nil }
+        for i in 1..<m.numberOfRanges {
+            if let r = Range(m.range(at: i), in: line), let n = Double(line[r]), n >= 1, n <= 99 {
+                return n
+            }
+        }
+        return nil
+    }
+
+    /// 공정 서술부를 노트로 — SNS 토큰만 걷어내고 시간·온도("1시간", "230도")는 남긴다.
+    /// 앞뒤 빈 줄은 버리고 이어진 빈 줄은 하나로
+    static func methodText(_ lines: ArraySlice<String>) -> String? {
+        var out: [String] = []
+        for raw in lines {
+            let l = stripSocialTokens(raw).trimmingCharacters(in: .whitespaces)
+            if l.isEmpty, out.last?.isEmpty ?? true { continue }
+            out.append(l)
+        }
+        while out.last?.isEmpty == true { out.removeLast() }
+        return out.isEmpty ? nil : out.joined(separator: "\n")
     }
 
     // MARK: 섹션 헤더
@@ -345,6 +519,8 @@ public enum RecipeTextParser {
         var yeast = Yeast()
         var extras: [Extra] = []
         var matched = 0
+        var pieces: Double?
+        var methodStart: Int?
 
         // 섹션 상태 — 르방 빌드 섹션 재료는 본반죽에 합산하지 않는다
         enum Section { case main, levainBuild, stopped }
@@ -352,16 +528,20 @@ public enum RecipeTextParser {
         var buildFlour = 0.0
         var buildWater = 0.0
         var buildTotal = 0.0
+        // 풀리시·비가의 관례 수분율 — 빌드 섹션의 물/밀가루 비가 있으면 그쪽이 먼저다
+        var prefermentDefault: Double?
 
         // 전처리 + 구분자 분할
-        var segments: [(text: String, hadDuration: Bool)] = []
-        for rawLine in lines(of: text) {
+        let rawLines = lines(of: text)
+        var segments: [(text: String, hadDuration: Bool, lineIndex: Int)] = []
+        for (index, rawLine) in rawLines.enumerated() {
             // "G." "1)" 같은 머리 기호를 먼저 떼야 헤더("1. 재료")를 제대로 거른다
             let pre = stripTemperatures(stripSocialTokens(cleanTitle(rawLine)))
+            if pieces == nil { pieces = servings(in: pre) }
             let line = stripDurations(pre)
             // 시간·차수만 남았던 공정 줄("벌크 발효 4시간", "1차 발효")은 제목 후보가 아니다
             let hadDuration = line != pre
-            segments.append(contentsOf: splitSegments(line).map { ($0, hadDuration) })
+            segments.append(contentsOf: splitSegments(line).map { ($0, hadDuration, index) })
         }
 
         for segment in segments {
@@ -389,11 +569,9 @@ public enum RecipeTextParser {
                     section = .main
                 } else if matched >= 2, isMethodHeader(line) {
                     section = .stopped
-                } else if name == nil, numberTokens(in: line).isEmpty, section == .main,
-                    !segment.hadDuration
-                {
-                    let t = cleanTitle(line)
-                    if t.count >= 2 { name = t }
+                    methodStart = segment.lineIndex
+                } else if name == nil, section == .main, !segment.hadDuration {
+                    name = titleCandidate(line, matched: matched)
                 }
                 continue
             }
@@ -413,8 +591,13 @@ public enum RecipeTextParser {
                 continue
             }
 
-            if contains(line, ["바시나주", "바시나쥬", "bassinage", "조절수", "조정수"]) {
-                bassinage += grams
+            if contains(line, bassinageKeywords) {
+                if let clause = bassinageClause(line) {
+                    water += clause.water
+                    bassinage += clause.bassinage
+                } else {
+                    bassinage += grams
+                }
             } else if matchesLevain(line) {
                 levainGrams += grams
                 levainName = ingredientName(from: line)
@@ -431,21 +614,21 @@ public enum RecipeTextParser {
                     // (예: "르방 100g (20%)") — 무시하고 기본 수분율을 유지한다
                     levainHydration = percent / 100
                     levainHydrationExplicit = true
+                } else if let h = prefermentHydration(line) {
+                    prefermentDefault = h
                 }
-            } else if contains(line, ["소금", "천일염", "소곰"])
-                || containsWord(line, "salt") || containsWord(line, "sel")
-            {
+            } else if matchesSalt(line) {
                 salt += grams
             } else if contains(line, ["이스트", "yeast", "levure", "효모"]) || containsWord(line, "IDY") {
                 yeast.grams += grams
                 if contains(line, ["인스턴트", "드라이", "instant", "dry", "sèche"]) || containsWord(line, "IDY") {
                     yeast.type = .instant
                 }
-            } else if contains(line, ["우유", "milk", "lait"]) {
+            } else if contains(line, milkKeywords) {
                 liquids.append(
                     Liquid(name: ingredientName(from: line), grams: grams,
                            waterRatio: LiquidPreset.milk.waterRatio))
-            } else if contains(line, ["계란", "달걀", "전란", "egg", "oeuf", "œuf"]) {
+            } else if contains(line, eggKeywords) {
                 liquids.append(
                     Liquid(name: ingredientName(from: line), grams: grams,
                            waterRatio: LiquidPreset.egg.waterRatio))
@@ -461,12 +644,20 @@ public enum RecipeTextParser {
         // 르방 빌드 섹션 정산:
         // 본반죽에 르방 g가 명시돼 있으면 빌드 재료는 그 내역이므로 버리고,
         // 없으면 빌드 총량이 곧 르방이다. 수분율은 빌드의 물/밀가루 비로 추정.
+        var usedBuildRatio = false
         if buildTotal > 0 {
             if levainGrams == 0 { levainGrams = buildTotal }
             if !levainHydrationExplicit, buildFlour > 0 {
                 let h = buildWater / buildFlour
-                if h >= 0.3, h <= 1.5 { levainHydration = h }
+                if h >= 0.3, h <= 1.5 {
+                    levainHydration = h
+                    usedBuildRatio = true
+                }
             }
+        }
+        if !levainHydrationExplicit, !usedBuildRatio, let d = prefermentDefault {
+            levainHydration = d
+            levainHydrationExplicit = true
         }
 
         let input = DoughInput(
@@ -487,6 +678,8 @@ public enum RecipeTextParser {
             extras: extras)
         return ParsedRecipeText(
             name: name, input: input, matchedLineCount: matched,
-            levainHydrationExplicit: levainHydrationExplicit)
+            levainHydrationExplicit: levainHydrationExplicit,
+            methodNote: methodStart.flatMap { methodText(rawLines[$0...]) },
+            pieces: pieces)
     }
 }

@@ -1,6 +1,8 @@
 import type { ConvertSuccess, DoughInput } from '../../lib/dough';
+import { levainTypeFor } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct, fmtSigned } from '../../lib/format';
+import { Fr } from '../ui/Fr';
 
 interface Props {
   result: ConvertSuccess;
@@ -25,7 +27,7 @@ const CHANGE_THRESHOLD_WHOLE_G = 0.5;
 /** 변환 전/후 좌우 대조 표 — 변경 값 강조 + 증감분 표시 */
 export function BeforeAfter({ result, inputBefore, precision }: Props) {
   const { output, before, after } = result;
-  const levainLabel = (h: number) => (h >= 0.75 ? '리퀴드' : '뒤흐');
+  const levainLabel = (h: number) => (levainTypeFor(h) === 'liquide' ? '리퀴드' : '뒤흐');
 
   // 밀가루 행: 변환 전 순서 기준, 변환으로 새로 생긴 행은 뒤에
   const beforeFlours = new Map(inputBefore.flours.map((f) => [f.id, f]));
@@ -125,57 +127,65 @@ export function BeforeAfter({ result, inputBefore, precision }: Props) {
   const renderValue = (v: number, unit: 'g' | '%') =>
     unit === 'g' ? `${fmtGrams(v, precision)} g` : fmtPct(v);
 
-  const renderRow = (line: Line) => {
-    const delta = line.after - line.before;
+  const isChanged = (line: Line) => {
     const threshold =
       line.unit === 'g' && precision === 1 ? CHANGE_THRESHOLD_WHOLE_G : CHANGE_THRESHOLD;
-    const changed = Math.abs(delta) >= threshold;
+    return Math.abs(line.after - line.before) >= threshold;
+  };
+
+  const deltaChip = (line: Line) => {
+    const delta = line.after - line.before;
+    return isChanged(line) ? (
+      <span className="inline-block rounded bg-brass/10 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-brass">
+        {line.unit === 'g' ? `${fmtSigned(delta, precision)} g` : `${fmtSigned(delta, 0.1)}%p`}
+      </span>
+    ) : (
+      <span aria-hidden="true" className="text-xs text-ink/40">—</span>
+    );
+  };
+
+  // 좁은 화면에서는 증감 열을 숨기고 변환 후 값 아래에 칩을 붙인다 — 변환 후 값이 화면 밖으로 밀려나지 않게
+  const renderRow = (line: Line) => {
+    const changed = isChanged(line);
     return (
       <tr
         key={line.key}
-        className={`border-b border-line ${line.indent ? 'text-ink/60' : ''} ${line.emphasize ? 'bg-brass/5' : ''}`}
+        className={`border-b border-line ${line.indent ? 'text-ink/70' : ''} ${line.emphasize ? 'bg-brass/5' : ''}`}
       >
-        <td className={`px-3 py-2 ${line.indent ? 'pl-7 text-xs' : ''}`}>{line.label}</td>
-        <td className="px-3 py-2 text-right tabular-nums">{renderValue(line.before, line.unit)}</td>
+        <td className={`px-2 py-2 sm:px-3 ${line.indent ? 'pl-5 text-xs sm:pl-7' : ''}`}>{line.label}</td>
+        <td className="px-2 py-2 text-right tabular-nums sm:px-3">{renderValue(line.before, line.unit)}</td>
         <td
-          className={`border-l border-line px-3 py-2 text-right tabular-nums ${
+          className={`border-l border-line px-2 py-2 text-right tabular-nums sm:px-3 ${
             changed ? 'font-semibold text-brass' : ''
           }`}
         >
           {renderValue(line.after, line.unit)}
+          {changed && <span className="mt-0.5 block sm:hidden">{deltaChip(line)}</span>}
         </td>
-        <td className="px-3 py-2 text-right">
-          {changed ? (
-            <span className="inline-block rounded bg-brass/10 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-brass">
-              {line.unit === 'g' ? `${fmtSigned(delta, precision)} g` : `${fmtSigned(delta, 0.1)}%p`}
-            </span>
-          ) : (
-            <span className="text-xs text-ink/40">—</span>
-          )}
-        </td>
+        <td className="hidden px-2 py-2 text-right sm:table-cell sm:px-3">{deltaChip(line)}</td>
       </tr>
     );
   };
 
   return (
     <div className="overflow-x-auto rounded-lg border-2 border-bottle bg-white">
-      <table className="w-full min-w-[540px] border-collapse text-sm">
+      <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-bottle text-paper">
-            <th className="px-3 py-2.5 text-left font-medium">항목</th>
-            <th className="px-3 py-2.5 text-right font-medium">
-              변환 전 <span className="font-normal italic opacity-70">avant</span>
+            <th className="px-2 py-2.5 text-left font-medium sm:px-3">항목</th>
+            <th className="px-2 py-2.5 text-right font-medium sm:px-3">
+              변환 전 <Fr className="font-normal opacity-70">avant</Fr>
             </th>
-            <th className="border-l border-paper/20 px-3 py-2.5 text-right font-medium">
-              변환 후 <span className="font-normal italic opacity-70">après</span>
+            <th className="border-l border-paper/20 px-2 py-2.5 text-right font-medium sm:px-3">
+              변환 후 <Fr className="font-normal opacity-70">après</Fr>
             </th>
-            <th className="px-3 py-2.5 text-right font-medium">증감</th>
+            <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell sm:px-3">증감</th>
           </tr>
         </thead>
         <tbody>
           {lines.map(renderRow)}
           <tr className="border-b border-line bg-paper">
-            <td colSpan={4} className="px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-bottle/70">
+            <td colSpan={4} className="px-2 py-1.5 text-xs font-medium uppercase tracking-widest text-bottle/80 sm:px-3">
               지표
             </td>
           </tr>

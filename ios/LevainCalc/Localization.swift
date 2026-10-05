@@ -5,7 +5,8 @@ import SwiftUI
 
 /// 인앱 언어 설정 — 한국어(기본) / 영어.
 /// UI 문자열은 한국어 원문을 키로 쓰고, 영어일 때만 테이블에서 치환한다.
-/// 프랑스어 병기(levain liquide 등)는 언어와 무관하게 유지.
+/// 주 라벨은 UI 언어의 제빵 용어로 쓴다 (영어: liquid/stiff levain, starter). 프랑스어 원어는
+/// 언어와 무관하게 BilingualLabel의 이탤릭 병기로만 붙인다.
 
 enum AppLanguage: String, CaseIterable {
     case ko
@@ -34,7 +35,11 @@ enum AppLanguage: String, CaseIterable {
 
 @Observable
 final class Lang {
-    static let shared = Lang()
+    // 읽기·쓰기는 전부 메인 스레드다 — 뷰 body, @MainActor인 TimelineNotifier, 설정 시트의 Picker.
+    // TimelineNotifier.followLanguage의 onChange 클로저는 Lang을 읽지 않고 메인 액터 Task로 넘긴다.
+    // Lang을 @MainActor로 바꾸지 말 것 — L()/LF()를 부르는 비격리 함수(stageName, flourLabel, fmtTime,
+    // CodecError.localizedMessage, CalcState.name 기본값 등)가 컴파일되지 않는다
+    nonisolated(unsafe) static let shared = Lang()
 
     var current: AppLanguage {
         didSet {
@@ -110,8 +115,13 @@ struct LocalizedEditButton: View {
 
     var body: some View {
         let isEditing = editMode?.wrappedValue.isEditing == true
-        Button(isEditing ? L("완료") : L("편집")) {
+        Button {
             withAnimation { editMode?.wrappedValue = isEditing ? .inactive : .active }
+        } label: {
+            // 탭 영역은 레이블 안에서 넓힌다 — Button 바깥의 frame은 탭·접근성 영역을 늘리지 못한다
+            Text(isEditing ? L("완료") : L("편집"))
+                .frame(minWidth: 44, minHeight: 36, alignment: .trailing)
+                .contentShape(Rectangle())
         }
     }
 }
@@ -146,8 +156,13 @@ private let en: [String: String] = [
     "레시피 이름": "Recipe name",
     "밀가루 (첨가)": "Flour (added)",
     "밀가루 이름 (T65, 호밀…)": "Flour name (T65, rye…)",
+    "밀가루 (T65…)": "Flour (T65…)",
     "밀가루 추가": "Add flour",
     "%는 총 밀가루(첨가 + 르방 속) 기준입니다.": "Percentages are based on total flour (added + in levain).",
+    "총 밀가루의 %@": "%@ of total flour",
+    "첨가 밀가루의 %@": "%@ of added flour",
+    "PFF %@ — 총 밀가루 중 르방 속 밀가루": "PFF %@, flour in levain over total flour",
+    "르방, 첨가 밀가루의 %@": "Levain, %@ of added flour",
     "물 · 소금": "Water · Salt",
     "본반죽 물": "Mixing water",
     "바시나주": "Bassinage",
@@ -155,13 +170,13 @@ private let en: [String: String] = [
     "소금": "Salt",
     "르방": "Levain",
     "르방 종류": "Levain type",
-    "리퀴드 100%": "Liquide 100%",
-    "뒤흐 50%": "Dur 50%",
+    "리퀴드 100%": "Liquid 100%",
+    "뒤흐 50%": "Stiff 50%",
     "르방 무게": "Levain weight",
     "수분율": "Hydration",
-    "르방 밀가루 (표시용)": "Levain flour (display only)",
-    "속 밀가루": "Flour inside",
-    "속 물": "Water inside",
+    "르방 밀가루 (표시용)": "Levain flour type (label only)",
+    "속 밀가루": "Flour in levain",
+    "속 물": "Water in levain",
     "%는 PFF — 총 밀가루 중 르방 속 밀가루의 비율.": "% is PFF — the share of total flour prefermented in the levain.",
     "액체 재료": "Liquids",
     "액체 재료 추가": "Add liquid",
@@ -169,8 +184,11 @@ private let en: [String: String] = [
     "직접 입력": "Custom",
     "우유": "Milk",
     "계란": "Egg",
+    "수분 함량": "Water content",
+    "%@ 수분 함량": "%@ water content",
+    "액체 재료 이름": "Liquid name",
     "우유·계란 등 — 수분율만큼 총 물에 반영됩니다 (USDA 기준: 우유 88%, 계란 76%).":
-        "Milk, eggs, etc. — counted toward total water by their water ratio (USDA: milk 88%, egg 76%).",
+        "Milk, eggs, etc. — counted toward total water by their water content (USDA: milk 88%, egg 76%).",
     "이스트 (선택)": "Yeast (optional)",
     "이스트 종류": "Yeast type",
     "생이스트": "Fresh yeast",
@@ -183,11 +201,19 @@ private let en: [String: String] = [
         "Instant = fresh × 0.4. Counts toward weight and % only, not hydration.",
     "기타 재료": "Other ingredients",
     "이름 (호두, 건포도…)": "Name (walnuts, raisins…)",
+    "재료 (호두…)": "Item (nuts…)",
     "기타 재료 추가": "Add ingredient",
     "무게에만 합산되고 수분 계산에서 제외 — 수분이 있는 재료는 액체 재료로.":
         "Counted toward weight only, excluded from hydration — put moist ingredients under liquids.",
-    "분할": "Dividing",
-    "분할 개수 (0 = 사용 안 함)": "Pieces (0 = off)",
+    "분할": "Divide",
+    "0이면 분할하지 않습니다.": "0 = no dividing",
+    "배율 조정": "Scale recipe",
+    "배율": "Factor",
+    "절반으로 (×½)": "Halve (×½)",
+    "두 배로 (×2)": "Double (×2)",
+    "적용": "Apply",
+    "지금 총 반죽은 %@ g입니다. 모든 재료를 같은 배율로 늘리거나 줄여 수분율·소금·PFF는 그대로입니다.":
+        "The dough is now %@ g. Every ingredient is scaled by the same factor, so hydration, salt and PFF stay the same.",
     "개": "pcs",
     "캉파뉴": "Campagne",
     "새 배합": "New recipe",
@@ -197,6 +223,14 @@ private let en: [String: String] = [
     "빈 배합으로 시작": "Start empty",
     "예시 배합으로 시작 (캉파뉴)": "Start from example (campagne)",
     "입력 모드": "Input mode",
+    "새 배합 시작": "Start a new recipe",
+    "이 배합으로 르방 변환": "Convert this dough's levain",
+    "레시피를 덮어썼습니다": "Recipe overwritten",
+    "'%@' 레시피를 저장했습니다": "Saved '%@'",
+    "전체 배합표를 엽니다": "Opens the full formula",
+    "총 수분율 %@, 총 반죽 %@그램": "Total hydration %@, total dough %@ grams",
+    "밀가루 %@그램, 물 %@그램, 소금 %@그램, 르방 %@그램": "Flour %@ grams, water %@ grams, salt %@ grams, levain %@ grams",
+    "모두 보기…": "Show all…",
 
     // 모드 B
     "목표": "Target",
@@ -212,8 +246,8 @@ private let en: [String: String] = [
         "Solves flour, water, salt, and levain only. Bassinage, liquids, and yeast live in ingredients mode.",
     "역산 결과": "Solved recipe",
     "첨가 밀가루": "Added flour",
-    "르방 리퀴드": "Levain liquide",
-    "르방 뒤흐": "Levain dur",
+    "르방 리퀴드": "Liquid levain",
+    "르방 뒤흐": "Stiff levain",
     "이 조합에서는 첨가 물이 음수(%@ g)가 됩니다. PFF를 낮추거나 총 수분율을 높이세요.":
         "Added water would be negative (%@ g). Lower PFF or raise total hydration.",
     "르방 속 밀가루가 총 밀가루를 초과합니다. PFF를 낮추세요.":
@@ -231,8 +265,21 @@ private let en: [String: String] = [
     "액체": "Liquid",
     "밀가루": "Flour",
     "분할 %@개 — 개당": "Divide by %@ — each",
-    "%@개 × %@ g": "%@ × %@ g",
     "공유": "Share",
+    "%@그램": "%@ grams",
+    "총 수분율 = 총 물 ÷ 총 밀가루. 총 물에는 본반죽 물·바시나주·르방 속 물·액체 재료의 수분이 모두 들어가서, 본반죽 물 ÷ 밀가루로 적은 레시피의 수분율보다 높게 나옵니다.":
+        "Total hydration = total water ÷ total flour. Total water includes mixing water, bassinage, the levain's water and the water in liquids, so it reads higher than recipes that quote water ÷ flour.",
+    "용어 설명": "Glossary",
+    "총 물 ÷ 총 밀가루. 총 물 = 본반죽 물 + 바시나주 + 르방 속 물 + 액체 재료의 수분.":
+        "Total water ÷ total flour. Total water = mixing water + bassinage + the levain's water + the water in liquids.",
+    "르방 속 밀가루 ÷ 총 밀가루 — 미리 발효된 밀가루의 비율.":
+        "Flour in the levain ÷ total flour — the share of flour that is prefermented.",
+    "수분율 100% 안팎의 르방 (밀가루 1 : 물 1). 75% 이상이면 리퀴드로 봅니다.":
+        "A levain at about 100% hydration (flour 1 : water 1). 75% and above counts as liquid.",
+    "수분율 50% 안팎의 단단한 르방 (밀가루 1 : 물 0.5). 75% 미만이면 뒤흐로 봅니다.":
+        "A stiff levain at about 50% hydration (flour 1 : water 0.5). Below 75% counts as stiff.",
+    "본반죽을 섞은 뒤 나눠 넣는 물. 총 물과 총 수분율에 들어갑니다.":
+        "Water added in stages after the main mix. It counts toward total water and total hydration.",
 
     // 저장 시트
     "레시피 저장": "Save recipe",
@@ -261,11 +308,11 @@ private let en: [String: String] = [
     "밀가루 증감 배분": "Flour adjustment",
     "비례 배분": "Pro rata",
     "이름 없음": "Unnamed",
-    "변환 결과 — 재료": "Result — ingredients",
+    "변환 결과 — 재료 (g)": "Result — ingredients (g)",
     "지표": "Metrics",
     "변환 불가": "Cannot convert",
-    "리퀴드": "liquide",
-    "뒤흐": "dur",
+    "리퀴드": "liquid",
+    "뒤흐": "stiff",
     "르방 속 밀가루가 총 밀가루를 초과합니다.": "Flour in the levain exceeds total flour.",
     "본반죽 물이 부족해서 이 수분율로 변환할 수 없습니다.":
         "Not enough mixing water to convert to this hydration.",
@@ -276,11 +323,19 @@ private let en: [String: String] = [
         "ΔF = %@ g — the change in levain flour was taken from added flour and added to mixing water.",
     "목표 조합이 불가능합니다 — 계산기에서 PFF를 낮추세요":
         "This target combination is impossible — lower PFF in the calculator",
+    "예시 배합입니다 — 내 배합을 변환하려면 불러오세요": "This is a sample formula — load your own to convert it",
+    "변환 결과로 이동합니다": "Scrolls to the conversion result",
+    "변환 결과를 새 레시피로 저장했습니다": "Saved the conversion as a new recipe",
+    "%@그램에서 %@그램으로": "%@ grams to %@ grams",
+    "변화 없음": "no change",
+    "%@에서 %@로": "%@ to %@",
+    "보존됨": "preserved",
 
     // 레시피 탭
     "저장된 레시피가 없습니다": "No saved recipes",
-    "계산기에서 배합을 만들고 저장하세요.": "Build a recipe in the calculator and save it.",
-    "이름·태그 검색": "Search name or tags",
+    "사진·텍스트에서 레시피를 가져오거나 계산기에서 만든 배합을 저장하세요. 저장한 레시피에는 굽기마다 날짜·별점·메모를 남길 수 있습니다.":
+        "Import a recipe from a photo or text, or save one you build in the calculator. Each saved recipe keeps a bake log with the date, rating and notes of every bake.",
+    "이름·메모·태그 검색": "Search name, notes or tags",
     "설정": "Settings",
     "JSON 내보내기": "Export JSON",
     "JSON 가져오기": "Import JSON",
@@ -297,6 +352,28 @@ private let en: [String: String] = [
     "되돌릴 수 없습니다.": "This can't be undone.",
     "파일을 읽을 수 없습니다": "Could not read the file",
     "계산기로 불러오기": "Load into calculator",
+    "계산기로 가기": "Go to Calculator",
+    "예시 레시피 추가": "Add sample recipes",
+    "예시": "Sample",
+    "팽 드 캉파뉴": "Pain de campagne",
+    "팽 콩플레 (통밀빵)": "Pain complet (whole wheat)",
+    "바게트 오 르방": "Baguette au levain",
+    "브리오슈 오 르방": "Brioche au levain",
+    "버터": "Butter",
+    "설탕": "Sugar",
+    "정렬": "Sort",
+    "최근 수정": "Recently edited",
+    "최근 구움": "Recently baked",
+    "총 수분율 %@": "Total hydration %@",
+    "총 반죽 %@": "Dough %@",
+    "르방 %@": "Levain %@",
+    "태그 %@": "Tags %@",
+    "수정 %@": "Updated %@",
+    "구운 횟수 %d, 최근 %@": "Bakes %d, last %@",
+    "기록 모두 보기 (%d)": "All bakes (%d)",
+    "변환기로 보내기": "Send to Converter",
+    "배합표 텍스트": "Formula as text",
+    "레시피 파일": "Recipe file",
 
     // 코어 검증 오류
     "레시피가 객체가 아닙니다": "The recipe is not an object",
@@ -322,18 +399,30 @@ private let en: [String: String] = [
     "가져올 레시피가 없습니다": "No recipes to import",
     "%d번째 레시피: %@": "Recipe %d: %@",
 
-    // AI 가져오기
-    "AI로 가져오기": "Import with AI",
+    // 사진·텍스트 가져오기
+    "사진·텍스트에서 가져오기": "Import from photo or text",
+    "가져오기": "Import",
     "사진에서 가져오기": "From photo",
     "텍스트 붙여넣기": "Paste text",
     "텍스트에서 가져오기": "Import from text",
     "레시피 텍스트를 붙여넣으세요": "Paste your recipe text here",
     "분석": "Analyze",
     "인식 중…": "Recognizing…",
+    "텍스트 인식 중…": "Reading text…",
+    "Apple Intelligence로 분석 중…": "Analyzing with Apple Intelligence…",
+    "규칙 결과로 보기": "Use rule-based result",
+    "붙여넣고 분석": "Paste and analyze",
     "가져오기 확인": "Review import",
     "인식 결과를 확인·수정한 뒤 저장하세요.": "Review and edit the recognized recipe, then save.",
     "Apple Intelligence로 분석했습니다.": "Parsed with Apple Intelligence.",
     "규칙 기반으로 분석했습니다.": "Parsed with the built-in rule parser.",
+    "AI 결과가 규칙 분석과 달라 규칙 기반 결과를 표시합니다 — 물·르방 값을 확인하세요":
+        "The AI result didn't match the rule-based parse, so the rule-based result is shown — check the water and levain values.",
+    "본반죽 물이 0 g이고 바시나주만 있습니다 — 원본 텍스트와 대조하세요":
+        "Mixing water is 0 g and only bassinage is set — compare with the original text.",
+    "바시나주가 본반죽 물보다 많습니다": "Bassinage is more than the mixing water.",
+    "만드는 법은 노트로 저장됩니다": "The method is saved as the recipe's notes.",
+    "원본 텍스트를 노트에 넣기": "Put the original text in notes",
     "인식된 원본 텍스트": "Recognized text",
     "가져온 레시피": "Imported recipe",
     "이미지를 읽을 수 없습니다": "Could not read the image",
@@ -372,7 +461,7 @@ private let en: [String: String] = [
     "대기 중": "Ready",
     "레시피·베이킹 로그를 iCloud로 기기 간 동기화합니다. 충돌 시 최신 수정본이 유지됩니다.":
         "Syncs recipes and bake logs across your devices via iCloud. On conflict, the most recent edit wins.",
-    "동기화하지 못했습니다 — 다음에 다시 시도합니다": "Sync failed — will try again later",
+    "동기화하지 못했습니다 (%@) — 다음에 다시 시도합니다": "Sync failed (%@) — will try again later",
     "iCloud에서 라이브러리를 내려받는 중입니다 — 끝나면 동기화합니다":
         "Downloading your library from iCloud — will sync when it finishes",
     "iCloud에서 라이브러리를 내려받지 못했습니다 — 네트워크와 iCloud 저장 공간을 확인하세요. 다시 시도합니다":
@@ -388,45 +477,50 @@ private let en: [String: String] = [
     // 도구 탭
     "도구": "Tools",
     "르방 빌드 계산기": "Levain build",
-    "필요한 르방을 종 + 밀가루 + 물로 역산": "Work back from the levain you need to chef + flour + water",
+    "필요한 르방을 종 + 밀가루 + 물로 역산": "Starter, flour and water to build the levain you need",
     "물 온도 계산기": "Water temperature",
     "목표 반죽 온도(DDT)에 맞는 물 온도": "Water temp for your desired dough temperature (DDT)",
     "타임라인": "Timeline",
-    "오토리즈부터 굽기까지 단계별 시각 + 알림": "Stage-by-stage times from autolyse to bake, with alerts",
+    "르방 빌드부터 굽기까지 단계별 시각 + 알림": "Times for each stage, from levain build to bake, with alerts",
+    "언어 · % 표기 · 표시 자릿수 · iCloud": "Language · Percent display · Precision · iCloud",
     "필요한 르방": "Levain needed",
     "계산기 배합에서 가져오기": "Use levain from calculator",
-    "종 입력": "Chef input",
+    "종 입력": "Starter amount",
     "르방 대비 %": "% of levain",
-    "그램": "grams",
-    "종 비율": "Chef ratio",
-    "종 무게": "Chef weight",
-    "종 수분율 = 르방과 같음": "Chef hydration = same as levain",
-    "종 수분율": "Chef hydration",
-    "종": "Chef",
+    "그램": "Grams",
+    "종 비율": "Starter %",
+    "종 무게": "Starter weight",
+    "종 수분율 = 르방과 같음": "Starter hydration = levain",
+    "종 수분율": "Starter hydration",
+    "종": "Starter",
     "종은 이전 르방(스타터)에서 남긴 씨앗입니다. 보통 르방 무게의 10~20%.":
-        "The chef is the seed kept from your previous levain — typically 10–20% of the levain weight.",
+        "The starter (chef) is the seed kept from your last levain — typically 10–20% of the levain weight.",
     "물": "Water",
-    "비율 (종 : 밀가루 : 물)": "Ratio (chef : flour : water)",
+    "비율 (종 : 밀가루 : 물)": "Ratio (starter : flour : water)",
     "리프레시 배합": "Refresh formula",
     "종을 밀가루·물과 섞어 발효시키면 목표 무게·수분율의 르방이 됩니다.":
-        "Mix the chef with this flour and water; once fermented you have the levain at the target weight and hydration.",
+        "Mix the starter with this flour and water; once fermented you have the levain at the target weight and hydration.",
     "계산 불가": "Cannot compute",
-    "종이 너무 많습니다 — 밀가루나 물이 음수가 됩니다.": "Too much chef — flour or water would be negative.",
-    "최대 종 적용 — %@ g": "Use max chef — %@ g",
+    "종이 너무 많습니다 — 밀가루나 물이 음수가 됩니다.": "Too much starter — flour or water would be negative.",
+    "최대 종 적용 — %@ g": "Use max starter — %@ g",
+    "타임라인에 르방 빌드 넣기 — 피크 알림": "Add levain build to timeline — peak alert",
+    "완성 시각 기준이면 르방 빌드만큼 시작이 앞당겨져 르방을 먹일 시각이 나옵니다. 시작 시각 기준이면 이후 단계가 그만큼 뒤로 밀립니다.":
+        "With a finish time, the start moves earlier by the levain build, showing when to feed the levain. With a start time, every later stage shifts back by that much.",
     "목표 반죽 온도 (DDT)": "Desired dough temp (DDT)",
-    "사워도우는 보통 24~26°C. 벌크 발효 속도를 좌우하는 가장 중요한 변수입니다.":
-        "Sourdough is usually 24–26 °C. It's the biggest lever on bulk fermentation speed.",
+    "온도 단위": "Temperature unit",
+    "사워도우는 보통 %d~%d%@. 벌크 발효 속도를 좌우하는 가장 중요한 변수입니다.":
+        "Sourdough is usually %d–%d %@. It's the biggest lever on bulk fermentation speed.",
     "현재 온도": "Current temperatures",
     "실온": "Room",
-    "르방 사용": "Using levain",
+    "르방 사용": "Dough includes levain",
     "마찰계수": "Friction factor",
     "손반죽": "By hand",
     "스탠드 믹서": "Stand mixer",
-    "믹싱 마찰로 오르는 온도. 손반죽 1~2°C, 스탠드 믹서 6~10°C — 본인 환경에 맞게 조정하세요.":
-        "Heat added by mixing. Hand ≈ 1–2 °C, stand mixer ≈ 6–10 °C — tune to your setup.",
+    "믹싱 마찰로 오르는 온도. 손반죽 %d~%d%@, 스탠드 믹서 %d~%d%@ — 본인 환경에 맞게 조정하세요.":
+        "Heat added by mixing. Hand ≈ %d–%d %@, stand mixer ≈ %d–%d %@ — tune to your setup.",
     "사용할 물 온도": "Water temperature to use",
     "얼음물이 필요합니다 — 얼음을 넣어 물 온도를 맞추세요.": "You'll need iced water — add ice to hit this temperature.",
-    "너무 뜨겁습니다 — 40°C 이상은 르방 활성을 해칠 수 있습니다.": "Too hot — above 40 °C can harm the levain.",
+    "너무 뜨겁습니다 — %d%@ 이상은 르방 활성을 해칠 수 있습니다.": "Too hot — above %d %@ can harm the levain.",
     "결과": "Result",
     "물 온도 = DDT × 4 − (밀가루 + 실온 + 르방 + 마찰계수)": "Water = DDT × 4 − (flour + room + levain + friction)",
     "물 온도 = DDT × 3 − (밀가루 + 실온 + 마찰계수)": "Water = DDT × 3 − (flour + room + friction)",
@@ -444,6 +538,7 @@ private let en: [String: String] = [
     "사용자 단계": "Custom stage",
     "다음 단계: %@": "Next: %@",
     "완성! 빵을 꺼낼 시간": "Done — time to take the bread out",
+    "르방 빌드 끝 — 피크인지 확인하세요": "Levain build done — check that it's at peak",
     "%@ 끝": "%@ finished",
     "기준": "Anchor",
     "시작 시각": "Start time",
@@ -469,10 +564,12 @@ private let en: [String: String] = [
     "모든 단계가 이미 지났습니다": "All stages are already past",
     "시작 시각을 바꾸거나 '지금 시작'을 누른 뒤 다시 예약하세요.":
         "Change the start time or tap 'Start now', then schedule again.",
+    "완성 시각을 늦추거나 '지금 시작'을 누른 뒤 다시 예약하세요.": "Set a later finish time or tap 'Start now', then schedule again.",
     "알림을 예약하지 못했습니다": "Couldn't schedule alerts",
     "잠시 후 다시 시도하세요.": "Please try again in a moment.",
     "내일": "Tomorrow",
     "%d시간 %d분": "%dh %dm",
+    "%d시간": "%dh",
     "%d분": "%d min",
 
     // 설정
@@ -489,6 +586,15 @@ private let en: [String: String] = [
     "표시 자릿수": "Display precision",
     "내부 계산은 항상 full precision — 반올림은 표시에만 적용됩니다.":
         "Internal math is always full precision — rounding applies to display only.",
+    "배합표를 보는 동안 화면 켜두기": "Keep screen on while viewing the formula",
+    "정보": "About",
+    "버전": "Version",
+    "개인정보 처리방침": "Privacy Policy",
+    "지원·문의": "Support",
+    "웹 버전": "Web Version",
+    "앱 평가하기": "Rate Doughmetry",
+    "앱 공유하기": "Share Doughmetry",
+    "광고·계정·추적 없음": "No ads, no accounts, no tracking",
 ]
 
 /// 코어 검증 오류 → 현재 언어 문구

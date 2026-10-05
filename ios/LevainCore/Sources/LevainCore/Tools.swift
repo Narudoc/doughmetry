@@ -87,3 +87,17 @@ public func solveWaterTemperature(_ s: WaterTemperatureSpec) -> Double {
     let known = s.flourTemp + s.roomTemp + (s.levainTemp ?? 0) + s.frictionFactor
     return s.desiredDoughTemp * factors - known
 }
+
+// MARK: - 온도 단위 (°C 저장 · °F 표시)
+
+/// 절대 온도 °C → °F
+public func fahrenheit(fromCelsius c: Double) -> Double { c * 1.8 + 32 }
+
+/// 절대 온도 °F → °C
+public func celsius(fromFahrenheit f: Double) -> Double { (f - 32) / 1.8 }
+
+/// 온도 차(마찰계수 등) °C → °F — 차이라 32를 더하지 않는다
+public func fahrenheitDelta(fromCelsius d: Double) -> Double { d * 1.8 }
+
+/// 온도 차 °F → °C
+public func celsiusDelta(fromFahrenheit d: Double) -> Double { d / 1.8 }

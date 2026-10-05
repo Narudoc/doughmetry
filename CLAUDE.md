@@ -10,6 +10,9 @@ npm test         # Vitest 유닛 테스트
 npm run build    # tsc --noEmit && vite build
 ```
 
+CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift test`·시뮬레이터 앱 빌드·영어 사전(l10n) 검사를 돌린다 (UI 스모크 테스트 `LevainCalcUITests`는 workflow_dispatch에서만). `deploy.yml`은 ios/만 바뀐 푸시를 건너뛴다.
+영어 사전 검사는 로컬에서도 `python3 ios/scripts/check_l10n.py` (L()/LF() 키의 en 항목 누락).
+
 ## 도메인 용어
 
 | 용어 | 기호 | 뜻 |
@@ -37,6 +40,7 @@ npm run build    # tsc --noEmit && vite build
 - 기타 재료(extras)는 무게에만 합산하고 수분 계산에서 제외 — 수분이 있는 재료는 liquids로.
 - 르방에 쓴 밀가루 종류(`levain.flourName`)는 표시용.
 - 모드 B(목표 역산)는 밀가루·물·소금·르방만 역산한다. 바시나주·액체·이스트는 모드 A 전용.
+- 배율 조정 `scaleDough`: 모든 그램 필드(밀가루·본반죽 물·바시나주·소금·르방·액체·이스트·기타)를 k배 — 수분율·소금·PFF·이스트 %·모든 재료 %는 보존, 모드 A 전용, k가 유한한 양수가 아니면 그대로 (dough.ts ↔ Dough.swift).
 
 ## 구조
 
@@ -46,28 +50,32 @@ npm run build    # tsc --noEmit && vite build
 - [src/state.ts](src/state.ts) — 계산기 상태(CalcState)와 레시피 ↔ 배합 변환 헬퍼.
 - [src/lib/recipeParser.ts](src/lib/recipeParser.ts) — 레시피 텍스트 → 배합 규칙 기반 파서. **iOS [RecipeTextParser.swift](ios/LevainCore/Sources/LevainCore/RecipeTextParser.swift)의 이식본 — 파서 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트([recipeParser.test.ts](src/lib/recipeParser.test.ts) ↔ RecipeTextParserTests.swift)를 동일하게 유지할 것.**
 - [src/lib/ocr.ts](src/lib/ocr.ts) — 사진 OCR. tesseract.js를 **사용 시점에만 동적 import** (초기 번들에 포함 금지). 언어 데이터(kor+eng+fra, iOS Vision과 동일)는 CDN에서 지연 로드. iOS는 Vision + Apple Intelligence를 쓰지만 웹은 OCR + 규칙 파서만. 파서의 정규식은 Swift(ICU) 의미에 맞춰 유니코드 단어 경계(lookaround + u 플래그)를 쓴다 — JS `\b`(ASCII)를 쓰지 말 것.
-- AI 가져오기 흐름(저장된 레시피 탭): 사진/텍스트 → `cleanForParsing` → `parseRecipeText` → 확인 다이얼로그([ImportReviewDialog](src/components/recipes/ImportReviewDialog.tsx), 수정 가능) → 저장. 확인 없이 바로 저장하지 말 것.
+- AI 가져오기 흐름(저장된 레시피 탭): 사진/텍스트 → `cleanForParsing` → `parseRecipeText` → 확인 다이얼로그([ImportReviewDialog](src/components/recipes/ImportReviewDialog.tsx), 수정 가능) → 저장. 확인 없이 바로 저장하지 말 것. iOS는 Apple Intelligence 초안을 규칙 결과와 교차 검증해([ImportReconcile.swift](ios/LevainCore/Sources/LevainCore/ImportReconcile.swift)) 어긋나면 규칙 결과를 쓴다.
 - 탭 전환은 hash 기반 (`#calc` / `#convert` / `#recipes`), 라우팅 라이브러리 없음.
 
 ## 컨벤션
 
 - 한국어 UI + 프랑스어 원어 병기 (이탤릭): 르방 리퀴드 *levain liquide*, 총 수분율 *hydratation totale*.
 - 숫자 표시는 `tabular-nums`, 입력은 `inputMode="decimal"`. 터치 타겟 최소 44px(작은 버튼 36px).
-- 색 토큰(tailwind.config.ts): `paper #F5F2EA` 배경 / `ink #22271F` 본문 / `bottle #1E4034` 구조색 / `brass #9A6B32` **계산 결과값 전용** / `line #D9D3C4` 괘선 / `danger #9E3B2F` 오류.
+- 색 토큰(tailwind.config.ts): `paper #F5F2EA` 배경 / `ink #22271F` 본문 / `bottle #1E4034` 구조색 / `brass #8A5C26` **계산 결과값 전용** / `line #D9D3C4` 괘선 / `danger #9E3B2F` 오류.
 - 폰트: 본문·숫자 Pretendard Variable, 디스플레이 Archivo Variable (제목·표 캡션에만).
 - 인쇄는 `.print-only` / `.no-print` 클래스로 제어 — 계산기 탭에서 A4 한 장 fiche technique 출력.
-- **% 표기 기준 설정(`Settings.pctBasis`)은 표시 전용** — `uiPct`/`rebasePct`([src/lib/format.ts](src/lib/format.ts))로 분모만 바꾼다. 계산 코어와 총 수분율·PFF는 항상 총 밀가루 기준 (iOS의 PctBasis와 동일 규칙).
+- 보조 글자는 ink/70·bottle/80 이상 — ink/40~60은 비활성(disabled:)·장식(aria-hidden)에만 ([src/contrast.test.ts](src/contrast.test.ts)가 검사).
+- **% 표기 기준 설정(`Settings.pctBasis`)은 표시 전용** — `uiPct`/`rebasePct`([src/lib/format.ts](src/lib/format.ts))로 분모만 바꾼다. 계산 코어와 총 수분율·PFF는 항상 총 밀가루 기준 (iOS는 LevainCore [Format.swift](ios/LevainCore/Sources/LevainCore/Format.swift)의 `PctBasis`·`uiPct`·`rebasePct`·`uiLevainPct` — 같은 규칙, 양쪽 테스트 벡터도 같다).
 - GitHub Pages `base: '/doughmetry/'` — 저장소명 변경 시 vite.config.ts 수정 (README 참고).
+- 오프라인(PWA): 손으로 쓴 [public/sw.js](public/sw.js) — 동작을 바꾸면 캐시 이름의 버전을 올릴 것. tesseract·jsDelivr는 캐시하지 않고, 내비게이션 대체는 앱 셸에만 (privacy.html·support.html은 대체하지 않는다).
+- [public/privacy.html](public/privacy.html)은 [ios/AppStore/privacy-policy.md](ios/AppStore/privacy-policy.md)와 같은 문구 — 함께 고칠 것.
 
 ## iOS 네이티브 앱 (ios/)
 
-- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+, iPhone 전용.
+- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+ (iOS 17 런타임 확인 전까지 잠정), iPhone(세로 고정)·iPad(네 방향) 네이티브.
 - 계산 코어는 [ios/LevainCore/Sources/LevainCore/Dough.swift](ios/LevainCore/Sources/LevainCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
 - 레시피 JSON 스키마는 웹과 완전 호환 (내보내기/가져오기 양방향). 스키마 변경 시 Codec.swift의 검증·마이그레이션도 함께.
 - JSON 가져오기 병합 규칙은 웹 `mergeImported`([storage.ts](src/lib/storage.ts)) ↔ iOS `LibrarySync.importable`이 같다: 없는 id는 추가, 같은 id는 가져온 `updatedAt`이 같거나 새로울 때만 교체(로컬 `createdAt` 유지). 시각 비교는 웹의 ISO 문법·밀리초 기준 — 한쪽을 바꾸면 양쪽 테스트를 함께.
 - 사진 OCR 조각 → 줄 재조립은 [OCRLayout.swift](ios/LevainCore/Sources/LevainCore/OCRLayout.swift) (재료 | 만드는 법 두 단 카드 분리 포함, iOS 전용).
 - 앱 안 한/영 언어 선택은 사용자 요구라 유지한다 (iOS 앱별 언어 설정으로 대체하지 말 것). 고른 언어는 루트의 `.environment(\.locale, …)`로 날짜·시간 표시까지 따른다. 사용자에게 보이는 문자열은 전부 `L()`/`LF()`로 쓰고 [Localization.swift](ios/LevainCalc/Localization.swift) 영어 사전에 넣을 것.
 - 코어 검증: `cd ios/LevainCore && swift test` (Xcode 필요) 또는 `swift run levain-core-check` (CLT만으로 가능).
+- UI 테스트·스크린샷은 DEBUG 전용 실행 인자 `-uiTestDataDir <경로>`로 저장 위치를 격리한다 (iCloud는 켜지 않음).
 - 저장소는 단일 `library.json`(`LibraryDocument`: recipes + logs(베이킹 로그) + deleted(묘비)). iCloud 동기화 병합은 [LibrarySync.swift](ios/LevainCore/Sources/LevainCore/LibrarySync.swift) — **모든 변이는 `updatedAt`을 갱신하고 삭제는 묘비를 남길 것** (안 그러면 다른 기기에서 되살아나거나 편집이 밀린다). 베이킹 로그는 iOS 전용 기능 (웹 미포팅). Recipe·BakeLog·Tombstone 또는 LibraryDocument(새 최상위 키)에 필드를 추가하면 `LibraryDocument.currentSchemaVersion`을 반드시 올릴 것 — 옛 버전 앱은 자기보다 큰 버전(또는 레시피 schemaVersion)의 iCloud 문서를 보면 합치지도 쓰지도 않는다 (`LibrarySync.decodeReport`). 안 올리면 옛 앱이 모르는 필드를 버린 채 덮어쓴다.
 
 ## iOS 전용 기능 (웹 미포팅 — 웹에 옮길 때 iOS 코어 규칙을 그대로 이식)
@@ -82,3 +90,4 @@ npm run build    # tsc --noEmit && vite build
 
 - 모드 B 역산에 바시나주·액체·이스트 반영
 - 베이킹 로그 사진 첨부, 타임라인 Live Activity/위젯
+- 르방(스타터) 먹이 주기 단독 트래커 — 지금은 타임라인의 르방 빌드 단계 알림으로만

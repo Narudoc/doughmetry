@@ -47,11 +47,11 @@ export function LiquidRows({ rows, onChange, precision, pcts }: Props) {
             unit="%"
             ariaLabel={`${row.name || '액체'} 수분율`}
           />
-          <span className="w-24 shrink-0 text-right text-xs tabular-nums text-ink/60">
+          <span className="w-24 shrink-0 text-right text-xs tabular-nums text-ink/70">
             수분 {fmtGrams(row.grams * row.waterRatio, precision)} g
           </span>
           {pcts && (
-            <span className="w-12 shrink-0 text-right text-xs tabular-nums text-ink/60">
+            <span className="w-12 shrink-0 text-right text-xs tabular-nums text-ink/70">
               {fmtPct(pcts.get(row.id) ?? 0)}
             </span>
           )}

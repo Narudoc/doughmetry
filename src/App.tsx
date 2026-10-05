@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CalculatorPage } from './components/calculator/CalculatorPage';
 import { ConverterPage } from './components/converter/ConverterPage';
 import { RecipesPage } from './components/recipes/RecipesPage';
+import { Fr } from './components/ui/Fr';
 import { ToastStack, useToasts } from './components/ui/Toast';
 import { useHashTab, type TabId } from './hooks/useHashTab';
 import { usePersistedState } from './hooks/usePersistedState';
@@ -27,6 +28,9 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'recipes', label: '저장된 레시피' },
 ];
 
+const FOOTER_LINK =
+  'inline-flex min-h-[36px] items-center underline underline-offset-2 hover:text-bottle';
+
 export interface ConverterSource {
   name: string;
   input: DoughInput;
@@ -51,23 +55,66 @@ export default function App() {
   const [convSource, setConvSource] = useState<ConverterSource | null>(null);
   const convSeq = useRef(0);
 
+  const panelRefs = {
+    calc: useRef<HTMLDivElement>(null),
+    convert: useRef<HTMLDivElement>(null),
+    recipes: useRef<HTMLDivElement>(null),
+  };
+  // 다른 탭에서 넘겨받을 때만 새 탭의 맨 위에서 시작한다 — 탭 버튼·뒤로 가기는 브라우저의 스크롤 복원에 맡긴다
+  const pendingHandoff = useRef<TabId | null>(null);
+  const focusPanel = (t: TabId) => {
+    window.scrollTo({ top: 0 });
+    panelRefs[t].current?.focus({ preventScroll: true });
+  };
+
+  // 첫 화면(계산기)은 index.html의 제목 그대로 — 검색·공유 미리보기가 읽는 제목이다
+  const homeTitle = useRef(document.title);
+  useEffect(() => {
+    const label = TABS.find((t) => t.id === tab)?.label;
+    document.title = tab === 'calc' ? homeTitle.current : `${label} · 도우메트리 Doughmetry`;
+    // hashchange가 비동기로 오므로 이때는 새 탭의 hidden이 이미 풀려 있다
+    if (pendingHandoff.current !== tab) return;
+    pendingHandoff.current = null;
+    focusPanel(tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  const handOff = useCallback(
+    (target: TabId) => {
+      if (tab === target) {
+        focusPanel(target);
+        return;
+      }
+      pendingHandoff.current = target;
+      setTab(target);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tab, setTab],
+  );
+
   const sendToConverter = useCallback(
     (name: string, input: DoughInput) => {
       convSeq.current += 1;
       setConvSource({ name, input, seq: convSeq.current });
-      setTab('convert');
+      handOff('convert');
+      show(`'${name || '이름 없는 배합'}' 배합을 변환기로 불러왔습니다`);
     },
-    [setTab],
+    [handOff, show],
   );
 
   const openInCalculator = useCallback(
     (r: Recipe) => {
       if (isCalcDirty(calc, api.recipes) && !window.confirm(LOAD_OVER_DIRTY_PROMPT)) return;
       setCalc(calcStateFromRecipe(r));
-      setTab('calc');
+      handOff('calc');
       show(`'${r.name}' 레시피를 계산기로 열었습니다`);
     },
-    [calc, api.recipes, setCalc, setTab, show],
+    [calc, api.recipes, setCalc, handOff, show],
+  );
+
+  const markExported = useCallback(
+    () => setSettings((s) => ({ ...s, lastExportAt: new Date().toISOString() })),
+    [setSettings],
   );
 
   return (
@@ -80,7 +127,7 @@ export default function App() {
                 Doughmetry
               </h1>
               <p className="mt-0.5 text-xs text-paper/70">
-                도우메트리 — 사워도우 레시피 계산기 · <span className="italic">pain au levain</span>
+                도우메트리 — 사워도우 레시피 계산기 · <Fr>pain au levain</Fr>
               </p>
             </div>
             <div className="mt-1 flex flex-wrap gap-2 sm:flex-col sm:items-end sm:gap-1">
@@ -151,7 +198,14 @@ export default function App() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-        <div hidden={tab !== 'calc'}>
+        <div
+          ref={panelRefs.calc}
+          hidden={tab !== 'calc'}
+          tabIndex={-1}
+          role="region"
+          aria-label="레시피 계산기"
+          className="outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
           <CalculatorPage
             state={calc}
             onChange={setCalc}
@@ -161,7 +215,14 @@ export default function App() {
             toast={show}
           />
         </div>
-        <div hidden={tab !== 'convert'}>
+        <div
+          ref={panelRefs.convert}
+          hidden={tab !== 'convert'}
+          tabIndex={-1}
+          role="region"
+          aria-label="르방 변환기"
+          className="outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
           <ConverterPage
             source={convSource}
             api={api}
@@ -171,10 +232,18 @@ export default function App() {
             toast={show}
           />
         </div>
-        <div hidden={tab !== 'recipes'}>
+        <div
+          ref={panelRefs.recipes}
+          hidden={tab !== 'recipes'}
+          tabIndex={-1}
+          role="region"
+          aria-label="저장된 레시피"
+          className="outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
           <RecipesPage
             api={api}
             settings={settings}
+            onExportedAll={markExported}
             onOpenInCalculator={openInCalculator}
             onSendToConverter={(r) => sendToConverter(r.name, doughInputFromRecipe(r))}
             toast={show}
@@ -182,11 +251,25 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="no-print mx-auto w-full max-w-5xl px-4 pb-8 text-xs text-ink/50">
-        데이터는 이 브라우저의 localStorage에만 저장됩니다 · JSON 내보내기로 백업하세요
+      <footer className="no-print mx-auto w-full max-w-5xl space-y-1 px-4 pb-8 text-xs text-ink/70">
+        <p>레시피는 이 브라우저에만 저장됩니다 · 저장된 레시피 탭의 '전체 내보내기'로 백업하세요</p>
+        <p>한 번 열어 둔 뒤에는 오프라인에서도 동작합니다 (사진 인식 제외)</p>
+        <nav aria-label="사이트 정보" className="flex flex-wrap gap-x-4">
+          <a href={`${import.meta.env.BASE_URL}privacy.html`} className={FOOTER_LINK}>
+            개인정보 처리방침&nbsp;<i lang="en">Privacy</i>
+          </a>
+          <a href={`${import.meta.env.BASE_URL}support.html`} className={FOOTER_LINK}>
+            지원&nbsp;<i lang="en">Support</i>
+          </a>
+          <a href="https://github.com/Narudoc/doughmetry" className={FOOTER_LINK}>
+            GitHub
+          </a>
+        </nav>
       </footer>
+      {/* 화면 아래 고정 요약 바(SummaryBar, 계산기 탭·모바일)가 푸터 링크를 가리지 않게 */}
+      {tab === 'calc' && <div className="no-print h-20 lg:hidden" aria-hidden="true" />}
 
-      <ToastStack toasts={toasts} />
+      <ToastStack toasts={toasts} raised={tab === 'calc'} />
     </div>
   );
 }
