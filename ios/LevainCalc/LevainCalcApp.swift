@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct LevainCalcApp: App {
+    /// 앱 전체에 하나 — 선택 탭·검색 요청이 창마다 나뉘지 않으므로 iPad도 창 하나로 묶어 둔다
+    /// (LevainCalc-Info.plist의 UIApplicationSupportsMultipleScenes false)
     @State private var model = AppModel()
 
     init() {
@@ -35,7 +37,10 @@ struct LevainCalcApp: App {
 }
 
 /// 하드웨어 키보드 단축키 — ⌘1–4 탭 전환, ⌘F 레시피 검색.
-/// ⌘N·⌘S는 보이는 탭에서만 듣도록 그 탭의 뷰에 단다
+/// ⌘N·⌘S는 보이는 탭에서만 듣도록 그 탭의 뷰에 단다.
+/// UI 테스트에서 실행 뒤 첫 ⌘F가 앱에 오지 않는 것은 앱 문제가 아니다 — XCUITest의 가상 키보드는 키마다 붙었다 떨어지고,
+/// 앱은 키보드가 붙을 때에야 단축키를 시스템에 등록하므로 첫 키는 ⌘F(찾기)를 등록해 둔 SpringBoard가 가져간다.
+/// 실행 전부터 키보드가 붙어 있으면 첫 ⌘F도 앱이 받는다
 private enum Shortcut: CaseIterable {
     case calculator, converter, recipes, tools, search
 

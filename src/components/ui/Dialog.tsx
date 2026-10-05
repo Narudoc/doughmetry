@@ -351,9 +351,11 @@ export function SaveRecipeDialog({
               type="checkbox"
               checked={overwrite}
               onChange={(e) => setOverwrite(e.target.checked)}
-              className="h-4 w-4 accent-[#1E4034]"
+              className="h-4 w-4 shrink-0 accent-[#1E4034]"
             />
-            불러온 레시피에 덮어쓰기
+            <span className="min-w-0 [overflow-wrap:anywhere]">
+              {loadedName ? `'${loadedName}'에 덮어쓰기` : '불러온 레시피에 덮어쓰기'}
+            </span>
           </label>
         )}
       </div>

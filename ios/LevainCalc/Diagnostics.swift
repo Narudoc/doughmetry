@@ -9,6 +9,8 @@ import os
 enum Log {
     static let sync = Logger(subsystem: "com.narudoc.doughmetry", category: "sync")
     static let storage = Logger(subsystem: "com.narudoc.doughmetry", category: "storage")
+    /// AI 초안 시간 초과·기각 사유 (RecipeImporter)
+    static let importer = Logger(subsystem: "com.narudoc.doughmetry", category: "import")
 }
 
 /// 오류의 도메인·코드 — 조정 접근·파일 오류는 진짜 원인을 NSUnderlyingErrorKey에 담아 오므로 그것도 붙인다.

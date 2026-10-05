@@ -16,6 +16,8 @@ public enum ReconcileRejection: Error, Equatable, Sendable {
     case levainMass
     /// 기타 재료 가짓수가 규칙 결과보다 적다
     case extrasMissing
+    /// 액체 재료 가짓수가 규칙 결과보다 적다
+    case liquidsMissing
     /// 규칙 결과엔 이스트가 있는데 초안엔 없다
     case yeastMissing
 }
@@ -53,6 +55,15 @@ public func reconcileAIDraft(
             input.liquids[i].waterRatio = preset.waterRatio
         }
     }
+    // 같은 줄(같은 이름·무게)이면 규칙 결과의 수분 비율(배합표의 '· 수분 N%' 또는 프리셋)이 모델 추정보다 정확하다
+    for i in input.liquids.indices {
+        if let ruled = rules.input.liquids.first(where: {
+            $0.name.caseInsensitiveCompare(input.liquids[i].name) == .orderedSame
+                && abs($0.grams - input.liquids[i].grams) < 0.5
+        }) {
+            input.liquids[i].waterRatio = ruled.waterRatio
+        }
+    }
     if rules.input.yeast.grams > 0, rules.input.yeast.type == .instant {
         input.yeast.type = .instant
     }
@@ -74,6 +85,7 @@ public func reconcileAIDraft(
             return .failure(.levainMass)
         }
         if input.extras.count < rules.input.extras.count { return .failure(.extrasMissing) }
+        if input.liquids.count < rules.input.liquids.count { return .failure(.liquidsMissing) }
         if rules.input.yeast.grams > 0, input.yeast.grams == 0 { return .failure(.yeastMissing) }
     }
     // 모델은 "T65 밀가루"를 "밀가루"로 줄여 적곤 한다 — 같은 줄(같은 무게)을 규칙 파서가 더 길게 읽었으면 그 이름을 쓴다

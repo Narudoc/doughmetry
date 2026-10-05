@@ -4,11 +4,12 @@
  *   사진 인식(tesseract.js)처럼 동적으로 불러오는 청크는 저절로 빠진다.
  * - 화면 이동은 네트워크 우선, 실패하면 받아 둔 셸. 셸 주소(범위 루트·index.html)에만 적용해
  *   privacy.html·support.html 같은 정적 페이지가 앱 화면으로 바뀌지 않게 한다.
- * - 폰트는 쓰일 때 받아 둔다. 다른 출처(jsDelivr의 인식 엔진·언어 데이터)는 건드리지 않는다.
+ * - 폰트는 쓰일 때 받아 둔다. 서비스 워커가 페이지를 맡기 전(첫 방문)에 받은 폰트는 페이지가 주소를 보내 주면 담는다.
+ *   다른 출처(jsDelivr의 인식 엔진·언어 데이터)는 건드리지 않는다.
  * 동작을 바꾸면 캐시 이름의 버전을 올릴 것.
  */
-const SHELL_CACHE = 'doughmetry-shell-v1';
-const FONT_CACHE = 'doughmetry-fonts-v1';
+const SHELL_CACHE = 'doughmetry-shell-v2';
+const FONT_CACHE = 'doughmetry-fonts-v2';
 const FONT_LIMIT = 150;
 
 const SCOPE = new URL(self.registration.scope);
@@ -22,6 +23,7 @@ const EXTRAS = [
 ].map((p) => new URL(p, SCOPE).href);
 
 const inScope = (url) => url.origin === SCOPE.origin && url.pathname.startsWith(SCOPE.pathname);
+const isFont = (url) => /\.woff2?$/.test(url.pathname);
 const isShellPage = (url) =>
   url.pathname === SCOPE.pathname || url.pathname === `${SCOPE.pathname}index.html`;
 
@@ -108,6 +110,11 @@ async function shellFirst(request) {
   return cached || fetch(request);
 }
 
+async function trimFonts(cache) {
+  const keys = await cache.keys();
+  for (const old of keys.slice(0, Math.max(0, keys.length - FONT_LIMIT))) await cache.delete(old);
+}
+
 async function fontFirst(request) {
   const cache = await caches.open(FONT_CACHE);
   const cached = await cache.match(request);
@@ -115,11 +122,38 @@ async function fontFirst(request) {
   const res = await fetch(request);
   if (res.ok) {
     await cache.put(request, res.clone());
-    const keys = await cache.keys();
-    for (const old of keys.slice(0, Math.max(0, keys.length - FONT_LIMIT))) await cache.delete(old);
+    await trimFonts(cache);
   }
   return res;
 }
+
+/** 페이지가 이미 받은 폰트 주소 — 대개 브라우저 HTTP 캐시에서 바로 나온다 */
+async function storeFonts(hrefs) {
+  const cache = await caches.open(FONT_CACHE);
+  for (const href of hrefs.slice(0, FONT_LIMIT)) {
+    let url;
+    try {
+      url = new URL(href);
+    } catch {
+      continue;
+    }
+    url.hash = '';
+    if (!inScope(url) || !isFont(url) || (await cache.match(url.href))) continue;
+    try {
+      const res = await fetch(url.href);
+      if (res.ok) await cache.put(url.href, res);
+    } catch {
+      // 오프라인 등 — 다음 방문에 다시 보낸다
+    }
+  }
+  await trimFonts(cache);
+}
+
+self.addEventListener('message', (event) => {
+  const { data } = event;
+  if (data?.type !== 'cache-fonts' || !Array.isArray(data.urls)) return;
+  event.waitUntil(storeFonts(data.urls.filter((u) => typeof u === 'string')));
+});
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -130,7 +164,7 @@ self.addEventListener('fetch', (event) => {
     if (isShellPage(url)) event.respondWith(navigate(event));
     return;
   }
-  if (/\.woff2?$/.test(url.pathname)) {
+  if (isFont(url)) {
     event.respondWith(fontFirst(request));
     return;
   }

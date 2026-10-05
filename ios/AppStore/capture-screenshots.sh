@@ -5,6 +5,8 @@
 #       ./AppStore/capture-screenshots.sh shot iphone|ipad ko|en 01-convert   # 지금 화면 한 장
 #       ./AppStore/capture-screenshots.sh --print-seed ko|en     # 넣을 예시 library.json만 출력
 #       ./AppStore/capture-screenshots.sh --print-import ko|en   # 클립보드에 넣을 가져오기 예시만 출력
+#       ./AppStore/capture-screenshots.sh --print-shots          # 올릴 파일·규격 목록만 출력
+#       ./AppStore/capture-screenshots.sh --check-shots          # 결과 폴더 검사: 빠진 장(07은 선택)·픽셀 크기·알파 (preflight.sh도 부른다 — 목록·규격의 기준)
 # - 이 스크립트 전용 시뮬레이터('Doughmetry Shots …')를 만들어 언어마다 지우고(erase) 시작한다. 다른 시뮬레이터는 건드리지 않는다.
 # - Debug로 빌드한다: 예시 데이터를 여는 -uiTestDataDir 훅이 DEBUG 전용이고, 그 훅이 iCloud 동기화도 끈다.
 # - 대화형에서는 화면 이동을 사람이 한다 — 단계마다 안내대로 시뮬레이터 화면을 맞춘 뒤 Enter (s = 건너뛰기).
@@ -26,6 +28,7 @@ typeset -A FOLDER=(iphone 6.9-jpg ipad 13-jpg)
 typeset -A SIZE=(iphone 1320x2868 ipad 2064x2752)
 typeset -A LOCALE=(ko ko_KR en en_US)
 SHOTS=(01-convert 02-calculator 03-import 04-timeline 05-bakelog 06-fiche 07-scale)
+SHOTS_OPTIONAL=(07-scale)
 
 # 언어별 예시 라이브러리 (LibraryDocument). 이름·메모가 다른 언어로 섞이면 안 된다 — 스토어 현지화마다 따로 보인다
 seed_json() {
@@ -146,13 +149,48 @@ import_text() {
 instruction() {
   case $1 in
   01-convert) print -r -- "레시피 / Recipes 탭 → 캉파뉴 T65 / Pain de campagne → 변환기로 보내기(⇄ 아이콘) → 목표 '뒤흐 50% / Stiff 50%', 변환 모드 '르방 질량 고정 / Fixed levain mass' 확인 → '변환 결과 — 재료 / Result — ingredients' 표와 보존 지표(✓) 행이 탭 바 위에 다 보이게 스크롤" ;;
-  02-calculator) print -r -- "계산기 / Calculator 탭 → 맨 위로 스크롤, 키보드 닫기. 하단 요약 바가 72.0% / 1740 g / PFF 10%인지 확인 (기본 예시 캉파뉴 / Campagne)" ;;
+  02-calculator) print -r -- "계산기 / Calculator 탭 → 맨 위로 스크롤, 키보드 닫기. 하단 요약 바가 72.0% / 1740.0 g / PFF 10.0%인지 확인 (기본 예시 캉파뉴 / Campagne)" ;;
   03-import) print -r -- "레시피 / Recipes 탭 → 가져오기 버튼 → '텍스트 붙여넣기 / Paste text' → 입력란에 붙여넣기(클립보드에 예시가 있다) → 분석 / Analyze → 확인 시트 맨 위가 Apple Intelligence/규칙 기반 안내인지 확인 (지운 뒤 10분쯤은 시뮬레이터가 Apple Intelligence를 쓸 수 없다고 답해 규칙 기반 안내가 뜬다 — 둘 다 된다) — ⚠ 'AI 결과가 규칙 분석과 달라… / The AI result didn't match…' 경고면 취소하고 다시. 이름·밀가루가 보이게 (iPad 13형은 지표까지). 찍은 뒤 시트는 취소" ;;
   04-timeline) print -r -- "도구 / Tools 탭 → 타임라인 / Timeline → 기준 '완성 시각 / Finish time' → 완성 시각을 내일 오전 10:00 근처로 → 단계 시각이 보이게. 알림 예약은 누르지 않는다" ;;
   05-bakelog) print -r -- "레시피 / Recipes 탭 → 캉파뉴 T65 / Pain de campagne → 별점·베이킹 로그가 보이게 스크롤. 예시 레시피가 없으면 -uiTestDataDir 훅이 빠진 빌드다 (Debug 빌드·AppModel 확인)" ;;
   06-fiche) print -r -- "(다크 모드로 바꿔 두었다) 레시피 / Recipes 탭 → 캉파뉴 T65 / Pain de campagne → 계산기로 불러오기 / Load into calculator → 하단 요약 바(⌃)를 눌러 배합표 시트 / tap the summary bar to open the formula sheet (처음부터 큰 높이로 열린다)" ;;
   07-scale) print -r -- "(선택) 계산기 / Calculator 탭 → 분할 / Divide 섹션의 '배율 조정 / Scale recipe' → 시트에서 배율 / Factor 1.5 입력, 키보드를 닫아 미리보기 '1760.0 g → 2640.0 g (×1.5)'가 보이게 — 06에서 불러온 캉파뉴 T65 / Pain de campagne 기준 (적용은 누르지 않는다)" ;;
   esac
+}
+
+# 한 줄에 '<언어>/<폴더>/<이름>.jpg <가로>x<세로> required|optional' — 경로는 screenshots/ 기준
+print_shots() {
+  local lang kind shot need
+  for lang in ko en; do
+    for kind in iphone ipad; do
+      for shot in $SHOTS; do
+        (( ${SHOTS_OPTIONAL[(Ie)$shot]} )) && need=optional || need=required
+        print -r -- "$lang/${FOLDER[$kind]}/$shot.jpg ${SIZE[$kind]} $need"
+      done
+    done
+  done
+}
+
+check_shots() {
+  local rel want need f got n=0 bad=0
+  while read -r rel want need; do
+    f="$OUT/$rel"
+    if [[ ! -f $f ]]; then
+      [[ $need == optional ]] && continue
+      print -u2 -r -- "  없음: $f"
+      bad=1
+      continue
+    fi
+    n=$((n + 1))
+    got=$(sips -g pixelWidth -g pixelHeight -g hasAlpha "$f" 2>/dev/null \
+      | awk '/pixelWidth/ {w=$2} /pixelHeight/ {h=$2} /hasAlpha/ {a=$2} END {print w "x" h " hasAlpha " a}') || true
+    if [[ $got != "$want hasAlpha no" ]]; then
+      print -u2 -r -- "  규격과 다릅니다: $f ($got — 기대 $want hasAlpha no)"
+      bad=1
+    fi
+  done < <(print_shots)
+  (( !bad )) || return 1
+  print -r -- "스크린샷 ${n}장 규격 확인: $OUT"
 }
 
 latest_ios_runtime() {
@@ -296,14 +334,20 @@ build_app() {
 kind_arg() { [[ ${1:-} == (iphone|ipad) ]] || usage; }
 lang_arg() { [[ ${1:-} == (ko|en) ]] || usage; }
 
+# 출력만 하는 옵션은 시뮬레이터 런타임 없이도 된다 (preflight.sh)
+case ${1:-} in
+--print-seed) lang_arg "${2:-}"; seed_json "$2"; exit ;;
+--print-import) lang_arg "${2:-}"; import_text "$2"; exit ;;
+--print-shots) print_shots; exit ;;
+--check-shots) check_shots; exit ;;
+esac
+
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/doughmetry-shots.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 RUNTIME=${SIM_RUNTIME:-$(latest_ios_runtime)}
 [[ -n $RUNTIME ]] || { print -u2 "iOS 시뮬레이터 런타임이 없습니다"; exit 1; }
 
 case ${1:-all} in
---print-seed) lang_arg "${2:-}"; seed_json "$2"; exit ;;
---print-import) lang_arg "${2:-}"; import_text "$2"; exit ;;
 # 화면 이동을 다른 도구(UI 테스트·시뮬레이터 제어)가 맡을 때: prepare → 화면 맞추기 → shot. 06-fiche 전에는
 # `xcrun simctl ui <UDID> appearance dark`를 직접 켜고, 찍은 뒤 light로 되돌린다
 prepare)

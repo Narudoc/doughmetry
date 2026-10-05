@@ -40,6 +40,7 @@ export function IngredientForm({ input, onChange, stats, precision, basis }: Pro
           onChange={(flours) => onChange({ ...input, flours })}
           addLabel="밀가루 추가"
           namePlaceholder="밀가루"
+          nameExample="예: T65"
           pcts={flourPcts}
           minRows={1}
         />
@@ -60,13 +61,21 @@ export function IngredientForm({ input, onChange, stats, precision, basis }: Pro
             onChange={(water) => onChange({ ...input, water })}
           />
           <NumberField
-            label="바시나주 (bassinage)"
+            label={
+              <>
+                바시나주 <Fr>bassinage</Fr>
+              </>
+            }
             unit="g"
             value={input.bassinage}
             onChange={(bassinage) => onChange({ ...input, bassinage })}
           />
           <NumberField
-            label="소금 (sel)"
+            label={
+              <>
+                소금 <Fr>sel</Fr>
+              </>
+            }
             unit="g"
             value={input.salt}
             onChange={(salt) => onChange({ ...input, salt })}

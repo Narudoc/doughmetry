@@ -37,8 +37,11 @@ export function ficheText(
     `르방 (${levainType} ${levainHydration}%)  ${g(input.levain.grams)}  (${pct(input.levain.grams)})`,
   );
   lines.push(`  ↳ 속 밀가루  ${g(stats.levainFlour)}  (PFF ${fmtPct(stats.pffPct)})`);
+  // 액체는 수분 함량을 밝혀야 다시 가져올 때 이름과 무관하게 액체로 돌아온다 ("꿀  30.0 g  (3.0%) · 수분 17.0%")
   input.liquids.forEach((l, i) => {
-    lines.push(`${l.name || `액체 ${i + 1}`}  ${g(l.grams)}  (${pct(l.grams)})`);
+    lines.push(
+      `${l.name || `액체 ${i + 1}`}  ${g(l.grams)}  (${pct(l.grams)}) · 수분 ${fmtPct(l.waterRatio * 100)}`,
+    );
   });
   if (input.yeast.grams > 0) {
     const yeast = input.yeast.type === 'fresh' ? '생이스트' : '인스턴트 드라이';

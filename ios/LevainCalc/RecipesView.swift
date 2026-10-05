@@ -17,6 +17,12 @@ struct RecipesView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var search = ""
     @State private var searchPresented = false
+    /// ⌘F의 검색 칸 포커스 (iOS 18+ searchFocused) — 17은 isPresented를 닫았다 다시 연다
+    @FocusState private var searchFocused: Bool
+    /// 화면에 있는 목록 수 — 다른 탭이나 열어 둔 상세에서 온 ⌘F는 목록이 뜬 뒤에 포커스를 준다.
+    /// 창 폭 등급이 바뀔 때 새 목록이 뜨는 것과 옛 목록이 지는 것의 순서가 정해져 있지 않아 참/거짓 대신 센다
+    @State private var listsOnScreen = 0
+    @State private var searchFocusPending = false
     /// 마지막으로 받은 ⌘F 요청 — 탭을 처음 그릴 때 이미 올라간 요청은 받고, 목록을 다시 그릴 때는 되풀이하지 않는다
     @State private var handledSearchRequest = 0
     /// 두 열(regular 폭)에서 상세에 보이는 레시피
@@ -51,6 +57,9 @@ struct RecipesView: View {
     /// 이번 가져오기의 모델 세션 — 사진·텍스트를 고르는 순간 미리 데우고, 끝나면 버린다
     @State private var importSession: ImportSession?
     @State private var review: ImportedRecipe?
+    /// 텍스트 시트가 내려가는 동안 나온 결과 — 내려가는 중에 띄운 확인 시트는 iPadOS 18에서 페이지 크기를 무시한다
+    @State private var pendingReview: ImportedRecipe?
+    @State private var textSheetOnScreen = false
     @State private var importSaved = false
     /// 밀어서 삭제를 누른 레시피 id — 확인 뒤에만 지운다
     @State private var pendingDelete: String?
@@ -126,6 +135,7 @@ struct RecipesView: View {
                     }
                 }
                 .navigationSplitViewStyle(.balanced)
+                .modifier(SplitFillsTop())
                 .overlay {
                     if importingAI {
                         importProgress
@@ -214,13 +224,17 @@ struct RecipesView: View {
                 let skipped = importResult?.skipped ?? 0
                 Text(
                     skipped > 0
-                        ? LF("%d개를 가져왔고, %d개는 기기에 같거나 더 새로운 버전이 있어 건너뛰었습니다.", added, skipped)
+                        ? LF("%d개를 가져왔고, %d개는 이미 있는 버전이라 건너뛰었습니다.", added, skipped)
                         : LF("%d개의 레시피를 가져왔습니다.", count: added))
             }
             .sheet(isPresented: $showSettings) {
                 SettingsSheet()
             }
             .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+            // 고르지 않고 닫으면 미리 데운 모델 세션을 버린다
+            .onChange(of: showPhotoPicker) { _, shown in
+                if !shown, photoItem == nil, !importingAI { importSession = nil }
+            }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 photoItem = nil
@@ -231,9 +245,19 @@ struct RecipesView: View {
                     return try await RecipeImporter.importRecipe(from: data, session: session, onStage: onStage)
                 }
             }
+            .onChange(of: showTextSheet) { _, shown in
+                if shown { textSheetOnScreen = true }
+            }
             .sheet(
                 isPresented: $showTextSheet,
-                onDismiss: { if !importingAI { importSession = nil } }
+                onDismiss: {
+                    textSheetOnScreen = false
+                    if let pending = pendingReview {
+                        pendingReview = nil
+                        review = pending
+                    }
+                    if !importingAI { importSession = nil }
+                }
             ) {
                 TextImportSheet(initialText: textSeed) { text in
                     runImport { session, onStage in
@@ -244,10 +268,10 @@ struct RecipesView: View {
             .sheet(item: $review) { imported in
                 ImportReviewSheet(imported: imported) { name, input, note, pieces in
                     let now = isoNow()
-                    model.save(
-                        Recipe(
-                            name: name, note: note, createdAt: now, updatedAt: now, input: input,
-                            pieces: pieces))
+                    let recipe = Recipe(
+                        name: name, note: note, createdAt: now, updatedAt: now, input: input, pieces: pieces)
+                    model.save(recipe)
+                    if windowIsRegular { selectedID = recipe.id }
                     importSaved.toggle()
                 }
             }
@@ -258,6 +282,13 @@ struct RecipesView: View {
                 // 빈 라이브러리엔 검색 칸이 없다 — 켜 두면 첫 레시피가 생길 때 검색이 저절로 열린다
                 guard !model.recipes.isEmpty else { return }
                 splitVisibility = .all
+                // 한 열에서 상세를 열어 둔 채면 목록으로 돌아간다 — 가려진 목록에서 검색만 켜 두면 뒤로 갈 때 키보드가 올라온다
+                if !windowIsRegular, !compactPath.isEmpty { compactPath = NavigationPath() }
+                if #available(iOS 18, *) {
+                    // 검색을 닫았다 다시 여는 길은 탭 전환과 엇갈려 포커스를 놓친다 — 포커스만 준다
+                    if listsOnScreen > 0 { searchFocused = true } else { searchFocusPending = true }
+                    return
+                }
                 guard searchPresented else {
                     searchPresented = true
                     return
@@ -283,18 +314,37 @@ struct RecipesView: View {
             emptyState
         } else {
             let rows = filtered
-            List {
-                ForEach(rows) { recipe in
-                    row(recipe)
+            searchFocusTracking(
+                List {
+                    ForEach(rows) { recipe in
+                        row(recipe)
+                    }
                 }
-            }
-            .overlay { noResults(rows) }
-            .readableFormWidth()
-            .searchable(
-                text: $search, isPresented: $searchPresented,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: L("이름·메모·태그 검색"))
+                .overlay { noResults(rows) }
+                .readableFormWidth()
+                .searchable(
+                    text: $search, isPresented: $searchPresented,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: L("이름·메모·태그 검색"))
+            )
         }
+    }
+
+    /// 검색 칸 포커스를 잇고, 목록이 화면에 들어온 뒤에 기다리던 ⌘F 포커스를 준다. 화면을 떠날 때 포커스를 내려 두어야
+    /// 다음 ⌘F의 true가 바뀐 값으로 들어간다
+    private func searchFocusTracking<Content: View>(_ list: Content) -> some View {
+        list
+            .modifier(SearchFocusBinding(focused: $searchFocused))
+            .onAppear {
+                listsOnScreen += 1
+                guard searchFocusPending else { return }
+                searchFocusPending = false
+                searchFocused = true
+            }
+            .onDisappear {
+                listsOnScreen = max(0, listsOnScreen - 1)
+                searchFocused = false
+            }
     }
 
     /// 두 열의 목록 — 검색은 목록 열 안에 둔다. 화면 전체 폭 검색(.toolbar 배치 포함)은 검색 중에 탭 막대를 가린다.
@@ -302,18 +352,22 @@ struct RecipesView: View {
     @ViewBuilder
     private var splitContent: some View {
         if model.recipes.isEmpty {
-            emptyState
+            // 들여오는 길(emptyState)은 넓은 상세 열에 — 좁은 목록 열에선 설명이 여러 줄로 접힌다
+            ContentUnavailableView(L("저장된 레시피가 없습니다"), systemImage: "book.closed")
         } else {
             let rows = filtered
-            List {
-                ForEach(rows) { recipe in
-                    sidebarRow(recipe)
+            searchFocusTracking(
+                List {
+                    ForEach(rows) { recipe in
+                        sidebarRow(recipe)
+                    }
                 }
-            }
-            .overlay { noResults(rows) }
-            .searchable(
-                text: $search, isPresented: $searchPresented, placement: sidebarSearchPlacement,
-                prompt: L("이름·메모·태그 검색"))
+                .overlay { noResults(rows) }
+                .searchable(
+                    text: $search, isPresented: $searchPresented, placement: sidebarSearchPlacement,
+                    prompt: L("이름·메모·태그 검색"))
+            )
+            .modifier(SearchKeepsTitleBar())
         }
     }
 
@@ -336,6 +390,8 @@ struct RecipesView: View {
             ContentUnavailableView(
                 L("레시피를 고르세요"), systemImage: "book.closed",
                 description: Text(L("왼쪽 목록에서 레시피를 고르면 배합표와 베이킹 로그가 여기에 보입니다.")))
+        } else {
+            emptyState
         }
     }
 
@@ -430,7 +486,7 @@ struct RecipesView: View {
                 Label(L("설정"), systemImage: "gearshape")
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: actionPlacement) {
             Button {
                 showImportDialog = true
             } label: {
@@ -453,7 +509,7 @@ struct RecipesView: View {
                 importChoices
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: actionPlacement) {
             Menu {
                 // 정렬은 막대에 따로 두지 않는다 — iPad 세로·영어나 접근성 크기에서 가져오기 버튼까지 시스템 '더 보기'로 밀어낸다.
                 // 하위 메뉴로 둔다: 메뉴 안 Section 제목은 Picker와 함께면 보이지 않아 '이름' 같은 항목만 덩그러니 남는다
@@ -487,6 +543,15 @@ struct RecipesView: View {
                 Label(L("더 보기"), systemImage: "ellipsis.circle")
             }
         }
+    }
+
+    /// iPadOS 18의 떠 있는 탭 막대는 세로 화면에서 목록 열 막대를 덮는다 — 그 밑의 버튼을 누르면 탭이 바뀐다.
+    /// 탭 막대는 글자 크기·창 폭에 따라 넓어져 위 막대의 어느 자리든 덮일 수 있으니 목록 열 아래 막대로 내린다.
+    /// 17은 탭 막대가 아래에 있고, 26부터는 탭 막대가 목록 열 막대를 비켜 간다
+    private var actionPlacement: ToolbarItemPlacement {
+        if #available(iOS 26, *) { return .topBarTrailing }
+        if #available(iOS 18, *), windowIsRegular { return .bottomBar }
+        return .topBarTrailing
     }
 
     /// 가져오기 버튼에 글자를 빼는 곳 — 두 열의 좁은 목록 열, 그리고 막대 글자가 글자 크기를 따라 커지는 iOS 17·18의
@@ -575,12 +640,15 @@ struct RecipesView: View {
         Button(L("취소"), role: .cancel) {}
     }
 
-    /// 예시 배합을 라이브러리에 넣는다 — 일반 저장과 같은 경로(updatedAt 갱신, 지웠던 예시의 묘비 해제)
+    /// 예시 배합을 라이브러리에 넣는다 — 고정 시각(epoch)으로 touch 없이. 지금 시각이면 같은 id의 예시를 다른 기기에서
+    /// 고치거나 지운 것을 iCloud 병합이 되돌린다. 지웠던 예시는 save가 묘비 뒤로 밀어 되살린다
     private func addSamples() {
+        let samples = SampleRecipes.make(now: SampleRecipes.epoch, localize: L)
         // save는 맨 앞에 넣으므로 역순으로 — 정의한 순서대로 보인다
-        for recipe in SampleRecipes.make(now: isoNow(), localize: L).reversed() {
-            model.save(recipe)
+        for recipe in samples.reversed() where !model.recipes.contains(where: { $0.id == recipe.id }) {
+            model.save(recipe, touch: false)
         }
+        if windowIsRegular, let first = samples.first { selectedID = first.id }
         importSaved.toggle()
     }
 
@@ -621,7 +689,7 @@ struct RecipesView: View {
             -> ImportedRecipe
     ) {
         // 인식 중이거나 확인 시트가 열려 있으면 새 결과가 그것을 덮어쓴다
-        guard !importingAI, review == nil else { return }
+        guard !importingAI, review == nil, pendingReview == nil else { return }
         importingAI = true
         let session = importSession
         importTask = Task { @MainActor in
@@ -634,7 +702,7 @@ struct RecipesView: View {
             do {
                 let result = try await work(session) { importStage = $0 }
                 guard !Task.isCancelled else { return }
-                review = result
+                if textSheetOnScreen { pendingReview = result } else { review = result }
             } catch let error as ImportError {
                 guard !Task.isCancelled else { return }
                 switch error {
@@ -679,11 +747,53 @@ struct RecipesView: View {
     }
 }
 
+/// 검색 칸 포커스 바인딩 — searchFocused는 iOS 18+
+private struct SearchFocusBinding: ViewModifier {
+    let focused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.searchFocused(focused)
+        } else {
+            content
+        }
+    }
+}
+
+/// iPadOS 18의 목록 열에서 검색을 시작하면 검색 칸이 막대 자리로 올라가 취소 버튼이 떠 있는 탭 막대 밑에 깔린다 —
+/// 막대를 그대로 두고 그 아래에서 검색한다. 17(아래 탭 막대)·26+(막대를 비켜 감)은 그대로
+private struct SearchKeepsTitleBar: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+        } else if #available(iOS 18, *) {
+            content.searchPresentationToolbarBehavior(.avoidHidingContent)
+        } else {
+            content
+        }
+    }
+}
+
+/// iOS 27에서 두 열은 처음 그릴 때만 위 탭 막대 아래에서 시작하고(그 위는 흰 띠), 회전·탭 왕복 뒤엔 화면 위까지 올라간다 —
+/// 늘 위까지 둔다. 탭 막대는 열마다 내비게이션 막대가 안전 영역을 따라 비킨다. 26의 떠 있는 목록 열은 처음부터 같은 자리다
+private struct SplitFillsTop: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 27, *) {
+            content.ignoresSafeArea(.container, edges: .top)
+        } else {
+            content
+        }
+    }
+}
+
 struct RecipeRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
     let recipe: Recipe
     let precision: Precision
+
+    /// 손대지 않은 예시 레시피는 updatedAt이 옛 기준 시각(SampleRecipes.epoch)이라 수정 날짜를 보이지 않는다
+    private var edited: Bool { LibrarySync.isNewer(recipe.updatedAt, than: SampleRecipes.epoch) }
 
     var body: some View {
         let stats = computeStats(recipe.doughInput)
@@ -720,10 +830,12 @@ struct RecipeRow: View {
                 }
             }
             metaLayout {
-                Text(fmtDay(iso: recipe.updatedAt))
-                    .lineLimit(1)
+                if edited {
+                    Text(fmtDay(iso: recipe.updatedAt))
+                        .lineLimit(1)
+                }
                 if let bake {
-                    if !ax { Text("·") }
+                    if !ax, edited { Text("·") }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: "flame")
                         Text(LF("%d회 구움 · 최근 %@", bake.count, fmtDay(iso: bake.latestBakedAt)))
@@ -751,7 +863,7 @@ struct RecipeRow: View {
         if let tags = recipe.tags, !tags.isEmpty {
             parts.append(LF("태그 %@", tags.joined(separator: ", ")))
         }
-        parts.append(LF("수정 %@", fmtSpokenDate(recipe.updatedAt)))
+        if edited { parts.append(LF("수정 %@", fmtSpokenDate(recipe.updatedAt))) }
         if let bake {
             parts.append(LF("구운 횟수 %d, 최근 %@", bake.count, fmtSpokenDate(bake.latestBakedAt)))
         }

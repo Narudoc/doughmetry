@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 const inputBase =
   'w-full min-h-[44px] rounded border border-line bg-white px-3 text-base ' +
@@ -20,7 +21,8 @@ export function formatForEdit(v: number): string {
 }
 
 interface NumberFieldProps {
-  label?: string;
+  /** 프랑스어 병기(<Fr>)처럼 요소가 섞인 라벨은 그 글자 그대로 입력 칸의 이름이 된다 */
+  label?: ReactNode;
   value: number;
   onChange: (v: number) => void;
   unit?: string;
@@ -44,6 +46,9 @@ export function NumberField({
   const [text, setText] = useState(() => formatForEdit(value));
   const [focused, setFocused] = useState(false);
   const pointerFocus = useRef(false);
+  const labelId = useId();
+  // 단위(g·%)까지 이름에 섞이지 않도록 감싼 <label> 전체가 아니라 라벨 글자만 이름으로 쓴다
+  const name = ariaLabel ?? (typeof label === 'string' ? label : undefined);
 
   useEffect(() => {
     if (!focused) setText(formatForEdit(value));
@@ -67,7 +72,8 @@ export function NumberField({
         inputMode="decimal"
         value={text}
         placeholder="0"
-        aria-label={ariaLabel ?? label}
+        aria-label={name}
+        aria-labelledby={name === undefined && label ? labelId : undefined}
         disabled={disabled}
         onPointerDown={(e) => {
           pointerFocus.current = document.activeElement !== e.currentTarget;
@@ -106,7 +112,9 @@ export function NumberField({
   if (!label) return <div className={className}>{input}</div>;
   return (
     <label className={`block ${className}`}>
-      <span className="mb-1 block text-xs font-medium text-ink/70">{label}</span>
+      <span id={labelId} className="mb-1 block text-xs font-medium text-ink/70">
+        {label}
+      </span>
       {input}
     </label>
   );

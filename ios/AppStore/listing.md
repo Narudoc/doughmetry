@@ -122,7 +122,7 @@ KR 설명의 물 온도 줄에는 °F를 넣지 않는다 — 한국 사용자�
 | # | 파일 | 화면 | 캡션 KR | 캡션 EN |
 |---|---|---|---|---|
 | 1 | `01-convert` | 레시피 탭의 캉파뉴 T65 / Pain de campagne(르방 리퀴드 100%)를 '변환기로 보내기' → 목표 뒤흐 50%, 르방 질량 고정. '변환 결과 — 재료' 표와 보존 지표(✓) 행이 탭 바 위에 다 보이게 스크롤 | 르방만 바꾸고, 반죽은 그대로 | Switch levain. Keep the dough. |
-| 2 | `02-calculator` | 계산기: 기본 예시 캉파뉴(T65 900 · 물 620 · 소금 20 · 르방 200 g @100%) + 하단 요약 바 72.0% / 1740 g / PFF 10% | 총 밀가루 기준, 실시간 계산 | Total-flour math, live |
+| 2 | `02-calculator` | 계산기: 기본 예시 캉파뉴(T65 900 · 물 620 · 소금 20 · 르방 200 g @100%) + 하단 요약 바 72.0% / 1740.0 g / PFF 10.0% | 총 밀가루 기준, 실시간 계산 | Total-flour math, live |
 | 3 | `03-import` | 레시피 탭 → 가져오기 → 텍스트 붙여넣기(스크립트가 클립보드에 넣어 둔 예시) → 분석 → 확인 시트(맨 위가 Apple Intelligence/규칙 기반 안내 — 'AI 결과가 규칙 분석과 달라…' 경고면 다시). 이름·밀가루가 보이게(iPad 13형은 지표까지) | 사진·텍스트로 레시피 가져오기 | Recipe from a photo or text |
 | 4 | `04-timeline` | 도구 → 타임라인, 기준 '완성 시각', 단계 시각·버튼이 UI 언어로 (en은 `2:10 PM` 꼴과 `Edit`, ko는 `오후 2:10` 꼴과 `편집`) | 빵 나올 시각부터 거꾸로 | Plan back from bread time |
 | 5 | `05-bakelog` | 레시피 탭 → 캉파뉴 T65 / Pain de campagne 상세: 별점과 베이킹 로그 메모 (스크립트의 예시 데이터) | 굽기마다 별점·메모 | Rate and note every bake |
@@ -142,16 +142,16 @@ ASC `앱 심사 정보 > 메모 (Notes)`(4000바이트)에 아래 블록을 그�
 - 레시피 탭의 "사진·텍스트에서 가져오기": 사진은 기기 안 Apple Vision으로 글자를 읽고, 사진·붙여넣은 텍스트 모두 규칙 기반 파서로 재료를 채웁니다. Apple Intelligence를 쓸 수 있는 기기(iOS·iPadOS 26 이상, 지원 하드웨어·설정)에서는 온디바이스 모델로 더 정확하게 분석합니다. 기능은 같고 정확도만 다르며, 어느 경우든 저장 전에 확인 시트를 거칩니다.
 - iCloud는 사용자 본인의 iCloud Documents 컨테이너(iCloud.com.narudoc.doughmetry)만 사용하며 개발자 서버는 없습니다. iCloud에 로그인하지 않아도 앱은 정상 동작합니다.
 - 알림은 도구 탭 타임라인의 로컬 알림(UNUserNotificationCenter)만 사용합니다.
-- 레시피 탭이 비어 있으면 '예시 레시피 추가' 버튼으로 베이킹 로그와 변환을 바로 볼 수 있습니다.
-- 테스트용 레시피: 계산기 탭에서 밀가루 1000, 물 700, 소금 20, 르방 200(리퀴드 100%)을 입력하면 총 수분율 72.7%, PFF 9.1%, 총 반죽 1920 g이 표시됩니다.
+- 레시피 탭이 비어 있으면 "예시 레시피 추가" 버튼으로 예시 레시피 4개가 들어가 변환기·계산기를 바로 써 볼 수 있습니다 (레시피 상세에서 베이킹 로그를 새로 기록할 수 있습니다).
+- 테스트용 레시피: 계산기 탭에서 밀가루 1000, 물 700, 소금 20, 르방 200(리퀴드 100%)을 입력하면 총 수분율 72.7%, PFF 9.1%, 총 반죽 1920.0 g이 표시됩니다.
 
 - No account or sign-in. Everything works offline (the app makes no network requests; only the links in Settings open Safari).
 - Supports iPhone and iPad (iPad in all orientations and Split View).
 - "Import from photo or text" in the Recipes tab: photos are read with on-device Apple Vision text recognition, and a rule-based parser fills in the ingredients from photos or pasted text. On devices with Apple Intelligence (iOS/iPadOS 26 or later, supported hardware and settings) an on-device model improves accuracy. The feature is the same either way, and every import goes through a review sheet before saving.
 - iCloud uses only the user's own iCloud Documents container (iCloud.com.narudoc.doughmetry); there is no developer server. The app works without an iCloud sign-in.
 - Notifications are local only (timeline stages in the Tools tab).
-- If the Recipes tab is empty, its sample-recipes button shows the bake log and conversion right away.
-- Test recipe: Calculator tab → flour 1000, water 700, salt 20, levain 200 (liquid, 100%) shows total hydration 72.7%, PFF 9.1%, total dough 1920 g.
+- If the Recipes tab is empty, "Add sample recipes" adds four recipes so you can try the converter and calculator right away (open one to add a bake-log entry).
+- Test recipe: Calculator tab → flour 1000, water 700, salt 20, levain 200 (liquid, 100%) shows total hydration 72.7%, PFF 9.1%, total dough 1920.0 g.
 ```
 
 (수치 검산: 르방 200 g @100% → 르방 속 밀가루 100, 물 100. 총 밀가루 1100, 총 물 800 → 800/1100 = 72.73%, PFF 100/1100 = 9.09%, 총 반죽 1000 + 700 + 20 + 200 = 1920 g.)

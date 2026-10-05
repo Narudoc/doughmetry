@@ -26,7 +26,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 이미지에 든 가장 새 정식 Xcode — Xcode 27이 이미지에 들어오면 저절로 그것을 쓴다
       - name: Select Xcode
@@ -66,7 +66,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode
         run: |
@@ -93,10 +93,10 @@ jobs:
           xcodebuild test -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
             -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/dd" \
             -resultBundlePath "$RUNNER_TEMP/LevainCalcUITests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO -only-testing:LevainCalcUITests
+            -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO -only-testing:LevainCalcUITests
 
       # 탭별 스크린샷(한국어·영어)이 결과 번들에 첨부돼 있다
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: LevainCalcUITests.xcresult
@@ -115,7 +115,7 @@ jobs:
       matrix:
         ios: ['17.5', '18.2']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode
         run: |
@@ -184,7 +184,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/LevainCalcUITests-ios${{ matrix.ios }}.xcresult" \
             -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO -only-testing:LevainCalcUITests
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.ui_tests }}
         with:
           name: LevainCalcUITests-ios${{ matrix.ios }}.xcresult

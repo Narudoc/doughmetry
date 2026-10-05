@@ -22,8 +22,8 @@ export interface RecipesApi {
   writeFailed: boolean;
   /** 쓰기 실패 횟수 — 실패할 때마다 늘어나므로 알림을 띄우는 데 쓴다 */
   writeFailCount: number;
-  /** upsert — 같은 id가 있으면 덮어쓰기(createdAt 유지), 없으면 추가 */
-  save(recipe: Recipe): void;
+  /** upsert — 같은 id가 있으면 덮어쓰기(createdAt 유지), 없으면 추가. 저장소에 썼으면 true */
+  save(recipe: Recipe): boolean;
   rename(id: string, name: string): void;
   duplicate(id: string): void;
   remove(id: string): void;
@@ -42,6 +42,7 @@ export function useRecipes(): RecipesApi {
     latest.current = next;
     setList(next);
     if (!next.persisted) setWriteFailCount((n) => n + 1);
+    return next.persisted;
   }, []);
 
   // 다른 탭에서 바뀐 목록을 화면에 반영 (key가 null이면 저장소 전체가 비워진 것)
@@ -57,7 +58,7 @@ export function useRecipes(): RecipesApi {
 
   const save = useCallback(
     (recipe: Recipe) => {
-      mutate((prev) => {
+      const persisted = mutate((prev) => {
         const now = new Date().toISOString();
         const existing = prev.find((p) => p.id === recipe.id);
         const next: Recipe = {
@@ -67,7 +68,8 @@ export function useRecipes(): RecipesApi {
         };
         return existing ? prev.map((p) => (p.id === next.id ? next : p)) : [...prev, next];
       });
-      if (latest.current.persisted) requestPersistentStorage();
+      if (persisted) requestPersistentStorage();
+      return persisted;
     },
     [mutate],
   );

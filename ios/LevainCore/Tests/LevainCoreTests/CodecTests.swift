@@ -96,6 +96,62 @@ struct CodecTests {
         #expect(RecipeCodec.salvageRecipes(json).isEmpty)
     }
 
+    /// storage.test.ts의 같은 벡터 — 웹 validateRecipe와 같은 판정이어야 한다 (한쪽을 바꾸면 함께)
+    @Test("JSON true/false는 숫자로 받지 않고 schemaVersion은 정수만 받는다 (웹과 같은 판정)")
+    func booleansAndFractionalVersionLikeWeb() throws {
+        func validate(_ json: String) throws -> RecipeCodec.ValidationResult {
+            RecipeCodec.validate(try JSONSerialization.jsonObject(with: Data(json.utf8)))
+        }
+        let rejected: [(json: String, kind: CodecError.Kind)] = [
+            (
+                #"{"schemaVersion":2.5,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}"#,
+                .unsupportedSchemaVersion
+            ),
+            (
+                #"{"schemaVersion":true,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}"#,
+                .unsupportedSchemaVersion
+            ),
+            (
+                #"{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"water":620,"salt":true,"levain":{"type":"liquide","hydration":1,"grams":200}}"#,
+                .saltInvalid
+            ),
+            (
+                #"{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"extras":[{"grams":true}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}"#,
+                .rowGramsInvalid(field: "extras", index: 0)
+            ),
+            (
+                #"{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":true,"grams":200}}"#,
+                .levainHydrationInvalid
+            ),
+        ]
+        for (json, kind) in rejected {
+            guard case .bad(let error) = try validate(json) else {
+                Issue.record("거부되어야 한다: \(json)")
+                continue
+            }
+            #expect(error.kind == kind, "\(json)")
+        }
+
+        // 1.0은 정수 1이다 (웹 JSON.parse도 1로 읽는다)
+        let v1 = try validate(
+            #"{"schemaVersion":1.0,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}"#
+        )
+        guard case .ok(let migrated) = v1 else {
+            Issue.record("schemaVersion 1.0은 통과해야 한다")
+            return
+        }
+        #expect(migrated.schemaVersion == 2)
+        // 선택 숫자 필드의 true는 거부하지 않고 없는 값으로 둔다
+        let withPieces = try validate(
+            #"{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200},"pieces":true}"#
+        )
+        guard case .ok(let r) = withPieces else {
+            Issue.record("pieces: true는 통과해야 한다")
+            return
+        }
+        #expect(r.pieces == nil)
+    }
+
     @Test("웹 내보내기 형식({app, recipes:[…]})을 읽는다")
     func webEnvelope() throws {
         let json = """

@@ -99,9 +99,14 @@ func ficheText(
 ) -> String {
     let stats = stats ?? computeStats(input)
     var lines = ["〔\(name.isEmpty ? L("배합표") : name)〕 fiche technique", ""]
+    // 액체 행은 input.liquids 순서 그대로 — 수분 함량을 밝혀야 다시 가져올 때 이름과 무관하게 액체로 돌아온다
+    var liquids = input.liquids.makeIterator()
     for r in ficheRows(input: input, stats: stats, basis: basis, precision: precision) {
         if r.kind == .levainFlour {
             lines.append("  ↳ \(L("속 밀가루"))  \(r.gramsText) g  (PFF \(r.pctText ?? ""))")
+        } else if r.kind == .liquid, let liquid = liquids.next() {
+            lines.append(
+                "\(r.name)  \(r.gramsText) g  (\(r.pctText ?? "")) · \(L("수분")) \(fmtPct(liquid.waterRatio * 100))")
         } else if let pct = r.pctText {
             lines.append("\(r.name)  \(r.gramsText) g  (\(pct))")
         } else {

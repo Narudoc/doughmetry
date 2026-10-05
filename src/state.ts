@@ -205,20 +205,86 @@ export function calcSnapshot(s: CalcState): string {
  * 계산기에 저장하지 않은 입력이 있는가 — 불러오기가 덮어쓰기 전에 확인한다 (iOS AppModel.calcIsDirty와 같은 판단).
  * 마지막으로 불러오거나 저장한 상태와 같으면 깨끗하다. 그 기록이 없으면(예전 draft) 연결된 레시피를 불러온 상태나
  * 처음 기본 배합과 비교한다.
- * 목표 역산(모드 B) 입력은 레시피에 저장되지 않으므로 모드 B는 항상 저장하지 않은 입력으로 본다.
+ * 모드 B 저장은 화면에 없는 모드 A 입력이 마지막 기준과 같을 때만 기준을 새로 잡는다(calcStateAfterSave) —
+ * 그 밖의 모드 B는 목표 역산 입력이 레시피에 남지 않으므로 저장하지 않은 입력으로 본다.
  */
 export function isCalcDirty(state: CalcState, recipes: Recipe[]): boolean {
   const linked = state.recipeId ? recipes.find((r) => r.id === state.recipeId) : undefined;
   // 연결된 레시피가 지워졌으면 그 내용은 계산기에만 남아 있다 — 불러오기 전에 묻는다
   if (state.recipeId && !linked) return true;
-  // 마지막으로 불러오거나 저장한 그대로면 깨끗하다 (모드 B 저장·목표 입력을 바꾼 채 저장·레시피 이름 변경 포함)
+  // 마지막으로 불러오거나 저장한 그대로면 깨끗하다 (모드 A 입력을 고치지 않은 모드 B 저장·목표 입력을 바꾼 채 저장·레시피 이름 변경 포함)
   if (state.savedSnapshot !== undefined && calcSnapshot(state) === state.savedSnapshot) return false;
   if (state.mode !== 'A') return true;
+  const saved = parseSnapshot(state.savedSnapshot);
+  // 기준 기록과 다른데 이어진 레시피가 없으면 그 내용은 계산기에만 있다
+  if (saved && !linked) return true;
+  // 레시피엔 목표 역산 입력이 없다 — 기준의 목표와 다르면 불러오거나 저장한 뒤 고친 것
   const base = linked ? calcStateFromRecipe(linked) : defaultCalcState();
   return (
     state.name !== base.name ||
     state.pieces !== base.pieces ||
-    stableJson(state.target) !== stableJson(base.target) ||
+    stableJson(state.target) !== stableJson(saved ? saved.target : base.target) ||
     doughContent(state.input) !== doughContent(base.input)
   );
+}
+
+/** calcSnapshot으로 남긴 기준 기록 — 없거나 읽을 수 없으면 undefined */
+function parseSnapshot(snapshot: string | undefined): { input?: unknown; pieces?: unknown; target?: unknown } | undefined {
+  if (snapshot === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(snapshot);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 마지막으로 불러오거나 저장한 모드 A 배합의 내용과 분할 개수 — 그 기록이 없으면 isCalcDirty처럼 연결된 레시피나
+ * 처음 기본 배합. 알 수 없으면 undefined
+ */
+function baselineModeA(state: CalcState, recipes: Recipe[]): { input?: string; pieces?: number } {
+  if (state.savedSnapshot !== undefined) {
+    const saved = parseSnapshot(state.savedSnapshot);
+    return {
+      input: typeof saved?.input === 'string' ? saved.input : undefined,
+      pieces: typeof saved?.pieces === 'number' ? saved.pieces : undefined,
+    };
+  }
+  const linked = state.recipeId ? recipes.find((r) => r.id === state.recipeId) : undefined;
+  if (state.recipeId && !linked) return {};
+  if (linked) return { input: doughContent(doughInputFromRecipe(linked)), pieces: linked.pieces ?? 0 };
+  const start = defaultCalcState();
+  return { input: doughContent(start.input), pieces: start.pieces };
+}
+
+/**
+ * 레시피로 저장한 직후의 계산기 상태 (iOS 저장 시트의 완료 처리 + markCalcSaved와 같다).
+ * - 모드 A 저장만 계산기를 그 레시피에 잇는다. 모드 B 저장은 늘 새 레시피라, 이으면 다음 모드 A 저장이
+ *   역산 레시피를 관계없는 모드 A 배합으로 덮어쓴다
+ * - 저장한 지금 상태가 새 기준이 된다. 모드 B 저장은 역산 결과만 담으므로, 화면에 없는 모드 A 입력이
+ *   마지막 기준과 다르면 기준을 그대로 둔다 — 그 입력은 아직 저장하지 않은 입력이다
+ */
+export function calcStateAfterSave(
+  state: CalcState,
+  saved: { name: string; id: string },
+  recipes: Recipe[],
+): CalcState {
+  if (state.mode === 'B') {
+    // 분할 개수도 모드 B에선 숨은 모드 A 입력이다
+    const base = baselineModeA(state, recipes);
+    if (doughContent(state.input) !== base.input || state.pieces !== base.pieces) return state;
+    return { ...state, savedSnapshot: calcSnapshot(state) };
+  }
+  const next: CalcState = { ...state, name: saved.name, recipeId: saved.id };
+  return { ...next, savedSnapshot: calcSnapshot(next) };
+}
+
+/**
+ * 저장 다이얼로그가 덮어쓸 수 있는 레시피 — 모드 A에서 불러오거나 저장한 레시피만.
+ * 목표 역산 결과는 바시나주·액체·이스트·기타 재료가 없으므로 모드 B로 덮어쓰면 그 재료가 사라진다
+ */
+export function overwriteTarget(state: CalcState, recipes: Recipe[]): Recipe | undefined {
+  if (state.mode !== 'A' || !state.recipeId) return undefined;
+  return recipes.find((r) => r.id === state.recipeId);
 }

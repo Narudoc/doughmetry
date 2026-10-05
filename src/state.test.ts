@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { CalcState } from './state';
 import { computeStats } from './lib/dough';
 import {
-  calcSnapshot,
+  calcStateAfterSave,
   calcStateFromRecipe,
   currentDoughInput,
   defaultCalcState,
   isCalcDirty,
+  overwriteTarget,
   resetCalcState,
   sanitizeSettings,
 } from './state';
@@ -68,10 +69,8 @@ describe('isCalcDirty (불러오기 전 저장하지 않은 입력 확인 — iO
   });
 
   /** CalculatorPage.handleSave와 같은 방식으로 저장한 직후 상태 */
-  const saveAs = (s: CalcState, name: string, id: string): CalcState => {
-    const saved = { ...s, name, recipeId: id };
-    return { ...saved, savedSnapshot: calcSnapshot(saved) };
-  };
+  const saveAs = (s: CalcState, name: string, id: string, recipes: Recipe[] = []): CalcState =>
+    calcStateAfterSave(s, { name, id }, recipes);
   const recipeFrom = (s: CalcState, id: string): Recipe => ({
     ...recipe(),
     id,
@@ -96,6 +95,77 @@ describe('isCalcDirty (불러오기 전 저장하지 않은 입력 확인 — iO
     expect(isCalcDirty(saved, [stored])).toBe(false);
     // draft는 JSON으로 저장됐다 다시 읽힌다
     expect(isCalcDirty(JSON.parse(JSON.stringify(saved)), [stored])).toBe(false);
+  });
+
+  it('모드 A 입력을 고친 채 모드 B로 저장해도 그 입력은 저장하지 않은 입력으로 남는다 (iOS markCalcSaved와 같다)', () => {
+    const r = recipe();
+    const loaded = calcStateFromRecipe(r);
+    const edited: CalcState = { ...loaded, input: { ...loaded.input, water: 700 } };
+    const saved = saveAs({ ...edited, mode: 'B' }, '역산 바게트', 'rb', [r]);
+    const library = [r, recipeFrom(saved, 'rb')];
+    expect(isCalcDirty(saved, library)).toBe(true);
+    expect(isCalcDirty({ ...saved, mode: 'A' }, library)).toBe(true);
+    // 새로 시작한 배합(기록 없음 포함)을 고친 경우도
+    for (const start of [resetCalcState(false), defaultCalcState()]) {
+      const touched: CalcState = { ...start, mode: 'B', input: { ...start.input, water: 700 } };
+      const after = saveAs(touched, '역산', 'rc');
+      expect(isCalcDirty({ ...after, mode: 'A' }, [recipeFrom(after, 'rc')])).toBe(true);
+    }
+  });
+
+  it('모드 A 입력이 그대로면 모드 B 저장 직후는 깨끗하다 — 불러온 레시피·처음 기본 배합 모두', () => {
+    const r = recipe();
+    const fromRecipe = saveAs({ ...calcStateFromRecipe(r), mode: 'B' }, '역산', 'rb', [r]);
+    expect(isCalcDirty(fromRecipe, [r, recipeFrom(fromRecipe, 'rb')])).toBe(false);
+    expect(isCalcDirty({ ...fromRecipe, mode: 'A' }, [r, recipeFrom(fromRecipe, 'rb')])).toBe(false);
+    // 목표를 바꿔 저장해도 모드 A로 돌아오면 깨끗하다 — 목표는 저장한 기준과 비교한다 (iOS calcIsDirty와 같다)
+    const linked = calcStateFromRecipe(r);
+    const retargeted = saveAs(
+      { ...linked, mode: 'B', target: { ...linked.target, doughWeight: 2000 } },
+      '2kg 역산',
+      'rd',
+      [r],
+    );
+    expect(isCalcDirty({ ...retargeted, mode: 'A' }, [r, recipeFrom(retargeted, 'rd')])).toBe(false);
+    // 첫 실행 — 아직 기준 기록이 없는 기본 배합. 저장은 깨끗하지만, 이어진 레시피가 없는 모드 A는
+    // 기준(모드 B)과 달라 iOS처럼 저장하지 않은 입력으로 본다
+    const fresh = saveAs({ ...defaultCalcState(), mode: 'B' }, '역산', 'rc');
+    expect(isCalcDirty(fresh, [recipeFrom(fresh, 'rc')])).toBe(false);
+    expect(isCalcDirty({ ...fresh, mode: 'A' }, [recipeFrom(fresh, 'rc')])).toBe(true);
+  });
+
+  it('모드 A 분할 개수를 고친 채 모드 B로 저장해도 그 개수는 저장하지 않은 입력이다 (iOS markCalcSaved와 같다)', () => {
+    const r = recipe();
+    for (const start of [calcStateFromRecipe(r), resetCalcState(false), defaultCalcState()]) {
+      const saved = saveAs({ ...start, pieces: 3, mode: 'B' }, '역산', 'rb', [r]);
+      const library = [r, recipeFrom(saved, 'rb')];
+      expect(isCalcDirty(saved, library)).toBe(true);
+      expect(isCalcDirty({ ...saved, mode: 'A' }, library)).toBe(true);
+    }
+  });
+
+  it('모드 B 저장은 계산기를 새 레시피에 잇지 않는다 — 모드 A 덮어쓰기 대상은 처음 불러온 레시피거나 없다', () => {
+    const r = recipe();
+    const b: CalcState = { ...calcStateFromRecipe(r), mode: 'B' };
+    expect(overwriteTarget(b, [r])).toBeUndefined();
+    const saved = saveAs(b, '2kg 역산', 'rb', [r]);
+    const library = [r, recipeFrom(saved, 'rb')];
+    expect(saved.recipeId).toBe('r1');
+    expect(saved.name).toBe('바게트');
+    expect(overwriteTarget({ ...saved, mode: 'A' }, library)?.id).toBe('r1');
+
+    const fresh = saveAs({ ...resetCalcState(false), mode: 'B' }, '2kg 역산', 'rc');
+    expect(fresh.recipeId).toBeUndefined();
+    expect(overwriteTarget({ ...fresh, mode: 'A' }, [recipeFrom(fresh, 'rc')])).toBeUndefined();
+  });
+
+  it('모드 A 저장은 계산기를 저장한 레시피에 잇고 이름을 따른다', () => {
+    const saved = saveAs(resetCalcState(false), '내 캉파뉴', 'ra');
+    const stored = recipeFrom(saved, 'ra');
+    expect(saved.recipeId).toBe('ra');
+    expect(saved.name).toBe('내 캉파뉴');
+    expect(overwriteTarget(saved, [stored])?.id).toBe('ra');
+    expect(isCalcDirty(saved, [stored])).toBe(false);
   });
 
   it('불러온 레시피의 이름을 레시피 탭에서 바꿔도 계산기는 깨끗하다', () => {

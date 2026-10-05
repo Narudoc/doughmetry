@@ -9,10 +9,10 @@
   - `Sources/LevainCore/Codec.swift` — 레시피 JSON 검증·가져오기·내보내기 (웹 스키마 v2 호환, v1 자동 마이그레이션)
   - `Tests/LevainCoreTests/` — 웹 스펙 케이스 1~5 전체 이식 (Swift Testing, Xcode 필요)
   - `Sources/levain-core-check/` — Xcode 없이 도는 스모크 체크: `swift run levain-core-check`
-- `LevainCalc/` — SwiftUI 앱 (iOS 17+, iPhone은 세로 고정 / iPad는 네 방향·Split View). 최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터(iPhone·iPad) 점검 뒤 그대로 두기로 했다(2026-10) — 옛 OS에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고치고 iOS 26+ 동작은 바꾸지 않는다. 하드웨어 키보드: ⌘1–4 탭 · ⌘F 레시피 검색([LevainCalcApp.swift](LevainCalc/LevainCalcApp.swift) — 26 미만은 메뉴 명령이 받지 못해 뷰 단축키로도 단다), ⌘N·⌘S는 계산기 탭, ⌘S는 변환 탭에서도
+- `LevainCalc/` — SwiftUI 앱 (iOS 17+, iPhone은 세로 고정 / iPad는 네 방향·Split View, 창은 하나 — [LevainCalc-Info.plist](LevainCalc-Info.plist)의 `UIApplicationSupportsMultipleScenes` false). 최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터(iPhone·iPad) 점검 뒤 그대로 두기로 했다(2026-10) — 옛 OS에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고치고 iOS 26+ 동작은 바꾸지 않는다. 하드웨어 키보드: ⌘1–4 탭 · ⌘F 레시피 검색([LevainCalcApp.swift](LevainCalc/LevainCalcApp.swift) — 26 미만은 메뉴 명령이 받지 못해 뷰 단축키로도 단다), ⌘N·⌘S는 계산기 탭, ⌘S는 변환 탭에서도
 - `LevainCalcUITests/` — UI 스모크 테스트 4개(두 언어로 네 탭 · 계산기 입력 → 요약 바 · 저장 → 불러오기 · 텍스트 가져오기는 확인 시트를 거침)와 하드웨어 키보드 숫자 입력 회귀 테스트(`NumberFieldKeyboardUITests`, iPad). DEBUG 빌드 전용 실행 인자 `-uiTestDataDir <경로>`로 빈 저장 폴더에서 시작하고 iCloud와 합치지 않는다. 화면 요소는 접근성 식별자로 찾는다(라벨은 `-appLanguage`에 따라 바뀜)
 - `AppStore/` — 스토어 문구 원본([listing.md](AppStore/listing.md)), 출시 절차([submission.md](AppStore/submission.md)), 스크린샷 캡처 스크립트([capture-screenshots.sh](AppStore/capture-screenshots.sh) — 전용 시뮬레이터·언어별 예시 데이터·9:41 상태 바, iPhone 6.9형·iPad 13형 JPEG)
-- `LevainCalc.xcodeproj` — Xcode 16 형식 (파일시스템 동기화 그룹 — 파일 추가 시 프로젝트 수정 불필요)
+- `LevainCalc.xcodeproj` — Xcode 16 형식 (파일시스템 동기화 그룹 — 파일 추가 시 프로젝트 수정 불필요). Info.plist는 빌드 설정(`INFOPLIST_KEY_*`)으로 생성하고, 빌드 설정으로 못 넣는 키만 동기화 폴더 밖의 `LevainCalc-Info.plist`에 둔다 (폴더 안에 두면 리소스로도 복사돼 빌드가 깨진다)
 
 ## 빌드
 
@@ -56,7 +56,7 @@ xcodebuild test -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
   - 원격 변경 감지(NSMetadataQuery 갱신)는 원격 문서의 내용 변경 시각·내려받기 상태·충돌 여부가 바뀔 때만 동기화를 일으킨다 — 업로드 진행률마다 전체 동기화를 다시 돌리지 않도록. 충돌 판이 남아 있는 동안과 동기화가 실패한 뒤에는 거르지 않는다.
   - 조정 읽기·쓰기는 비동기(`coordinate(with:queue:)`)로 하고 제한 시간(읽기 60초·쓰기 30초)이 지나면 조정자를 취소한다 — 오프라인에서 내려받기를 끝없이 기다리며 '동기화 중'에 멈추지 않도록. 상태는 원인별로 알린다: 내려받는 중 / 내려받기 실패(메타데이터의 DownloadingError) / 연결 안 됨(제한 시간). 정리하지 못하고 보관 중인 충돌 판 수는 설정의 iCloud 항목에 보인다.
 - entitlement가 없거나 iCloud 미로그인이면 컨테이너 URL이 nil → 자동으로 로컬 전용 동작.
-- 진단 로그: 동기화·저장 실패는 통합 로그에 남는다([Diagnostics.swift](LevainCalc/Diagnostics.swift)). 기기를 Mac에 연결하고 Console.app에서 `subsystem:com.narudoc.doughmetry`로 거르면 `sync`·`storage` 카테고리가 보인다(사용자에게서 받을 때는 sysdiagnose). 개수와 오류 도메인·코드만 남고 레시피 내용은 남지 않는다.
+- 진단 로그: 동기화·저장 실패와 AI 가져오기 결과는 통합 로그에 남는다([Diagnostics.swift](LevainCalc/Diagnostics.swift)의 `Log`). 기기를 Mac에 연결하고 Console.app에서 `subsystem:com.narudoc.doughmetry`로 거르면 `sync`·`storage`·`import`(AI 초안 시간 초과·기각 사유) 카테고리가 보인다(사용자에게서 받을 때는 sysdiagnose). 개수와 오류 도메인·코드만 남고 레시피 내용은 남지 않는다.
 - **iCloud (설정 완료)**: Signing & Capabilities에 iCloud Documents가 켜져 있고(2026-09-06, 팀 G46DT9WHWV), 컨테이너는 개명에 맞춰 `iCloud.com.narudoc.doughmetry`로 바뀌었다. 새 App ID·컨테이너 모두 포털 등록 완료 — 2026-09-11 08:28 발급된 Xcode 관리 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`의 엔타이틀먼트에 이 컨테이너가 들어 있다. 다른 Mac에서 열 때: 같은 팀(G46DT9WHWV)이면 컨테이너가 이미 포털에 있으므로 `Signing & Capabilities > iCloud > Containers`의 새로고침(원형 화살표)으로 목록을 다시 읽으면 된다. 프로젝트가 열려 있고 자동 서명이 켜져 있으면 번들 ID·[LevainCalc.entitlements](LevainCalc/LevainCalc.entitlements) 변경만으로도 Xcode가 App ID와 컨테이너를 포털에 만들고 프로파일을 발급한다(2026-09-11 08:28이 그 경우 — 빌드 없이, `+` 없이; DerivedData의 `Logs/Update Signing` 로그에 `POST /v1/cloudContainers`가 남아 있다). iCloud 컨테이너는 포털에서 지울 수 없으므로 같은 팀에서 `+`를 쓸 일은 없다 — 목록이 비거나 빨간색이면 새로고침, 그래도 남으면 `Automatically manage signing`을 껐다 켠다. **다른 팀**에서는 이 프로젝트를 그대로 서명할 수 없다: App ID `com.narudoc.doughmetry`와 컨테이너 ID `iCloud.com.narudoc.doughmetry`는 Apple 전체에서 유일하고 이미 G46DT9WHWV 소유라 거부된다 — 번들 ID와 entitlements의 컨테이너 ID를 둘 다 그 팀 것으로 바꿔야 한다. 시뮬레이터 빌드는 프로비저닝 프로파일이 필요 없고 ad-hoc(`-`) 서명만 하므로 등록을 트리거하지 않는다.
 
 ## 도구 탭 (Phase 2)

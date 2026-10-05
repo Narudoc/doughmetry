@@ -114,8 +114,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
       updatedAt: now,
       ...structuredClone(result.output),
     };
-    api.save(recipe);
-    toast('변환 결과를 새 레시피로 저장했습니다');
+    if (api.save(recipe)) toast('변환 결과를 새 레시피로 저장했습니다');
   };
 
   return (
@@ -387,7 +386,7 @@ function ErrorPanel({
     maxLevain = error.maxLevainGrams;
   } else if (error.code === 'W_ADD_NEGATIVE') {
     message =
-      '이 수분율에서는 르방 양을 유지한 채 변환할 수 없습니다. 르방 양을 줄이거나 총 수분율을 높이세요.';
+      '본반죽 물이 부족해서 이 수분율로 변환할 수 없습니다. 르방 양을 줄이거나 총 수분율을 높이세요.';
     maxLevain = error.maxLevainGrams;
   } else {
     const flour = input.flours.find((f) => f.id === error.flourId);

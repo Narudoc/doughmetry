@@ -402,21 +402,7 @@ struct TimelineView: View {
                         }
                     }
                 } label: {
-                    Group {
-                        if typeSize.isAccessibilitySize {
-                            // Menu 안의 Label은 접근성 글자 크기에서 낱말 중간에서 끊긴다 ("Ad | d stage") — 직접 늘어놓는다
-                            HStack {
-                                Image(systemName: "plus.circle")
-                                    .accessibilityHidden(true)
-                                Text(L("단계 추가"))
-                            }
-                        } else {
-                            Label(L("단계 추가"), systemImage: "plus.circle")
-                        }
-                    }
-                    // Menu 행은 라벨 글자·아이콘만 눌린다 — 행 폭 전체를 탭 영역으로
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    AddMenuLabel(title: L("단계 추가"))
                 }
             } header: {
                 HStack {

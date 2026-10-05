@@ -10,8 +10,8 @@ npm test         # Vitest 유닛 테스트
 npm run build    # tsc --noEmit && vite build
 ```
 
-CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift test`·시뮬레이터 앱 빌드·영어 사전(l10n) 검사를 돌리고, `oldest-ios`가 iOS 17.5·18.2 시뮬레이터에서 LevainCore 테스트를 돌린다 (러너 이미지엔 iOS 26 런타임뿐이라 내려받는다 — 실패하면 경고 후 설치된 가장 오래된 런타임으로). UI 스모크 테스트 `LevainCalcUITests`는 workflow_dispatch에서만, 가장 새 런타임과 17.5·18.2에서. `deploy.yml`은 ios/만 바뀐 푸시를 건너뛴다.
-영어 사전 검사는 로컬에서도 `python3 ios/scripts/check_l10n.py` (L()/LF() 키의 en 항목 누락).
+CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift test`·시뮬레이터 앱 빌드·영어 사전(l10n) 검사를 돌리고, `oldest-ios`가 iOS 17.5·18.2 시뮬레이터에서 LevainCore 테스트를 돌린다 (러너 이미지엔 iOS 26 런타임뿐이라 내려받는다 — 실패하면 경고 후 설치된 가장 오래된 런타임으로). UI 스모크 테스트 `LevainCalcUITests`는 workflow_dispatch에서만, 가장 새 런타임과 17.5·18.2에서 (`-collect-test-diagnostics never` — 없으면 실패한 UI 테스트 뒤 진단 수집이 10분 멈춘다). `deploy.yml`은 ios/만 바뀐 푸시를 건너뛴다. 액션은 Node 24 메이저를 쓴다.
+영어 사전 검사는 로컬에서도 `python3 ios/scripts/check_l10n.py` (L()/LF() 키, LevainCore가 `localize` 클로저로 받는 예시 레시피·`LiquidPreset` 이름의 en 항목 누락).
 
 ## 도메인 용어
 
@@ -46,9 +46,10 @@ CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift te
 
 - [src/lib/dough.ts](src/lib/dough.ts) — 순수 계산 함수 전부. UI에서 직접 수식 계산 금지, 반드시 이 모듈을 거칠 것.
 - [src/lib/dough.test.ts](src/lib/dough.test.ts) — 스펙 케이스 1~5 (기본 계산·변환·왕복·property·경계). 계산 로직 수정 시 반드시 통과 확인.
-- [src/lib/storage.ts](src/lib/storage.ts) — localStorage CRUD + JSON 스키마 검증. 키: `levain-calc:recipes:v1`, `levain-calc:draft:v1`, `levain-calc:settings:v1` (키 이름은 그대로 유지). 현재 `schemaVersion: 2` — v1 레시피는 로드/가져오기 시 자동 마이그레이션(bassinage 0, liquids [], yeast 0). 스키마가 바뀌면 버전을 올리고 마이그레이션을 추가할 것.
+- [src/lib/storage.ts](src/lib/storage.ts) — localStorage CRUD + JSON 스키마 검증. 키: `levain-calc:recipes:v1`, `levain-calc:draft:v1`, `levain-calc:settings:v1`, `levain-calc:ocr-ready:v1`(사진 인식 데이터를 받아 둔 적 있음 — 첫 내려받기 안내 생략) (키 이름은 그대로 유지). 현재 `schemaVersion: 2` — v1 레시피는 로드/가져오기 시 자동 마이그레이션(bassinage 0, liquids [], yeast 0). 스키마가 바뀌면 버전을 올리고 마이그레이션을 추가할 것.
 - [src/state.ts](src/state.ts) — 계산기 상태(CalcState)와 레시피 ↔ 배합 변환 헬퍼.
 - [src/lib/recipeParser.ts](src/lib/recipeParser.ts) — 레시피 텍스트 → 배합 규칙 기반 파서. **iOS [RecipeTextParser.swift](ios/LevainCore/Sources/LevainCore/RecipeTextParser.swift)의 이식본 — 파서 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트([recipeParser.test.ts](src/lib/recipeParser.test.ts) ↔ RecipeTextParserTests.swift)를 동일하게 유지할 것.**
+- 배합표 공유 텍스트([src/lib/fiche.ts](src/lib/fiche.ts) ↔ [FicheRows.swift](ios/LevainCalc/FicheRows.swift))는 파서가 다시 읽는 형식 — 'fiche technique' 제목 줄 뒤, 첫 물 줄이나 밀가루가 아닌 첫 재료 전의 분류되지 않은 g 줄은 밀가루(이름은 g 앞 두 칸 공백 전까지), 끝에 '· 수분/water NN%'가 붙은 줄은 그 수분 비율의 액체로 읽는다. 형식을 바꾸면 양쪽 왕복 테스트(recipeParser.test.ts ↔ RecipeTextParserTests.swift)를 함께.
 - [src/lib/ocr.ts](src/lib/ocr.ts) — 사진 OCR. tesseract.js를 **사용 시점에만 동적 import** (초기 번들에 포함 금지). 언어 데이터(kor+eng+fra, iOS Vision과 동일)는 CDN에서 지연 로드. iOS는 Vision + Apple Intelligence를 쓰지만 웹은 OCR + 규칙 파서만. 파서의 정규식은 Swift(ICU) 의미에 맞춰 유니코드 단어 경계(lookaround + u 플래그)를 쓴다 — JS `\b`(ASCII)를 쓰지 말 것.
 - AI 가져오기 흐름(저장된 레시피 탭): 사진/텍스트 → `cleanForParsing` → `parseRecipeText` → 확인 다이얼로그([ImportReviewDialog](src/components/recipes/ImportReviewDialog.tsx), 수정 가능) → 저장. 확인 없이 바로 저장하지 말 것. iOS는 Apple Intelligence 초안을 규칙 결과와 교차 검증해([ImportReconcile.swift](ios/LevainCore/Sources/LevainCore/ImportReconcile.swift)) 어긋나면 규칙 결과를 쓴다.
 - 탭 전환은 hash 기반 (`#calc` / `#convert` / `#recipes`), 라우팅 라이브러리 없음.
@@ -68,22 +69,23 @@ CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift te
 
 ## iOS 네이티브 앱 (ios/)
 
-- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+, iPhone(세로 고정)·iPad(네 방향) 네이티브. 최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터 점검(2026-10) 뒤 유지 — 18로 올리지 않는다.
+- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+, iPhone(세로 고정)·iPad(네 방향) 네이티브. iPad도 창은 하나 — `AppModel`(선택 탭·검색 요청)이 앱에 하나라서 [ios/LevainCalc-Info.plist](ios/LevainCalc-Info.plist)의 `UIApplicationSupportsMultipleScenes`를 false로 둔다 (Info.plist 생성기는 `INFOPLIST_KEY_UIApplicationSupportsMultipleScenes=NO`여도 true를 쓰므로 장면 매니페스트 생성은 끈다). 여러 창을 켜려면 그 상태를 장면별로 옮길 것. 최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터 점검(2026-10) 뒤 유지 — 18로 올리지 않는다.
 - 옛 OS 대응: iOS 26 미만에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고치고 iOS 26+ 동작은 그대로 둔다. 새 API는 iOS 17.0에서 쓸 수 있거나 가지 안에 있을 것. Foundation(정규식·날짜 파싱 등) 동작은 OS 버전마다 다르므로 코어 규칙을 바꾸면 옛 런타임에서도 테스트한다: `cd ios/LevainCore && xcodebuild test -scheme LevainCore-Package -destination 'platform=iOS Simulator,OS=17.5,name=iPhone 15'` (자동 스킴 `LevainCore`에는 테스트 동작이 없다).
 - iOS UI 규칙 (17·18에서 확인된 차이):
   - 머리글이 있는 Form/List 섹션은 `Section { … } header: { … }.textCase(nil)` — 17·18은 머리글을 대문자로 바꾼다('(g)' → '(G)', 'iCloud' → 'ICLOUD'). 루트·Form이나 머리글의 맨 Text 하나에 단 `.textCase(nil)`은 17.5에서 듣지 않는다.
   - 시트 높이는 `.presentationDetents` 대신 `.adaptiveDetents(…)`([DesignSystem.swift](ios/LevainCalc/DesignSystem.swift)) — 넓은 창(iPad)에선 늘 `.large`. 시트 안의 크기 등급은 iPad에서도 compact라, 띄운 창의 폭은 RootView가 넣는 `\.windowIsRegular`로 판단한다.
   - 날짜·시각 행은 `AXDatePicker`, Form 속 세그먼트 피커는 `.adaptiveSegmented()`([Components.swift](ios/LevainCalc/Components.swift)) — 접근성 글자 크기에서 라벨이 쪼개지거나 13pt로 남지 않게.
   - 앱 전역 설치(LevainCalcApp.init, 26 미만만): `KeyboardAvoidance`(회전 뒤 포커스 칸을 키보드 위로), 확인창(UIAlertController) 색 bottle.
-  - 하드웨어 키보드: ⌘1–4 탭·⌘F 레시피 검색은 메뉴 명령([LevainCalcApp.swift](ios/LevainCalc/LevainCalcApp.swift)) — 26 미만은 메뉴 명령이 받지 못해(iPhone 전부, iPad의 ⌘F) 같은 단축키를 뷰에도 단다. ⌘N·⌘S처럼 보이는 탭에만 해당하는 단축키는 그 탭의 뷰에 단다.
+  - 하드웨어 키보드: ⌘1–4 탭·⌘F 레시피 검색은 메뉴 명령([LevainCalcApp.swift](ios/LevainCalc/LevainCalcApp.swift)) — 26 미만은 메뉴 명령이 받지 못해(iPhone 전부, iPad의 ⌘F) 같은 단축키를 뷰에도 단다. ⌘N·⌘S처럼 보이는 탭에만 해당하는 단축키는 그 탭의 뷰에 단다. UI 테스트에서 실행 뒤 첫 ⌘F는 앱에 오지 않는다 — XCUITest의 가상 키보드가 키마다 붙었다 떨어지고 앱은 키보드가 붙을 때 단축키를 등록하므로, 첫 키는 ⌘F를 등록해 둔 SpringBoard가 가져간다(실제 키보드에선 생기지 않음). ⌘F를 검사하는 테스트는 Esc 같은 키를 먼저 보낸다.
 - 계산 코어는 [ios/LevainCore/Sources/LevainCore/Dough.swift](ios/LevainCore/Sources/LevainCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
 - 레시피 JSON 스키마는 웹과 완전 호환 (내보내기/가져오기 양방향). 스키마 변경 시 Codec.swift의 검증·마이그레이션도 함께.
-- JSON 가져오기 병합 규칙은 웹 `mergeImported`([storage.ts](src/lib/storage.ts)) ↔ iOS `LibrarySync.importable`이 같다: 없는 id는 추가, 같은 id는 가져온 `updatedAt`이 같거나 새로울 때만 교체(로컬 `createdAt` 유지). 시각 비교는 웹의 ISO 문법·밀리초 기준 — 한쪽을 바꾸면 양쪽 테스트를 함께.
+- JSON 가져오기 병합 규칙은 웹 `mergeImported`([storage.ts](src/lib/storage.ts)) ↔ iOS `LibrarySync.importable`이 같다: 없는 id는 추가, 같은 id는 가져온 `updatedAt`이 더 새롭고 내용이 다를 때만 교체(로컬 `createdAt` 유지) — 같은 시각이면 로컬 유지, 파일 안에서 겹친 id는 처음 것만 본다. 시각 비교는 웹의 ISO 문법·밀리초 기준 — 한쪽을 바꾸면 양쪽 테스트를 함께.
 - 사진 OCR 조각 → 줄 재조립은 [OCRLayout.swift](ios/LevainCore/Sources/LevainCore/OCRLayout.swift) (재료 | 만드는 법 두 단 카드 분리 포함, iOS 전용).
 - 앱 안 한/영 언어 선택은 사용자 요구라 유지한다 (iOS 앱별 언어 설정으로 대체하지 말 것). 고른 언어는 루트의 `.environment(\.locale, …)`로 날짜·시간 표시까지 따른다. 사용자에게 보이는 문자열은 전부 `L()`/`LF()`로 쓰고 [Localization.swift](ios/LevainCalc/Localization.swift) 영어 사전에 넣을 것.
 - 코어 검증: `cd ios/LevainCore && swift test` (Xcode 필요) 또는 `swift run levain-core-check` (CLT만으로 가능).
 - UI 테스트·스크린샷은 DEBUG 전용 실행 인자 `-uiTestDataDir <경로>`로 저장 위치를 격리한다 (iCloud는 켜지 않음).
-- 저장소는 단일 `library.json`(`LibraryDocument`: recipes + logs(베이킹 로그) + deleted(묘비)). iCloud 동기화 병합은 [LibrarySync.swift](ios/LevainCore/Sources/LevainCore/LibrarySync.swift) — **모든 변이는 `updatedAt`을 갱신하고 삭제는 묘비를 남길 것** (안 그러면 다른 기기에서 되살아나거나 편집이 밀린다). 베이킹 로그는 iOS 전용 기능 (웹 미포팅). Recipe·BakeLog·Tombstone 또는 LibraryDocument(새 최상위 키)에 필드를 추가하면 `LibraryDocument.currentSchemaVersion`을 반드시 올릴 것 — 옛 버전 앱은 자기보다 큰 버전(또는 레시피 schemaVersion)의 iCloud 문서를 보면 합치지도 쓰지도 않는다 (`LibrarySync.decodeReport`). 안 올리면 옛 앱이 모르는 필드를 버린 채 덮어쓴다.
+- 진단 로그는 [Diagnostics.swift](ios/LevainCalc/Diagnostics.swift)의 `Log`(subsystem `com.narudoc.doughmetry`, 카테고리 `sync`·`storage`·`import`)에만 — 파일마다 Logger를 따로 만들지 말 것. 요약은 .notice·실패는 .error, 레시피 이름·메모·JSON은 남기지 않는다(개수·오류 도메인·코드만). 카테고리를 바꾸면 ios/README.md·submission.md의 Console.app 안내도 함께.
+- 저장소는 단일 `library.json`(`LibraryDocument`: recipes + logs(베이킹 로그) + deleted(묘비)). iCloud 동기화 병합은 [LibrarySync.swift](ios/LevainCore/Sources/LevainCore/LibrarySync.swift) — **모든 변이는 `updatedAt`을 갱신하고 삭제는 묘비를 남길 것** (안 그러면 다른 기기에서 되살아나거나 편집이 밀린다). 예외는 '예시 레시피 추가' 하나 — 고정 id 예시는 지금 시각이 아니라 옛 기준 시각으로 넣는다(지금 시각이면 다른 기기의 예시 편집·삭제를 병합이 되돌린다). 베이킹 로그는 iOS 전용 기능 (웹 미포팅). Recipe·BakeLog·Tombstone 또는 LibraryDocument(새 최상위 키)에 필드를 추가하면 `LibraryDocument.currentSchemaVersion`을 반드시 올릴 것 — 옛 버전 앱은 자기보다 큰 버전(또는 레시피 schemaVersion)의 iCloud 문서를 보면 합치지도 쓰지도 않는다 (`LibrarySync.decodeReport`). 안 올리면 옛 앱이 모르는 필드를 버린 채 덮어쓴다.
 
 ## iOS 전용 기능 (웹 미포팅 — 웹에 옮길 때 iOS 코어 규칙을 그대로 이식)
 

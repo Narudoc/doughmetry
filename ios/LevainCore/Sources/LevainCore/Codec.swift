@@ -11,7 +11,14 @@ public enum RecipeCodec {
         case bad(CodecError)
     }
 
+    /// JSONSerialization은 true/false도 NSNumber(1/0)로 준다 — 웹(typeof === 'number')은 숫자로 받지 않는다
+    static func isBool(_ x: Any?) -> Bool {
+        guard let n = x as? NSNumber else { return false }
+        return CFGetTypeID(n) == CFBooleanGetTypeID()
+    }
+
     static func nonNegNumber(_ x: Any?) -> Double? {
+        if isBool(x) { return nil }
         let d: Double?
         switch x {
         case let n as Double: d = n
@@ -74,7 +81,7 @@ public enum RecipeCodec {
         guard let r = x as? [String: Any] else { return .bad(CodecError(.notAnObject)) }
 
         // v1 레시피는 v2로 마이그레이션
-        guard let version = (r["schemaVersion"] as? NSNumber)?.intValue,
+        guard let n = r["schemaVersion"] as? NSNumber, !isBool(n), let version = Int(exactly: n.doubleValue),
             (1...Recipe.currentSchemaVersion).contains(version)
         else {
             return .bad(CodecError(.unsupportedSchemaVersion))
@@ -123,7 +130,7 @@ public enum RecipeCodec {
         guard let levGrams = nonNegNumber(lev["grams"]) else {
             return .bad(CodecError(.levainGramsInvalid))
         }
-        guard let hydration = (lev["hydration"] as? NSNumber)?.doubleValue,
+        guard !isBool(lev["hydration"]), let hydration = (lev["hydration"] as? NSNumber)?.doubleValue,
             hydration.isFinite, hydration > 0
         else { return .bad(CodecError(.levainHydrationInvalid)) }
 

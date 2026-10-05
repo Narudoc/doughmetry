@@ -172,6 +172,22 @@ struct ImportReconcileTests {
         #expect(reconcileAIDraft(merged, rules: r) == .failure(.extrasMissing))
     }
 
+    @Test("배합표의 '· 수분 N%'가 모델 수분율을 이기고, 액체를 빠뜨린 초안은 버린다")
+    func liquidRatiosFromRules() {
+        let r = rules(
+            "〔X〕 fiche technique\nT65  900.0 g  (85.7%)\nMixing water  600.0 g\nSalt  20.0 g  (1.9%)\n"
+                + "Liquid levain 100%  300.0 g  (28.6%)\nHoney  50.0 g  (4.8%) · water 17.0%\nMilk  50.0 g  (4.8%) · water 90.0%")
+        #expect(r.input.liquids.map(\.waterRatio) == [0.17, 0.9])
+        var draft = r.input
+        draft.liquids[0].waterRatio = 0.048
+        draft.liquids[1].waterRatio = 0.5
+        #expect((try? reconcileAIDraft(draft, rules: r).get())?.liquids.map(\.waterRatio) == [0.17, 0.9])
+        var honeyAsExtra = r.input
+        honeyAsExtra.liquids.removeFirst()
+        honeyAsExtra.extras.append(Extra(name: "Honey", grams: 50))
+        #expect(reconcileAIDraft(honeyAsExtra, rules: r) == .failure(.liquidsMissing))
+    }
+
     @Test("규칙 결과에 있는 이스트를 빠뜨리면 버린다 — 무게 허용치에 묻히는 소량")
     func yeastMissing() {
         let r = rules(Self.base + "\n이스트 2g")

@@ -131,6 +131,8 @@ struct RecipeTextParserTests {
         #expect(r.input.salt == 20)
         #expect(r.input.bassinage == 0)
         #expect(r.input.extras.isEmpty)
+        // 첫 줄은 서술문이고, 재료 뒤의 맺음말은 이름이 아니다
+        #expect(r.name == nil)
     }
 
     @Test("kg 표기 변형 — 1.5kg, 1키로, ㎏")
@@ -425,6 +427,38 @@ struct RecipeTextParserParityTests {
         let r = RecipeTextParser.parse("르방 만들기\n밀가루 100\n물 100\ngâteau 50")
         #expect(r.input.levain.grams == 250)
         #expect(r.input.levain.hydration == 1.0)
+    }
+
+    @Test("글자에 붙은 VS16·키캡 테두리는 걷어낸다 (iOS는 앞 글자와 한 자소로 묶는다)")
+    func strayVariationSelectors() {
+        for salt in ["소금\u{FE0F} 10g", "소금\u{20E3} 10g", "소금\u{FE0F}\u{20E3} 10g"] {
+            #expect(RecipeTextParser.cleanForParsing(salt) == "소금 10g", "\(salt)")
+            for r in [
+                RecipeTextParser.parse(RecipeTextParser.cleanForParsing("강력분 500g\n물 350g\n\(salt)")),
+                RecipeTextParser.parse("강력분 500g\n물 350g\n\(salt)"),
+            ] {
+                #expect(r.input.salt == 10, "\(salt)")
+                #expect(r.input.extras.isEmpty, "\(salt)")
+            }
+        }
+        #expect(RecipeTextParser.cleanForParsing("Levain\u{FE0F} liquide 200g") == "Levain liquide 200g")
+        // 이모지·키캡 바탕 뒤의 VS16은 그대로 — 키캡 번호는 여전히 걷힌다
+        #expect(RecipeTextParser.cleanForParsing("❤️ 캄파뉴\n✔️ 재료") == "❤️ 캄파뉴\n✔️ 재료")
+        #expect(
+            RecipeTextParser.cleanForParsing("1️⃣ 르방 만들기\n#️⃣ 물 300g\n🔟️ 소금 10g")
+                == "르방 만들기\n물 300g\n소금 10g")
+        #expect(RecipeTextParser.cleanForParsing("강력분 500\u{FE0F}g") == "강력분 500g")
+        #expect(RecipeTextParser.parse("비가 20\u{FE0F}g").input.levain.grams == 20)
+        // CRLF 뒤에 VS16·키캡 테두리가 붙어도 한 줄바꿈이다
+        #expect(RecipeTextParser.cleanForParsing("소금 10g\r\n\u{FE0F}물 350g") == "소금 10g\n물 350g")
+        // 분해 한글 음절 속에 끼인 VS16을 걷어내면 다시 한 음절로 합친다
+        #expect(RecipeTextParser.cleanForParsing("\u{1106}\u{116E}\u{FE0F}\u{11AF} 350") == "물 350")
+        let w = RecipeTextParser.parse("강력분 500\n\u{1106}\u{116E}\u{FE0F}\u{11AF} 350")
+        #expect(w.input.water == 350)
+        #expect(w.input.extras.isEmpty)
+        let f = RecipeTextParser.parse(
+            "\u{1100}\u{1161}\u{FE0F}\u{11BC}\u{1105}\u{1167}\u{11A8}\u{1107}\u{116E}\u{11AB} 500\n물 350")
+        #expect(f.input.flours.map(\.name) == ["강력분"])
     }
 }
 
@@ -772,6 +806,21 @@ struct RecipeTextParserImportRegressionTests {
         #expect(tea.input.extras.map(\.grams) == [10, 5])
     }
 
+    @Test("시간 약어('Bulk 4h', 'Pointage 3h30')는 그램이 아니다")
+    func hourAbbreviations() {
+        let fr = RecipeTextParser.parse(
+            "farine T65 500g\neau 350g\nsel 10g\nlevain 100g\nMix and fold. Bulk 4h.\nPointage 3h30 à 24°C\nApprêt 1h\nPousse 2 H\nPointage 2 h 30 à 24 °C\nApprêt 1 h 15\nRepos 3 heures\nCuisson 45 mn")
+        #expect(fr.input.extras.isEmpty)
+        #expect(fr.input.levain.grams == 100)
+        #expect(fr.matchedLineCount == 4)
+        #expect(fr.name == nil)
+        #expect(computeStats(fr.input).doughWeight == 960)
+        // 숫자 뒤 h로 시작하는 낱말은 시간이 아니다
+        let nuts = RecipeTextParser.parse("farine 500g\neau 350g\n50 hazelnuts\nnoisettes 2 hachées 30g")
+        #expect(nuts.input.extras.map(\.name) == ["hazelnuts", "noisettes hachées"])
+        #expect(nuts.input.extras.map(\.grams) == [50, 30])
+    }
+
     @Test("키캡 번호(1️⃣ …)는 수량이 아니라 섹션·단계 번호다")
     func keycapNumbers() {
         let r = RecipeTextParser.parse(
@@ -943,6 +992,11 @@ struct RecipeImportTextTests {
         #expect(focaccia.input.extras.isEmpty)
         // 가운데의 분량 괄호를 걷어내도 공백이 겹치지 않는다
         #expect(RecipeTextParser.parse("치아바타 (2개 분량) 레시피\n강력분 400g\n물 300g").name == "치아바타 레시피")
+        // 이름은 재료보다 앞선 줄에서만 — 첫 줄이 서술문이어도 재료 뒤의 맺음말을 이름으로 고르지 않는다
+        #expect(RecipeTextParser.parse("Baked this today!\n500 g flour\n350 g water\nEnjoy").name == nil)
+        #expect(RecipeTextParser.parse("오늘도 구웠어요!\n강력분 500g\n물 350g\n맛있는 캄파뉴").name == nil)
+        #expect(RecipeTextParser.parse("🍞\n강력분 500g\n물 350g\n캄파뉴").name == nil)
+        #expect(RecipeTextParser.parse("캄파뉴\n강력분 500g\n물 350g\nEnjoy").name == "캄파뉴")
     }
 
     @Test("글머리 이모지·기호는 재료 이름에 남지 않는다")
@@ -1179,6 +1233,184 @@ struct FicheRoundTripTests {
         #expect(abs(s.totalFlour - 1100) < 1e-9)
         #expect(abs(s.hydrationPct - 794.0 / 1100 * 100) < 1e-9)
         #expect(abs(s.doughWeight - 1922) < 1e-9)
+    }
+
+    /// Manitoba 500 · Tipo 00 400 · 물 500 · 소금 20 · 르방 리퀴드 80% 180 · 빈 이름 액체 100(수분 90%) · 꿀 30(수분 17%) · 호두 80
+    static let customKo = """
+        〔피자〕 fiche technique
+
+        Manitoba  500.0 g  (50.0%)
+        Tipo 00  400.0 g  (40.0%)
+        본반죽 물  500.0 g
+        소금  20.0 g  (2.0%)
+        르방 리퀴드 80%  180.0 g  (18.0%)
+          ↳ 속 밀가루  100.0 g  (PFF 10.0%)
+        액체  100.0 g  (10.0%) · 수분 90.0%
+        꿀  30.0 g  (3.0%) · 수분 17.0%
+        호두  80.0 g  (8.0%)
+
+        총 밀가루  1000.0 g
+        총 물  675.1 g
+        총 수분율  67.5%
+        총 반죽 무게  1810.0 g
+
+        — Doughmetry · narudoc.github.io/doughmetry
+        """
+
+    static let customEn = """
+        〔Pizza〕 fiche technique
+
+        Manitoba  500.0 g  (50.0%)
+        Tipo 00  400.0 g  (40.0%)
+        Mixing water  500.0 g
+        Salt  20.0 g  (2.0%)
+        Liquid levain 80%  180.0 g  (18.0%)
+          ↳ Flour in levain  100.0 g  (PFF 10.0%)
+        Liquid  100.0 g  (10.0%) · water 90.0%
+        Honey  30.0 g  (3.0%) · water 17.0%
+        Walnuts  80.0 g  (8.0%)
+
+        Total flour  1000.0 g
+        Total water  675.1 g
+        Total hydration  67.5%
+        Total dough weight  1810.0 g
+
+        — Doughmetry · narudoc.github.io/doughmetry
+        """
+
+    static let customWeb = """
+        〔피자〕 fiche technique
+
+        Manitoba  500.0 g  (50.0%)
+        Tipo 00  400.0 g  (40.0%)
+        물 (본반죽)  500.0 g
+        소금  20.0 g  (2.0%)
+        르방 (리퀴드 liquide 80%)  180.0 g  (18.0%)
+          ↳ 속 밀가루  100.0 g  (PFF 10.0%)
+        액체 1  100.0 g  (10.0%) · 수분 90.0%
+        꿀  30.0 g  (3.0%) · 수분 17.0%
+        호두  80.0 g  (8.0%)
+
+        총 밀가루  1000.0 g
+        총 물  675.1 g
+        총 수분율  67.5%
+        총 반죽 무게  1810.0 g
+
+        %는 총 밀가루 대비
+        """
+
+    @Test("이름이 키워드가 아닌 밀가루·액체도 종류와 수분 함량이 그대로 돌아온다", arguments: [
+        (customKo, "피자", "액체", "꿀", "호두"), (customEn, "Pizza", "Liquid", "Honey", "Walnuts"),
+        (customWeb, "피자", "액체 1", "꿀", "호두"),
+    ])
+    func customRowsRoundTrip(
+        fixture: (text: String, name: String, blank: String, honey: String, walnuts: String)
+    ) {
+        let r = RecipeTextParser.parse(RecipeTextParser.cleanForParsing(fixture.text))
+        #expect(r.name == fixture.name)
+        #expect(r.input.flours.map(\.name) == ["Manitoba", "Tipo 00"])
+        #expect(r.input.flours.map(\.grams) == [500, 400])
+        #expect(r.input.water == 500)
+        #expect(r.input.salt == 20)
+        #expect(r.input.levain.grams == 180)
+        #expect(abs(r.input.levain.hydration - 0.8) < 1e-9)
+        #expect(r.input.levain.type == .liquide)
+        #expect(r.input.liquids.map(\.name) == [fixture.blank, fixture.honey])
+        #expect(r.input.liquids.map(\.grams) == [100, 30])
+        #expect(r.input.liquids.map(\.waterRatio) == [0.9, 0.17])
+        #expect(r.input.extras.map(\.name) == [fixture.walnuts])
+        #expect(r.input.extras.map(\.grams) == [80])
+        let s = computeStats(r.input)
+        #expect(abs(s.totalFlour - 1000) < 1e-9)
+        #expect(abs(s.totalWater - 675.1) < 1e-9)
+        #expect(abs(s.pffPct - 10) < 1e-9)
+        #expect(abs(s.doughWeight - 1810) < 1e-9)
+    }
+
+    @Test("르방 행의 수분율이 50·100%가 아니어도 그대로 돌아온다")
+    func levainHydrationRows() {
+        for (line, h) in [
+            ("르방 (리퀴드 liquide 80%)  200.0 g  (20.0%)", 0.8),
+            ("르방 (뒤흐 dur 60%)  200.0 g  (20.0%)", 0.6),
+            ("르방 (리퀴드 liquide 125%)  200.0 g  (20.0%)", 1.25),
+            ("르방 리퀴드 80%  200.0 g  (20.0%)", 0.8),
+            ("르방 뒤흐 60%  200.0 g  (20.0%)", 0.6),
+            ("Liquid levain 80%  200.0 g  (20.0%)", 0.8),
+            ("Stiff levain 65%  200.0 g  (20.0%)", 0.65),
+            ("levain liquide à 80% 150g", 0.8),
+            ("르방 뒤흐 (수분율 60%) 200g", 0.6),
+            // 0.745~0.75 미만은 뒤흐로 분류되지만 75%로 찍힌다
+            ("르방 (뒤흐 dur 75%)  200.0 g  (20.0%)", 0.75),
+            ("르방 뒤흐 75%  200.0 g  (20.0%)", 0.75),
+            ("Stiff levain 75%  200.0 g  (20.0%)", 0.75),
+            // 양 뒤의 %는 베이커스 퍼센트 — 타입 낱말을 따른다
+            ("르방 리퀴드 200g (40%)", 1.0),
+            ("르방 뒤흐 200g (20%)", 0.5),
+            // 양 앞의 %라도 타입 낱말과 어긋나면 베이커스 퍼센트다
+            ("Levain liquide 40% 400g", 1.0),
+            ("르방 뒤흐 100% 200g", 0.5),
+            ("르방 리퀴드 20% 200g", 1.0),
+        ] {
+            let r = RecipeTextParser.parse("T65 1000g\n물 650g\n\(line)\n소금 20g")
+            #expect(abs(r.input.levain.hydration - h) < 1e-9, "\(line)")
+            #expect(r.input.levain.type == (h >= 0.75 ? .liquide : .dur), "\(line)")
+            #expect(r.levainHydrationExplicit, "\(line)")
+            #expect(r.input.extras.isEmpty, "\(line)")
+        }
+    }
+
+    @Test("배합표의 밀가루 구간은 제목 줄 뒤, 밀가루가 아닌 첫 재료 앞까지다")
+    func ficheFlourRows() {
+        // 본반죽 물이 0 g이어도 그 행에서 끝난다
+        let zero = RecipeTextParser.parse(
+            """
+            〔X〕 fiche technique
+
+            Manitoba  500.0 g  (100.0%)
+            물 (본반죽)  0.0 g
+            소금  0.0 g  (0.0%)
+            르방 (리퀴드 liquide 100%)  0.0 g  (0.0%)
+              ↳ 속 밀가루  0.0 g  (PFF 0.0%)
+            호두  50.0 g  (10.0%)
+            """)
+        #expect(zero.input.flours.map(\.name) == ["Manitoba"])
+        #expect(zero.input.extras.map(\.name) == ["호두"])
+        // 손으로 쓴 배합표에서 밀가루보다 앞선 다른 재료 — 그 뒤의 재료는 밀가루가 아니다
+        let typed = RecipeTextParser.parse("Pain aux noix fiche technique\nlevain 200g\nnoix 100g\nfarine 1000g\neau 700g")
+        #expect(typed.input.flours.map(\.name) == ["farine"])
+        #expect(typed.input.extras.map(\.name) == ["noix"])
+        // 배합표 제목이 없으면 이름으로만 분류한다 (이전과 같음)
+        let plain = RecipeTextParser.parse("Manitoba 500g\n물 350g")
+        #expect(plain.input.flours.isEmpty)
+        #expect(plain.input.extras.map(\.name) == ["Manitoba"])
+        #expect(plain.input.extras.map(\.grams) == [500])
+    }
+
+    @Test("'· 수분 N%' 표기가 붙은 줄은 이름과 무관하게 그 수분 함량의 액체다")
+    func waterRatioNotes() {
+        // 공유 텍스트 일부만 붙여 넣어도(제목 줄 없이) 액체로 읽는다
+        let r = RecipeTextParser.parse(
+            """
+            강력분 500g
+            물 300g
+            Yogurt  100.0 g  (10.0%) · water 90.0%
+            Yeast water  50.0 g  (5.0%) · water 100.0%
+            우유  50.0 g  (5.0%) · 수분 90.0%
+            르방 100g · 수분 100%
+            """)
+        #expect(r.input.water == 300)
+        #expect(r.input.yeast.grams == 0)
+        #expect(r.input.liquids.map(\.name) == ["Yogurt", "Yeast water", "우유"])
+        #expect(r.input.liquids.map(\.grams) == [100, 50, 50])
+        #expect(r.input.liquids.map(\.waterRatio) == [0.9, 1, 0.9])
+        // 르방 줄은 수분 표기가 붙어도 르방이다
+        #expect(r.input.levain.grams == 100)
+        #expect(r.input.levain.hydration == 1.0)
+        #expect(r.input.extras.isEmpty)
+        // 퍼센트 괄호 없이 붙은 수분 표기는 배합표 행이 아니다 — 밀가루 그대로
+        let flour = RecipeTextParser.parse("강력분 500g · 수분 70%")
+        #expect(flour.input.flours.map(\.grams) == [500])
+        #expect(flour.input.liquids.isEmpty)
     }
 
     @Test("공유 텍스트 끝의 앱 표기 줄은 재료도 레시피 이름도 아니다")

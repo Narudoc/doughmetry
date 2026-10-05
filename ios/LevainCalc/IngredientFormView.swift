@@ -64,10 +64,26 @@ struct IngredientFormSections: View {
                 Text(L("베이커스 퍼센트")).tag(PctBasis.addedFlour)
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(L("% 표기") + ": " + basisName)
-                Image(systemName: "chevron.up.chevron.down")
-                    .imageScale(.small)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    // 한 줄 라벨은 접혀 가운데로 모이고 화살표가 글 가운데에 낀다 — 이름과 기준을 두 줄로
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("% 표기"))
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(basisName)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .imageScale(.small)
+                        }
+                    }
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(spacing: 4) {
+                        Text(L("% 표기") + ": " + basisName)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .imageScale(.small)
+                    }
+                }
             }
             .font(.footnote.weight(.medium))
             .frame(minHeight: 36)
@@ -331,10 +347,7 @@ struct IngredientFormSections: View {
                     input.liquids.append(Liquid(name: "", grams: 0, waterRatio: 0.8))
                 }
             } label: {
-                // 행 전체가 메뉴를 연다 — 라벨 글자·아이콘만 눌리던 문제 (옆 '추가' 버튼 행들과 같게)
-                Label(L("액체 재료 추가"), systemImage: "plus.circle")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                AddMenuLabel(title: L("액체 재료 추가"))
             }
         } header: {
             Text(L("액체 재료"))

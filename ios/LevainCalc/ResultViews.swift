@@ -362,7 +362,9 @@ struct SaveRecipeSheet: View {
                     .lineLimit(2...5)
                     .accessibilityLabel(L("노트"))
                 if allowOverwrite {
-                    Toggle(L("불러온 레시피에 덮어쓰기"), isOn: $overwrite)
+                    Toggle(
+                        loadedName.map { LF("'%@'에 덮어쓰기", $0) } ?? L("불러온 레시피에 덮어쓰기"),
+                        isOn: $overwrite)
                 }
             }
             .navigationTitle(L("레시피 저장"))

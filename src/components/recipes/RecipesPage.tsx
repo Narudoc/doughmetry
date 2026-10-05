@@ -124,12 +124,12 @@ export function RecipesPage({
       const { added, updated, skipped } = api.importAll(res.recipes);
       setImportError(null);
       if (added + updated === 0) {
-        toast(`가져올 새 내용이 없습니다 — ${skipped}개 모두 같거나 더 새로운 버전이 저장되어 있습니다`);
+        toast(`가져올 새 내용이 없습니다 — ${skipped}개 모두 이미 있는 버전이라 건너뜀`);
       } else {
         const parts = [
           added > 0 && `${added}개 추가`,
           updated > 0 && `${updated}개 갱신`,
-          skipped > 0 && `${skipped}개는 같거나 더 새로운 버전이 있어 건너뜀`,
+          skipped > 0 && `${skipped}개는 이미 있는 버전이라 건너뜀`,
         ].filter(Boolean);
         toast(`레시피를 가져왔습니다 — ${parts.join(', ')}`);
       }
@@ -204,8 +204,7 @@ export function RecipesPage({
       ...structuredClone(input),
       pieces,
     };
-    api.save(recipe);
-    toast(`'${name}' 레시피를 가져왔습니다`);
+    if (api.save(recipe)) toast(`'${name}' 레시피를 가져왔습니다`);
   };
 
   return (
@@ -328,7 +327,7 @@ export function RecipesPage({
             : '검색 결과가 없습니다.'}
         </p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {filtered.map((r) => (
             <RecipeCard key={r.id} recipe={r} precision={settings.precision} onAction={onCardAction} />
           ))}
@@ -483,7 +482,7 @@ const RecipeCard = memo(function RecipeCard({ recipe, precision, onAction }: Car
   const levainLabel = recipe.levain.type === 'liquide' ? '리퀴드' : '뒤흐';
 
   return (
-    <li className="rounded-lg border border-line bg-white p-4">
+    <li className="min-w-0 rounded-lg border border-line bg-white p-4">
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 font-semibold [overflow-wrap:anywhere]">{recipe.name}</h3>
         <span className="shrink-0 text-xs tabular-nums text-ink/70">{fmtDate(recipe.updatedAt)}</span>

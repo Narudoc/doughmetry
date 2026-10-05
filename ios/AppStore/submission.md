@@ -90,6 +90,7 @@ plutil -p "$APP/Info.plist" | grep -E 'ITSAppUsesNonExemptEncryption|MinimumOSVe
 plutil -extract UIDeviceFamily json -o - "$APP/Info.plist"; echo                         # [1,2]
 plutil -extract UISupportedInterfaceOrientations json -o - "$APP/Info.plist"; echo       # 세로 하나
 plutil -extract 'UISupportedInterfaceOrientations~ipad' json -o - "$APP/Info.plist"; echo # 네 방향
+plutil -extract UIApplicationSceneManifest.UIApplicationSupportsMultipleScenes raw "$APP/Info.plist"   # false
 plutil -lint "$APP/PrivacyInfo.xcprivacy"                                                # … OK
 grep -rln 'doughmetry/privacy.html' LevainCalc                                           # 파일 하나 이상
 ```
@@ -139,9 +140,12 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
    cd /Users/narudoc/Claude/Doughmetry
    for d in "iPhone SE iOS17" "iPhone 15 iOS18" "iPad Air iOS18"; do
      xcodebuild test -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
-       -destination "platform=iOS Simulator,name=$d" -only-testing:LevainCalcUITests -quiet || echo "실패: $d"
+       -destination "platform=iOS Simulator,name=$d" -only-testing:LevainCalcUITests \
+       -collect-test-diagnostics never -quiet || echo "실패: $d"
    done
    ```
+
+   `-collect-test-diagnostics never`를 빼면 실패한 실행이 끝난 뒤 진단 수집에서 10분쯤 멈춘다.
 
    끝에 찍히는 `.xcresult`를 `open`해 첨부 스크린샷(`ko-tab0` …)에서 탭 바·하단 요약 바가 겹치거나 잘리지 않는지 본다.
 4. 손으로 확인 — `iPhone SE iOS17`에서는 전부, `iPhone 15 iOS18`에서는 빠르게: 사진 선택기가 열리고 사진 가져오기가 규칙 파서로 동작해 확인 시트가 뜸 / 숫자 입력 중 키보드 `완료`로 닫힘 / 도구 → 타임라인 알림 권한 요청·예약 / 설정 맨 아래 개인정보 처리방침·지원 링크가 Safari로 열림 / 설정에서 언어 전환.
@@ -196,8 +200,8 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
    ```bash
    cd /Users/narudoc/Claude/Doughmetry/ios/AppStore/screenshots
    git rm -q ko/*.png en/*.png && git rm -rq ko/6.9 en/6.9
-   ls ko/6.9-jpg ko/13-jpg en/6.9-jpg en/13-jpg                              # 각 6장(+07)
-   sips -g pixelWidth -g pixelHeight -g hasAlpha en/13-jpg/01-convert.jpg   # 2064 / 2752 / no
+   ls ko/6.9-jpg ko/13-jpg en/6.9-jpg en/13-jpg   # 각 6장(+07)
+   ../capture-screenshots.sh --check-shots         # 빠진 장·픽셀 크기·알파 → 스크린샷 24장(07까지 28장) 규격 확인
    ```
 
 4. 0-11로 돌아가 커밋한다.
@@ -274,7 +278,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 ### 3-1. 페이지 내용 확인 (파일은 이미 있다)
 
 1. `public/privacy.html`과 `ios/AppStore/privacy-policy.md`는 **같은 문구**다 — md는 Pages 배포 전 임시 개인정보 URL(3-2 7번, GitHub 렌더링)로 쓴다. 문구를 고칠 때는 두 파일을 함께 고치고 `최종 갱신 / Last updated` 날짜를 맞춘다. md 본문을 링크 한 줄로 비우지 말 것.
-2. 담겨야 할 내용(한/영 모두): 계정 없음 · 데이터는 기기 안 · iCloud 동기화는 **기본 켜짐**이고 사용자 본인 iCloud에만 저장, 앱 안 *레시피 탭 → 설정*에서 끄기 · 레시피 가져오기(사진·텍스트 인식)는 기기 안(Apple Vision · Apple Intelligence) · 분석·광고·추적 없음 · 알림은 로컬 · 내보내기·공유는 사용자가 직접 · 보관·삭제 안내 · 웹 버전 문단 · 문의 이메일(고정값 표의 공개 문의 이메일).
+2. 담겨야 할 내용(한/영 모두): 계정 없음 · 데이터는 기기에, iCloud 동기화가 켜져 있으면(**기본 켜짐**) 사용자 본인 iCloud에도 저장 — 동기화가 기본이므로 '기기 안에만'이라고 쓰지 않는다 · 동기화는 앱 안 *레시피 탭 → 설정*에서 끄기 · 레시피 가져오기(사진·텍스트 인식)는 기기 안(Apple Vision · Apple Intelligence) · 분석·광고·추적 없음 · 알림은 로컬 · 내보내기·공유는 사용자가 직접 · 보관·삭제 안내 · 웹 버전 문단 · 문의 이메일(고정값 표의 공개 문의 이메일).
 3. `public/support.html`: 문의 이메일, GitHub Issues 링크, 웹 버전 링크, 개인정보 처리방침 링크. 지원 URL로 쓰므로 연락처가 반드시 보여야 한다(심사 1.5).
 
 ### 3-2. 푸시·배포·확인
@@ -308,7 +312,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 1. `open /Users/narudoc/Claude/Doughmetry/ios/LevainCalc.xcodeproj`.
 2. 툴바 스킴이 `LevainCalc`인지 확인. 실행 대상 드롭다운 → `Any iOS Device (arm64)` 선택 (메뉴 `Product > Destination > Any iOS Device`).
 3. `TARGETS > LevainCalc > General > Identity`: `Version` = `1.0`, `Build` = `1` 확인 (두 번째 업로드부터는 `Build`를 올린다, 0-4).
-4. 저장소·배포 상태 점검 — 저장소와 배포가 출시할 상태인지는 이 스크립트가 기준이다 (작업 트리 깨끗함, HEAD = origin/main, privacy·support 페이지 200, 앱 안 처리방침 링크, PrivacyInfo lint, LevainCore 테스트, 스토어 스크린샷 알파 없음):
+4. 저장소·배포 상태 점검 — 저장소와 배포가 출시할 상태인지는 이 스크립트가 기준이다 (작업 트리 깨끗함, HEAD = origin/main, privacy·support 페이지 200, 앱 안 처리방침 링크, PrivacyInfo lint, LevainCore 테스트, 스토어 스크린샷 — 한/영 × iPhone 6.9형·iPad 13형 × 01~06(07은 있으면) 파일·픽셀 크기·알파 없음, 목록에 없는 파일 없음):
 
    ```bash
    cd /Users/narudoc/Claude/Doughmetry && ios/AppStore/preflight.sh repo   # → preflight repo: 통과
@@ -316,7 +320,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 
 5. 메뉴 `Product > Archive`. Release 구성으로 빌드된다(수 분). 첫 아카이브에서 macOS 키체인/Apple 계정 인증 창이 뜨면 허용.
 6. 끝나면 Organizer가 자동으로 열린다 (안 열리면 `Window > Organizer`, `⌥⇧⌘O`) → 왼쪽 `Archives` → 방금 만든 `LevainCalc 1.0 (1)` 항목이 `iOS Apps` 아래 있는지 확인 (`Other Items` 아래면 스킴 아카이브 설정 문제, 8장).
-7. 아카이브 내용 검증 — Organizer의 가장 최근 아카이브를 본다 (ITSAppUsesNonExemptEncryption false, UIDeviceFamily [1,2], PrivacyInfo.xcprivacy 포함, MinimumOSVersion = 프로젝트의 IPHONEOS_DEPLOYMENT_TARGET):
+7. 아카이브 내용 검증 — Organizer의 가장 최근 아카이브를 본다 (ITSAppUsesNonExemptEncryption false, UIDeviceFamily [1,2], UIApplicationSupportsMultipleScenes false, PrivacyInfo.xcprivacy 포함, MinimumOSVersion = 프로젝트의 IPHONEOS_DEPLOYMENT_TARGET):
 
    ```bash
    ios/AppStore/preflight.sh archive   # → preflight archive: 통과
@@ -386,7 +390,7 @@ GUI 대신 쓸 수 있다. 같은 Apple 계정이 Xcode에 로그인돼 있어�
    - 도구: 타임라인 알림 권한 요청 → 알림 도착.
    - 다크 모드, 영어 전환(영어 용어: Liquid/Stiff levain, Starter).
    - **iPad가 있으면** 같은 그룹으로 TestFlight 설치 → 세로·가로·Split View·창 크기 조절(0-9 6번과 같은 항목)과 두 기기 사이 iCloud 동기화 — 심사관이 iPad로 열 수 있다.
-   동기화·저장 문제가 생기면 진단 로그를 본다: 아이폰을 Mac에 연결 → Console.app 왼쪽에서 기기 선택 → 검색창에 `subsystem:com.narudoc.doughmetry` → `시작 (Start)`을 누른 **뒤** 문제를 재현한다(`sync`·`storage` 카테고리, 개수와 오류 도메인·코드만 남는다). 다른 테스터에게서는 sysdiagnose를 받는다. 통합 로그는 기기 밖으로 나가지 않으므로 6-4의 '데이터가 수집되지 않음' 라벨은 그대로다.
+   동기화·저장·가져오기 문제가 생기면 진단 로그를 본다: 아이폰을 Mac에 연결 → Console.app 왼쪽에서 기기 선택 → 검색창에 `subsystem:com.narudoc.doughmetry` → `시작 (Start)`을 누른 **뒤** 문제를 재현한다(`sync`·`storage`·`import`(AI 초안 시간 초과·기각 사유) 카테고리, 개수와 오류 도메인·코드·기각 사유만 남고 레시피 내용은 남지 않는다). 다른 테스터에게서는 sysdiagnose를 받는다. 통합 로그는 기기 밖으로 나가지 않으므로 6-4의 '데이터가 수집되지 않음' 라벨은 그대로다.
 8. 빌드는 업로드 90일 후 `만료됨 (Expired)`이 된다. 스토어 버전에는 영향 없다.
 
 ---
@@ -410,7 +414,7 @@ GUI 대신 쓸 수 있다. 같은 Apple 계정이 Xcode에 로그인돼 있어�
    - `번들 ID`: `com.narudoc.doughmetry` (자동), `SKU`: `levaincalc` (자동), `Apple ID`: 자동 번호.
    - `기본 언어 (Primary Language)`: `한국어`. 기본 언어는 첫 승인 뒤에만 바꿀 수 있다(Apple 'Change the primary language') — 영어 검색은 위 세 영어 현지화로 해결한다.
    - `카테고리 (Category)`: `기본 (Primary)` = `음식 및 음료 (Food & Drink)`, `보조 (Secondary)` = `유틸리티 (Utilities)`.
-   - `콘텐츠 권한 (Content Rights)`: `콘텐츠 권한 정보 설정 (Set Up Content Rights Information)` → `아니요, 타사 콘텐츠를 포함·표시·접근하지 않습니다 (No, it does not contain, show, or access third-party content)` → `완료 (Done)`. (앱이 배포하는 타사 콘텐츠는 없다. 사용자가 직접 가져오는 레시피는 기기 안에만 있다.)
+   - `콘텐츠 권한 (Content Rights)`: `콘텐츠 권한 정보 설정 (Set Up Content Rights Information)` → `아니요, 타사 콘텐츠를 포함·표시·접근하지 않습니다 (No, it does not contain, show, or access third-party content)` → `완료 (Done)`. (앱이 배포하는 타사 콘텐츠는 없다. 사용자가 직접 가져오는 레시피는 사용자의 기기와 본인 iCloud에만 있다.)
    - `연령 등급 (Age Rating)`: 6-2.
    - `사용권 계약 (License Agreement)`: Apple 표준 EULA 그대로.
 5. `저장`.
@@ -500,7 +504,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 3. `앱 심사 정보 (App Review Information)`:
    - `로그인 필요 (Sign-in required)`: **체크 해제** (계정 없음).
    - `연락처 정보 (Contact Information)`: 고정값 표의 이름·성·전화(`+82 10-…` 국제 형식)·이메일(`juvesoul@icloud.com`)을 그대로 입력.
-   - `메모 (Notes)` (4000바이트, 선택이지만 꼭 쓸 것): [listing.md](listing.md) `심사 노트`의 코드 블록을 한/영 그대로 붙여 넣는다(약 2.5 KB). 계정 불필요·오프라인·iPad 지원·가져오기 방식(Apple Intelligence가 없으면 규칙 파서)·본인 iCloud만 사용·로컬 알림·테스트용 레시피가 들어 있다.
+   - `메모 (Notes)` (4000바이트, 선택이지만 꼭 쓸 것): [listing.md](listing.md) `심사 노트`의 코드 블록을 한/영 그대로 붙여 넣는다(약 2.6 KB). 계정 불필요·오프라인·iPad 지원·가져오기 방식(Apple Intelligence가 없으면 규칙 파서)·본인 iCloud만 사용·로컬 알림·테스트용 레시피가 들어 있다.
    - `첨부 파일 (Attachment)`: 불필요.
 4. `App Store 버전 출시 (App Store Version Release)`: 첫 출시는 **`이 버전을 수동으로 출시 (Manually release this version)`** 선택 — 승인 후 스토어 페이지를 확인하고 내가 원하는 시각에 공개. (자동 출시는 `앱 심사가 끝나면 자동으로 이 버전을 출시`.)
 5. 오른쪽 위 `저장`.

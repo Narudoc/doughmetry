@@ -289,6 +289,7 @@ private let en: [String: String] = [
     "태그 (쉼표로 구분)": "Tags (comma-separated)",
     "노트": "Notes",
     "불러온 레시피에 덮어쓰기": "Overwrite loaded recipe",
+    "'%@'에 덮어쓰기": "Overwrite '%@'",
 
     // 변환기
     "르방 변환": "Levain conversion",
@@ -353,8 +354,8 @@ private let en: [String: String] = [
     "가져오기 실패": "Import failed",
     "가져오기 완료": "Import complete",
     "%d개의 레시피를 가져왔습니다.": "Imported %d recipes.",
-    "%d개를 가져왔고, %d개는 기기에 같거나 더 새로운 버전이 있어 건너뛰었습니다.":
-        "Imported %d; skipped %d because this device already has the same or a newer version.",
+    "%d개를 가져왔고, %d개는 이미 있는 버전이라 건너뛰었습니다.":
+        "Imported %d; skipped %d already on this device.",
     "가져오는 중 오류가 발생했습니다. 다시 시도해 주세요.": "Something went wrong while importing. Please try again.",
     "'%@' 레시피를 삭제할까요?": "Delete the recipe '%@'?",
     "베이킹 기록 %d개도 함께 삭제되며 되돌릴 수 없습니다.":

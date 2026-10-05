@@ -3,8 +3,14 @@ import Foundation
 /// 빈 레시피 탭의 "예시 레시피 추가" — 사용자가 누를 때만 넣는다 (자동으로 넣지 않는다).
 /// id는 고정이다: 두 기기에서 따로 눌러도 iCloud 병합 뒤 한 벌만 남는다. 웹 JSON 스키마와 그대로 호환
 public enum SampleRecipes {
+    /// 앱이 넣는 예시의 시각 — 어떤 실제 편집·묘비보다 오래다.
+    /// 넣는 시각을 쓰면 다른 기기(새로 설치해 아직 내려받기 전, iCloud 꺼짐)에서 누른 예시가
+    /// 병합에서 이 기기의 예시 편집을 되돌리고 지운 예시를 되살린다.
+    /// 이 기기에서 지운 예시를 다시 넣을 때는 저장(LibrarySync.savedRecipe)이 묘비 뒤로 민다
+    public static let epoch = "2000-01-01T00:00:00.000Z"
+
     /// 이름·재료명은 넣는 순간의 앱 언어로 쓴다 — 저장된 뒤엔 사용자 데이터라 언어를 바꿔도 그대로다
-    /// localize는 앱의 L — 코어엔 앱 사전이 없다
+    /// localize는 앱의 L — 코어엔 앱 사전이 없다. 앱은 now에 epoch를 넘기고 touch: false로 저장한다
     public static func make(now: String, localize: (String) -> String) -> [Recipe] {
         let tags = [localize("예시")]
         func recipe(_ id: String, _ name: String, pieces: Double, _ input: DoughInput) -> Recipe {
@@ -59,6 +65,7 @@ public enum SampleRecipes {
         return samples.enumerated().map { i, r in
             var r = r
             r.createdAt = isoString(from: base.addingTimeInterval(-Double(i)))
+            r.updatedAt = r.createdAt
             return r
         }
     }

@@ -54,6 +54,8 @@ struct NumberField: View {
         min(maxValue, max(minValue, integer ? v.rounded() : v))
     }
 
+    private var stacked: Bool { typeSize.isAccessibilitySize && !label.isEmpty }
+
     private var accessibilityText: String {
         let name = accessibilityName ?? label
         return name.isEmpty ? unit : "\(name) (\(unit))"
@@ -61,10 +63,9 @@ struct NumberField: View {
 
     var body: some View {
         // 접근성 글자 크기에선 라벨을 윗줄로 — 한 줄에 두면 긴 라벨이 글자 단위로 쪼개진다
-        let stacked = typeSize.isAccessibilitySize && !label.isEmpty
         // 입력 칸(UITextField)이 라벨 밑까지 행 전체에 깔리고 라벨은 그 위에 글자만 얹는다 — 라벨·빈 간격을 누르면
         // 입력 칸이 직접 탭을 받는다. 탭으로 FocusState를 쓰면 목록을 민 뒤나 결과 바 '완료' 뒤에
-        // 탭이 죽거나 다른 재료 칸에 포커스가 간다 (iOS 17·27)
+        // 탭이 죽거나 다른 재료 칸에 포커스가 간다 (iOS 17·27). 윗줄 라벨·행의 위아래 여백은 바탕(FieldTapArea)이 받는다
         VStack(alignment: .leading, spacing: 4) {
             if stacked { labelText }
             HStack {
@@ -83,6 +84,7 @@ struct NumberField: View {
                     .allowsHitTesting(false)
             }
         }
+        .background { FieldTapArea().padding(.vertical, -FieldTapArea.slop) }
     }
 
     private var labelText: some View {
@@ -101,8 +103,17 @@ struct NumberField: View {
             .focused($focused)
             .frame(minWidth: 70, maxWidth: .infinity)
             .accessibilityLabel(accessibilityText)
+            // 라벨을 윗줄에 둔 칸은 값 쪽을 누르게 — iOS 17은 칸의 틀을 행 전체로 알려 가운데가 라벨 줄에 떨어진다
+            .accessibilityActivationPoint(stacked ? UnitPoint(x: 0.9, y: 0.8) : .center)
             .onChange(of: text) { _, newText in
                 guard focused || (focusMayLag && newText != display(value)) else { return }
+                // 데시멀 키패드와 달리 하드웨어 키보드는 글자·한글도 친다 — 칸에 "655뮻"이 남은 채 계산은 655로 하지 않도록
+                // 걷어낸다. 프로그램이 쓴 표시값(정수 칸의 "1e+15" 같은 지수 표기)은 그대로 둔다
+                let allowed = newText.filter { ("0"..."9").contains($0) || $0 == "." || $0 == "," || $0.isWhitespace }
+                if allowed != newText, newText != display(value) {
+                    text = allowed
+                    return
+                }
                 // 바인딩이 실제로 저장한 값을 다시 읽어 기록 — 하한·상한·환산 setter의 반향을
                 // 외부 변경으로 오인해 입력 중인 텍스트를 덮어쓰지 않도록.
                 // 붙여넣은 " 500 "도 받도록 앞뒤 공백을 걷는다 (웹 NumberField와 동일)
@@ -149,6 +160,73 @@ struct NumberField: View {
                 SelectAllOnFocus.install()
                 text = display(value)
             }
+    }
+}
+
+/// NumberField 바탕 — 칸 둘레(라벨·단위, 행의 위아래 여백)를 눌러도 그 칸이 포커스를 얻는다.
+/// 칸(UITextField)은 한 줄 높이(약 22pt)라 44pt 행의 위쪽과 윗줄 라벨이 눌리지 않았다.
+/// FocusState가 아니라 칸을 직접 응답자로 — FocusState로 주면 목록을 민 뒤나 '완료' 뒤에
+/// 탭이 죽거나 다른 칸에 포커스가 간다 (iOS 17·27)
+private struct FieldTapArea: UIViewRepresentable {
+    /// NumberField 위아래로 늘리는 폭 — 목록 행의 위아래 여백(iOS 17 11pt, 27 15pt)까지.
+    /// 셀 밖은 UIKit이 셀 단위로 가려 옆 행을 덮지 않는다
+    static let slop: CGFloat = 16
+
+    func makeUIView(context: Context) -> UIView { TapView() }
+    func updateUIView(_ view: UIView, context: Context) {}
+
+    private final class TapView: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        // 늘린 바탕이 같은 행의 다른 입력 칸(위아래로 쌓인 이름·그램 칸) 위에 걸친 자리는 그 칸에 넘긴다 —
+        // 바탕이 받으면 포커스만 옮기고 커서 놓기·다시 눌러 전체 선택 풀기·길게 누르기가 죽는다.
+        // nil을 돌려주면 iOS 17에서 터치가 그대로 삼켜진다
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+            guard let hit = super.hitTest(point, with: event), let window else { return nil }
+            let location = convert(point, to: window)
+            var root = superview
+            while let container = root, !(container is UIScrollView) {
+                let inputs = Self.textInputs(in: container)
+                if !inputs.isEmpty {
+                    guard let input = inputs.first(where: { $0.convert($0.bounds, to: window).contains(location) })
+                    else { return hit }
+                    return input.hitTest(convert(point, to: input), with: event) ?? input
+                }
+                root = container.superview
+            }
+            return hit
+        }
+
+        @objc private func tapped(_ tap: UITapGestureRecognizer) {
+            guard let window else { return }
+            let own = convert(bounds.insetBy(dx: 0, dy: FieldTapArea.slop), to: window)
+            // 행(셀) 안에서만 찾는다 — 시트 뒤에 깔린 화면의 칸이 같은 자리에 있을 수 있다
+            var root = superview
+            while let container = root, !(container is UIScrollView) {
+                let inputs = Self.textInputs(in: container)
+                let target = inputs.first {
+                    let frame = $0.convert($0.bounds, to: window)
+                    return own.contains(CGPoint(x: frame.midX, y: frame.midY))
+                }
+                if let target {
+                    if !target.isFirstResponder { target.becomeFirstResponder() }
+                    return
+                }
+                root = container.superview
+            }
+        }
+
+        private static func textInputs(in view: UIView) -> [UIView] {
+            guard !view.isHidden, view.alpha > 0, view.isUserInteractionEnabled else { return [] }
+            if let field = view as? UITextField { return field.isEnabled ? [field] : [] }
+            if view is UITextView { return [view] }
+            return view.subviews.flatMap(textInputs(in:))
+        }
     }
 }
 
@@ -220,7 +298,8 @@ private final class KeyboardAvoidanceObserver: NSObject {
         if shared == nil { shared = KeyboardAvoidanceObserver() }
     }
 
-    private weak var activeField: UITextField?
+    /// 숫자·이름 칸(UITextField)과 여러 줄 메모 칸(TextField(axis: .vertical) → UITextView)
+    private weak var activeField: UIView?
     /// 화면 좌표의 키보드 틀 — 화면 아래에 붙은 키보드만 (떠 있는·분리된 키보드는 칸을 가리지 않는다)
     private var dockedKeyboard: CGRect?
 
@@ -231,6 +310,9 @@ private final class KeyboardAvoidanceObserver: NSObject {
             self, selector: #selector(didBeginEditing(_:)),
             name: UITextField.textDidBeginEditingNotification, object: nil)
         center.addObserver(
+            self, selector: #selector(didBeginEditing(_:)),
+            name: UITextView.textDidBeginEditingNotification, object: nil)
+        center.addObserver(
             self, selector: #selector(keyboardDidChange(_:)),
             name: UIResponder.keyboardDidShowNotification, object: nil)
         center.addObserver(
@@ -239,7 +321,7 @@ private final class KeyboardAvoidanceObserver: NSObject {
     }
 
     @objc private func didBeginEditing(_ note: Notification) {
-        activeField = note.object as? UITextField
+        activeField = note.object as? UIView
     }
 
     @objc private func keyboardDidChange(_ note: Notification) {
@@ -269,7 +351,13 @@ private final class KeyboardAvoidanceObserver: NSObject {
             visibleBottom = min(visibleBottom, local.minY)
         }
         let visibleTop = bounds.minY + inset.top
-        let target = field.convert(field.bounds, to: scrollView).insetBy(dx: 0, dy: -12)
+        var target = field.convert(field.bounds, to: scrollView).insetBy(dx: 0, dy: -12)
+        // 보이는 높이보다 큰 여러 줄 칸은 칸 전체 대신 커서 줄을 — 칸 위쪽에 맞추면 치는 줄이 결과 바·키보드 뒤로 간다
+        if target.height > visibleBottom - visibleTop, let textView = field as? UITextView,
+            let caret = textView.selectedTextRange?.end
+        {
+            target = textView.convert(textView.caretRect(for: caret), to: scrollView).insetBy(dx: 0, dy: -12)
+        }
         var offset = scrollView.contentOffset
         if target.maxY > visibleBottom {
             offset.y += min(target.maxY - visibleBottom, target.minY - visibleTop)
@@ -505,7 +593,7 @@ struct AXDatePicker: View {
 }
 
 extension View {
-    /// 저장 같은 동작 뒤 잠깐 뜨는 상태 알림 (웹 Toast처럼 2.6초). message를 넣으면 아래쪽에 뜨고 VoiceOver가 읽으며, 시간이 지나면 nil로 돌린다.
+    /// 저장 같은 동작 뒤 잠깐 뜨는 상태 알림 (웹 Toast처럼 2.6초). message를 넣으면 아래쪽에 뜨고 VoiceOver가 읽으며, 받는 즉시 nil로 돌린다.
     /// 아래 안전 영역 위에 놓이므로 요약 바를 단 safeAreaInset(edge: .bottom)보다 먼저(안쪽에) 붙여야 바를 가리지 않는다
     func toast(_ message: Binding<String?>) -> some View { modifier(ToastModifier(message: message)) }
 
@@ -573,6 +661,31 @@ struct AXMenuPicker<P: View>: View {
     }
 }
 
+/// '추가' 메뉴의 라벨 — 행 폭 전체가 메뉴를 연다 (Menu 행은 라벨 글자·아이콘만 눌린다).
+/// Menu 안의 Label은 접근성 글자 크기에서 낱말 중간에서 끊긴다 ("Ad | d liquid", iOS 17·18) — 아이콘과 글자를 직접 늘어놓는다
+struct AddMenuLabel: View {
+    let title: String
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                HStack {
+                    Image(systemName: "plus.circle")
+                        .accessibilityHidden(true)
+                    Text(title)
+                }
+            } else {
+                Label(title, systemImage: "plus.circle")
+            }
+        }
+        // 메뉴 라벨은 여러 줄 글자를 가운데로 맞춘다
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
 private struct KeyboardDoneToolbar: ViewModifier {
     @State private var keyboardVisible = false
 
@@ -598,8 +711,15 @@ private struct KeyboardDoneToolbar: ViewModifier {
     }
 }
 
+/// 띄운 알림 한 번 — 같은 문구를 다시 띄워도 id가 달라 타이머·VoiceOver 안내가 처음부터 다시 돈다
+private struct Toast: Equatable {
+    let id = UUID()
+    let text: String
+}
+
 private struct ToastModifier: ViewModifier {
     @Binding var message: String?
+    @State private var toast: Toast?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -607,8 +727,8 @@ private struct ToastModifier: ViewModifier {
             .overlay(alignment: .bottom) {
                 // 늘 있는 바깥 틀에 애니메이션을 걸어야 알림이 들고 나는 전환만 움직인다 (본문 변경까지 번지지 않게)
                 ZStack {
-                    if let message {
-                        Text(message)
+                    if let toast {
+                        Text(toast.text)
                             .font(.subheadline)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
@@ -623,19 +743,25 @@ private struct ToastModifier: ViewModifier {
                                 reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.easeInOut(duration: 0.25), value: message)
+                .animation(.easeInOut(duration: 0.25), value: toast)
                 .allowsHitTesting(false)
             }
-            .task(id: message) {
-                guard let shown = message else { return }
-                // 탭을 떠나 취소돼도 지운다 — 남겨 두면 돌아올 때 지난 알림이 다시 뜬다
-                try? await Task.sleep(for: .seconds(2.6))
-                if message == shown { message = nil }
-            }
+            // 받은 문구는 바로 비운다 — 같은 문구를 다시 넣어도 값이 바뀌어(nil → 문구) 새 알림으로 잡힌다
             .onChange(of: message) { _, new in
                 guard let new else { return }
+                toast = Toast(text: new)
+                message = nil
+            }
+            .task(id: toast?.id) {
+                guard let shown = toast else { return }
+                // 탭을 떠나 취소돼도 지운다 — 남겨 두면 돌아올 때 지난 알림이 다시 뜬다
+                try? await Task.sleep(for: .seconds(2.6))
+                if toast?.id == shown.id { toast = nil }
+            }
+            .onChange(of: toast?.id) {
+                guard let toast else { return }
                 // 저장 시트가 닫히며 생기는 화면 전환 알림에 끊기지 않도록 높은 우선순위
-                var announcement = AttributedString(new)
+                var announcement = AttributedString(toast.text)
                 announcement[AttributeScopes.AccessibilityAttributes.AnnouncementPriorityAttribute.self] = .high
                 AccessibilityNotification.Announcement(announcement).post()
             }

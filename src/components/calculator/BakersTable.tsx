@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import type { DoughInput, DoughStats } from '../../lib/dough';
 import { convertYeast } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct, uiPct } from '../../lib/format';
 import type { PctBasis } from '../../types';
+import { Fr } from '../ui/Fr';
 
 interface Props {
   input: DoughInput;
@@ -14,10 +16,10 @@ interface Props {
 
 interface RowData {
   key: string;
-  name: string;
+  name: ReactNode;
   grams: number;
   pct: number;
-  note: string;
+  note: ReactNode;
   indent?: boolean;
 }
 
@@ -25,7 +27,16 @@ export function BakersTable({ input, stats, precision, pieces, basis = 'total' }
   // 표시 기준(설정)에 따른 % — PFF와 르방 분해 행은 항상 총 밀가루 기준
   const pctOf = (g: number) => uiPct(stats, g, basis);
   const pctTotal = (g: number) => (stats.totalFlour > 0 ? (g / stats.totalFlour) * 100 : 0);
-  const levainLabel = input.levain.type === 'liquide' ? '리퀴드 liquide' : '뒤흐 dur';
+  const levainLabel =
+    input.levain.type === 'liquide' ? (
+      <>
+        리퀴드 <Fr>liquide</Fr>
+      </>
+    ) : (
+      <>
+        뒤흐 <Fr>dur</Fr>
+      </>
+    );
   const yeastLabel = input.yeast.type === 'fresh' ? '생이스트' : '인스턴트 드라이';
   const yeastOther = input.yeast.type === 'fresh' ? '인스턴트 드라이' : '생이스트';
 
@@ -51,14 +62,18 @@ export function BakersTable({ input, stats, precision, pieces, basis = 'total' }
             name: '바시나주',
             grams: input.bassinage,
             pct: pctOf(input.bassinage),
-            note: 'bassinage — 후반 급수',
+            note: (
+              <>
+                <Fr>bassinage</Fr> — 후반 급수
+              </>
+            ),
           },
         ]
       : []),
     { key: 'salt', name: '소금', grams: input.salt, pct: pctOf(input.salt), note: '' },
     {
       key: 'levain',
-      name: `르방 (${levainLabel})`,
+      name: <>르방 ({levainLabel})</>,
       grams: input.levain.grams,
       pct: pctOf(input.levain.grams),
       note: `수분율 ${(input.levain.hydration * 100).toFixed(0)}%${input.levain.flourName ? ` · ${input.levain.flourName}` : ''}`,

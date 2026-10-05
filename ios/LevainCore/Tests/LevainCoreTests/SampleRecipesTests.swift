@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import LevainCore
 
@@ -47,5 +48,90 @@ struct SampleRecipesTests {
     func orderSurvivesReload() throws {
         let doc = LibrarySync.decode(try LibrarySync.encode(LibraryDocument(recipes: samples)))
         #expect(doc.recipes.map(\.id) == samples.map(\.id))
+    }
+
+    @Test("updatedAt은 createdAt과 같다 — epoch로 만들면 epoch보다 새 시각이 없다")
+    func updatedAtIsCreatedAt() throws {
+        #expect(samples.allSatisfy { $0.updatedAt == $0.createdAt })
+        let fresh = SampleRecipes.make(now: SampleRecipes.epoch, localize: { $0 })
+        #expect(fresh.allSatisfy { $0.updatedAt == $0.createdAt })
+        #expect(!fresh.contains { LibrarySync.isNewer($0.updatedAt, than: SampleRecipes.epoch) })
+        // 1초씩 앞당긴 createdAt — 정의한 순서가 유지된다
+        let doc = LibrarySync.decode(try LibrarySync.encode(LibraryDocument(recipes: fresh)))
+        #expect(doc.recipes.map(\.id) == fresh.map(\.id))
+    }
+
+    /// 앱의 "예시 레시피 추가" — RecipesView.addSamples와 같은 저장 (epoch, touch: false, 이미 있는 id는 건너뜀)
+    private func addSamples(to doc: LibraryDocument, now: Date) -> LibraryDocument {
+        var doc = doc
+        for sample in SampleRecipes.make(now: SampleRecipes.epoch, localize: { $0 }).reversed()
+        where !doc.recipes.contains(where: { $0.id == sample.id }) {
+            guard
+                let saved = LibrarySync.savedRecipe(
+                    sample, replacing: nil, tombstone: doc.deleted.first { $0.id == sample.id },
+                    touch: false, now: now)
+            else { continue }
+            doc.deleted.removeAll { $0.id == sample.id }
+            doc.recipes.insert(saved, at: 0)
+        }
+        return doc
+    }
+
+    @Test("다른 기기에서 나중에 넣은 예시가 이 기기의 예시 편집·삭제를 되돌리지 않는다 (병합 순서 무관)")
+    func laterAddDoesNotRevertEdits() throws {
+        let t0 = try #require(parseISO("2026-10-01T10:00:00Z"))
+        // 기기 A: 예시를 넣고 캉파뉴를 고치고 바게트를 지웠다
+        var a = addSamples(to: LibraryDocument(), now: t0)
+        let idx = try #require(a.recipes.firstIndex(where: { $0.id == "sample-campagne" }))
+        var edited = a.recipes[idx]
+        edited.name = "내 캉파뉴"
+        edited.water = 700
+        a.recipes[idx] = try #require(
+            LibrarySync.savedRecipe(
+                edited, replacing: a.recipes[idx], tombstone: nil, now: t0.addingTimeInterval(60)))
+        let baguette = try #require(a.recipes.first(where: { $0.id == "sample-baguette" }))
+        a.recipes.removeAll { $0.id == "sample-baguette" }
+        a.deleted.append(
+            Tombstone(
+                id: "sample-baguette",
+                deletedAt: LibrarySync.tombstoneTime(for: baguette.updatedAt, now: t0.addingTimeInterval(120))))
+
+        // 기기 B: 빈 라이브러리(새로 설치해 아직 내려받기 전)에서 한 시간 뒤 예시를 넣었다
+        let b = addSamples(to: LibraryDocument(), now: t0.addingTimeInterval(3600))
+
+        for m in [LibrarySync.merge(local: a, remote: b), LibrarySync.merge(local: b, remote: a)] {
+            let campagne = try #require(m.recipes.first(where: { $0.id == "sample-campagne" }))
+            #expect(campagne.water == 700)
+            #expect(campagne.name == "내 캉파뉴")
+            #expect(!m.recipes.contains { $0.id == "sample-baguette" })
+            #expect(m.deleted.map(\.id) == ["sample-baguette"])
+            #expect(m.recipes.map(\.id).sorted() == ["sample-brioche", "sample-campagne", "sample-complet"])
+        }
+    }
+
+    @Test("이 기기에서 지운 예시를 다시 넣으면 묘비 뒤로 밀려 되살아난다")
+    func reAddAfterLocalDeleteRevives() throws {
+        let t0 = try #require(parseISO("2026-10-01T10:00:00Z"))
+        var a = addSamples(to: LibraryDocument(), now: t0)
+        let baguette = try #require(a.recipes.first(where: { $0.id == "sample-baguette" }))
+        a.recipes.removeAll { $0.id == "sample-baguette" }
+        let tombstone = Tombstone(
+            id: "sample-baguette",
+            deletedAt: LibrarySync.tombstoneTime(for: baguette.updatedAt, now: t0.addingTimeInterval(60)))
+        a.deleted.append(tombstone)
+        // iCloud에는 삭제 직후의 문서가 남아 있다 — 같은 묘비
+        let remote = a
+
+        let readded = addSamples(to: a, now: t0.addingTimeInterval(120))
+        let revived = try #require(readded.recipes.first(where: { $0.id == "sample-baguette" }))
+        #expect(LibrarySync.isNewer(revived.updatedAt, than: tombstone.deletedAt))
+        #expect(readded.deleted.isEmpty)
+        for m in [
+            LibrarySync.merge(local: readded, remote: remote), LibrarySync.merge(local: remote, remote: readded),
+        ] {
+            #expect(m.recipes.contains { $0.id == "sample-baguette" })
+            #expect(m.deleted.isEmpty)
+            #expect(m.recipes.count == 4)
+        }
     }
 }

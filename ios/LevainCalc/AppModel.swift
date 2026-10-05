@@ -535,8 +535,17 @@ final class AppModel {
         return copy
     }
 
-    /// 계산기 내용을 레시피로 저장한 직후 호출 — 이후 바뀐 것만 '저장하지 않은 입력'이 된다
+    /// 계산기 내용을 레시피로 저장한 직후 호출 — 이후 바뀐 것만 '저장하지 않은 입력'이 된다.
+    /// 모드 B 저장은 역산 결과만 남긴다 — 숨은 모드 A 입력이 마지막 기준과 다르면 그 입력은 여전히 저장되지 않은 것
     func markCalcSaved() {
+        if calc.mode == .b {
+            // 다시 띄워 복원한 draft엔 기준이 없다 — calcIsDirty처럼 연결된 레시피를 기준으로 본다.
+            // 분할 개수도 모드 B에선 숨은 모드 A 입력이다
+            let linked = calc.recipeId.flatMap { id in recipes.first { $0.id == id } }
+            let savedInput = calcBaseline?.input ?? linked?.doughInput
+            let savedPieces = calcBaseline?.pieces ?? linked.map { $0.pieces ?? 0 }
+            if calc.input != savedInput || calc.pieces != savedPieces { return }
+        }
         calcBaseline = calc
     }
 

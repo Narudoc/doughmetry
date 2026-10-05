@@ -61,7 +61,7 @@ struct CalculatorView: View {
                         }
                         .textCase(nil)
                     } else {
-                        TargetFormSections(target: $model.calc.target)
+                        TargetFormSections(target: $model.calc.target, precision: model.precision)
                         targetErrors(dough: dough)
                         TargetResultSection(dough: dough, precision: model.precision)
                     }
@@ -209,8 +209,12 @@ struct CalculatorView: View {
                             ? model.calc.target.spec.doughWeight : nil,
                         pieces: pieces)
                     model.save(recipe)
-                    model.calc.name = name
-                    model.calc.recipeId = id
+                    // 모드 B 저장본은 계산기에 연결하지 않는다 — 연결하면 모드 A 저장이 그 레시피를
+                    // 덮어쓰기 대상으로 잡아 모드 A 배합으로 바꿔 버린다
+                    if model.calc.mode == .a {
+                        model.calc.name = name
+                        model.calc.recipeId = id
+                    }
                     model.markCalcSaved()
                     savedFeedback.toggle()
                     toastMessage = overwrite ? L("레시피를 덮어썼습니다") : LF("'%@' 레시피를 저장했습니다", name)
@@ -555,6 +559,7 @@ private struct ScaleRecipeSheet: View {
 /// 모드 B 목표 입력 폼
 struct TargetFormSections: View {
     @Binding var target: TargetForm
+    let precision: Precision
 
     var body: some View {
         Section(L("목표")) {
@@ -571,7 +576,7 @@ struct TargetFormSections: View {
                 HStack {
                     Text(L("총 반죽 무게")).foregroundStyle(.secondary)
                     Spacer()
-                    StatValue(value: fmtGrams(target.pieces * target.pieceWeight, .tenth) + " g")
+                    StatValue(value: fmtGrams(target.pieces * target.pieceWeight, precision) + " g")
                 }
             } else {
                 NumberField(label: L("총 반죽 무게"), value: $target.doughWeight)

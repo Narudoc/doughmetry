@@ -119,6 +119,51 @@ describe('validateRecipe', () => {
     expect(v.ok).toBe(false);
     if (!v.ok) expect(v.reason).toContain('hydration');
   });
+
+  // iOS CodecTests.booleansAndFractionalVersionLikeWeb와 같은 벡터 — 한쪽을 바꾸면 함께
+  it.each([
+    [
+      '{"schemaVersion":2.5,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}',
+      'schemaVersion',
+    ],
+    [
+      '{"schemaVersion":true,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}',
+      'schemaVersion',
+    ],
+    [
+      '{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"water":620,"salt":true,"levain":{"type":"liquide","hydration":1,"grams":200}}',
+      'salt',
+    ],
+    [
+      '{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"extras":[{"grams":true}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}',
+      'extras[0].grams',
+    ],
+    [
+      '{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":true,"grams":200}}',
+      'levain.hydration',
+    ],
+  ])('JSON true/false는 숫자로 받지 않고 schemaVersion은 정수만 받는다: %s', (json, field) => {
+    const v = validateRecipe(JSON.parse(json));
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.reason).toContain(field);
+  });
+
+  it('schemaVersion 1.0은 정수 1이고, 선택 숫자 필드의 true는 없는 값으로 둔다 (iOS와 같은 판정)', () => {
+    const v1 = validateRecipe(
+      JSON.parse(
+        '{"schemaVersion":1.0,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200}}',
+      ),
+    );
+    expect(v1.ok).toBe(true);
+    if (v1.ok) expect(v1.recipe.schemaVersion).toBe(2);
+    const withPieces = validateRecipe(
+      JSON.parse(
+        '{"schemaVersion":2,"name":"x","flours":[{"grams":900}],"water":620,"salt":20,"levain":{"type":"liquide","hydration":1,"grams":200},"pieces":true}',
+      ),
+    );
+    expect(withPieces.ok).toBe(true);
+    if (withPieces.ok) expect(withPieces.recipe.pieces).toBeUndefined();
+  });
 });
 
 describe('내보내기 / 가져오기', () => {

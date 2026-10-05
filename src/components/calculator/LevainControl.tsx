@@ -74,7 +74,7 @@ export function LevainControl({
         label="르방 밀가루 (표시용)"
         value={levain.flourName ?? ''}
         onChange={(flourName) => onChange({ ...levain, flourName: flourName || undefined })}
-        placeholder="T65"
+        placeholder="예: T65"
       />
       <p className="text-xs tabular-nums text-ink/70">
         {basisAdded ? (

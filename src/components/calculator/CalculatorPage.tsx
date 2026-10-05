@@ -9,11 +9,12 @@ import type { CalcState } from '../../state';
 import {
   LOAD_OVER_DIRTY_PROMPT,
   NEW_CALC_PROMPT,
-  calcSnapshot,
+  calcStateAfterSave,
   calcStateFromRecipe,
   currentDoughInput,
   currentPieces,
   isCalcDirty,
+  overwriteTarget,
   resetCalcState,
   targetSpecFromForm,
 } from '../../state';
@@ -55,8 +56,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
   const loadedRecipe = state.recipeId
     ? api.recipes.find((r) => r.id === state.recipeId)
     : undefined;
-  // 목표 역산 결과는 바시나주·액체·이스트·기타 재료가 없으므로 불러온 레시피를 덮어쓰면 그 재료가 사라진다
-  const canOverwrite = !!loadedRecipe && state.mode === 'A';
+  const replaceable = overwriteTarget(state, api.recipes);
   const newOverDirty = newOpen && isCalcDirty(state, api.recipes);
 
   // 결과 요약이 화면에 보이는 동안에는 하단 요약 바가 같은 숫자를 겹쳐 보이지 않게 숨긴다
@@ -118,8 +118,8 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     note?: string;
     overwrite: boolean;
   }) => {
-    const overwrite = data.overwrite && canOverwrite;
-    const id = overwrite && loadedRecipe ? loadedRecipe.id : newId();
+    const overwrite = data.overwrite && replaceable !== undefined;
+    const id = overwrite ? replaceable.id : newId();
     const now = new Date().toISOString();
     const recipe: Recipe = {
       id,
@@ -134,10 +134,9 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
         state.mode === 'B' ? targetSpecFromForm(state.target).doughWeight : undefined,
       pieces,
     };
-    api.save(recipe);
-    // 저장한 지금 상태가 새 기준 — 이후 바뀐 것만 '저장하지 않은 입력'이 된다 (iOS markCalcSaved)
-    const saved: CalcState = { ...state, name: data.name, recipeId: id };
-    onChange({ ...saved, savedSnapshot: calcSnapshot(saved) });
+    // 저장소에 쓰지 못했으면 실패 알림만 남기고 계산기는 저장하지 않은 입력 그대로 둔다
+    if (!api.save(recipe)) return;
+    onChange(calcStateAfterSave(state, { name: data.name, id }, api.recipes));
     toast(overwrite ? '레시피를 덮어썼습니다' : '새 레시피로 저장했습니다');
   };
 
@@ -206,7 +205,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
             label="레시피 이름"
             value={state.name}
             onChange={(name) => onChange({ ...state, name })}
-            placeholder="캉파뉴"
+            placeholder="예: 캉파뉴"
           />
           {state.mode === 'A' ? (
             <>
@@ -234,6 +233,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
             <TargetFormView
               target={state.target}
               onChange={(target) => onChange({ ...state, target })}
+              precision={precision}
             />
           )}
         </div>
@@ -298,8 +298,8 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
         initialName={state.name}
         initialTags={loadedRecipe?.tags ?? []}
         initialNote={loadedRecipe?.note ?? ''}
-        allowOverwrite={canOverwrite}
-        loadedName={canOverwrite ? loadedRecipe?.name : undefined}
+        allowOverwrite={!!replaceable}
+        loadedName={replaceable?.name}
         onSave={handleSave}
       />
 

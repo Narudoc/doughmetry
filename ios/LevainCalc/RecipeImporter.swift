@@ -2,7 +2,6 @@ import Foundation
 import ImageIO
 import LevainCore
 import Vision
-import os
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -44,10 +43,6 @@ enum ImportError: Error {
     case unreadableImage
     case noText
     case noIngredients(recognizedText: String)
-}
-
-extension Log {
-    static let importer = Logger(subsystem: "com.narudoc.doughmetry", category: "import")
 }
 
 /// 가져오기 한 번의 모델 세션 — 사진 고르기·텍스트 붙여넣기 동안 미리 데워 두고,

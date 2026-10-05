@@ -109,6 +109,8 @@ describe('레시피 텍스트 파서 (규칙 기반)', () => {
     expect(r.input.salt).toBe(20);
     expect(r.input.bassinage).toBe(0);
     expect(r.input.extras).toHaveLength(0);
+    // 첫 줄은 서술문이고, 재료 뒤의 맺음말은 이름이 아니다
+    expect(r.name).toBeNull();
   });
 
   it('kg 표기 변형 — 1.5kg, 1키로, ㎏', () => {
@@ -376,6 +378,38 @@ describe('플랫폼 패리티 회귀', () => {
     const r = parseRecipeText('르방 만들기\n밀가루 100\n물 100\ngâteau 50');
     expect(r.input.levain.grams).toBe(250);
     expect(r.input.levain.hydration).toBe(1.0);
+  });
+
+  it('글자에 붙은 VS16·키캡 테두리는 걷어낸다 (iOS는 앞 글자와 한 자소로 묶는다)', () => {
+    for (const salt of ['소금\u{FE0F} 10g', '소금\u{20E3} 10g', '소금\u{FE0F}\u{20E3} 10g']) {
+      expect(cleanForParsing(salt), salt).toBe('소금 10g');
+      for (const r of [
+        parseRecipeText(cleanForParsing(`강력분 500g\n물 350g\n${salt}`)),
+        parseRecipeText(`강력분 500g\n물 350g\n${salt}`),
+      ]) {
+        expect(r.input.salt, salt).toBe(10);
+        expect(r.input.extras, salt).toHaveLength(0);
+      }
+    }
+    expect(cleanForParsing('Levain\u{FE0F} liquide 200g')).toBe('Levain liquide 200g');
+    // 이모지·키캡 바탕 뒤의 VS16은 그대로 — 키캡 번호는 여전히 걷힌다
+    expect(cleanForParsing('❤️ 캄파뉴\n✔️ 재료')).toBe('❤️ 캄파뉴\n✔️ 재료');
+    expect(cleanForParsing('1️⃣ 르방 만들기\n#️⃣ 물 300g\n🔟️ 소금 10g')).toBe(
+      '르방 만들기\n물 300g\n소금 10g',
+    );
+    expect(cleanForParsing('강력분 500\u{FE0F}g')).toBe('강력분 500g');
+    expect(parseRecipeText('비가 20\u{FE0F}g').input.levain.grams).toBe(20);
+    // CRLF 뒤에 VS16·키캡 테두리가 붙어도 한 줄바꿈이다
+    expect(cleanForParsing('소금 10g\r\n\u{FE0F}물 350g')).toBe('소금 10g\n물 350g');
+    // 분해 한글 음절 속에 끼인 VS16을 걷어내면 다시 한 음절로 합친다
+    expect(cleanForParsing('\u{1106}\u{116E}\u{FE0F}\u{11AF} 350')).toBe('물 350');
+    const w = parseRecipeText('강력분 500\n\u{1106}\u{116E}\u{FE0F}\u{11AF} 350');
+    expect(w.input.water).toBe(350);
+    expect(w.input.extras).toEqual([]);
+    const f = parseRecipeText(
+      '\u{1100}\u{1161}\u{FE0F}\u{11BC}\u{1105}\u{1167}\u{11A8}\u{1107}\u{116E}\u{11AB} 500\n물 350',
+    );
+    expect(f.input.flours.map((x) => x.name)).toEqual(['강력분']);
   });
 });
 
@@ -711,6 +745,23 @@ describe('가져오기 오인식 회귀', () => {
     ]);
   });
 
+  it("시간 약어('Bulk 4h', 'Pointage 3h30')는 그램이 아니다", () => {
+    const fr = parseRecipeText(
+      'farine T65 500g\neau 350g\nsel 10g\nlevain 100g\nMix and fold. Bulk 4h.\nPointage 3h30 à 24°C\nApprêt 1h\nPousse 2 H\nPointage 2 h 30 à 24 °C\nApprêt 1 h 15\nRepos 3 heures\nCuisson 45 mn',
+    );
+    expect(fr.input.extras).toHaveLength(0);
+    expect(fr.input.levain.grams).toBe(100);
+    expect(fr.matchedLineCount).toBe(4);
+    expect(fr.name).toBeNull();
+    expect(computeStats(fr.input).doughWeight).toBe(960);
+    // 숫자 뒤 h로 시작하는 낱말은 시간이 아니다
+    const nuts = parseRecipeText('farine 500g\neau 350g\n50 hazelnuts\nnoisettes 2 hachées 30g');
+    expect(nuts.input.extras.map((e) => [e.name, e.grams])).toEqual([
+      ['hazelnuts', 50],
+      ['noisettes hachées', 30],
+    ]);
+  });
+
   it('키캡 번호(1️⃣ …)는 수량이 아니라 섹션·단계 번호다', () => {
     const r = parseRecipeText(
       cleanForParsing(
@@ -882,6 +933,11 @@ describe('SNS 캡션·앱 배합표 가져오기', () => {
     expect(focaccia.input.extras).toHaveLength(0);
     // 가운데의 분량 괄호를 걷어내도 공백이 겹치지 않는다
     expect(parseRecipeText('치아바타 (2개 분량) 레시피\n강력분 400g\n물 300g').name).toBe('치아바타 레시피');
+    // 이름은 재료보다 앞선 줄에서만 — 첫 줄이 서술문이어도 재료 뒤의 맺음말을 이름으로 고르지 않는다
+    expect(parseRecipeText('Baked this today!\n500 g flour\n350 g water\nEnjoy').name).toBeNull();
+    expect(parseRecipeText('오늘도 구웠어요!\n강력분 500g\n물 350g\n맛있는 캄파뉴').name).toBeNull();
+    expect(parseRecipeText('🍞\n강력분 500g\n물 350g\n캄파뉴').name).toBeNull();
+    expect(parseRecipeText('캄파뉴\n강력분 500g\n물 350g\nEnjoy').name).toBe('캄파뉴');
   });
 
   it('글머리 이모지·기호는 재료 이름에 남지 않는다', () => {
@@ -1125,6 +1181,188 @@ describe('앱 배합표(fiche technique) 왕복', () => {
     expect(Math.abs(s.totalFlour - 1100)).toBeLessThan(1e-9);
     expect(Math.abs(s.hydrationPct - (794 / 1100) * 100)).toBeLessThan(1e-9);
     expect(Math.abs(s.doughWeight - 1922)).toBeLessThan(1e-9);
+  });
+
+  // Manitoba 500 · Tipo 00 400 · 물 500 · 소금 20 · 르방 리퀴드 80% 180 · 빈 이름 액체 100(수분 90%) · 꿀 30(수분 17%) · 호두 80
+  const customKo = [
+    '〔피자〕 fiche technique',
+    '',
+    'Manitoba  500.0 g  (50.0%)',
+    'Tipo 00  400.0 g  (40.0%)',
+    '본반죽 물  500.0 g',
+    '소금  20.0 g  (2.0%)',
+    '르방 리퀴드 80%  180.0 g  (18.0%)',
+    '  ↳ 속 밀가루  100.0 g  (PFF 10.0%)',
+    '액체  100.0 g  (10.0%) · 수분 90.0%',
+    '꿀  30.0 g  (3.0%) · 수분 17.0%',
+    '호두  80.0 g  (8.0%)',
+    '',
+    '총 밀가루  1000.0 g',
+    '총 물  675.1 g',
+    '총 수분율  67.5%',
+    '총 반죽 무게  1810.0 g',
+    '',
+    '— Doughmetry · narudoc.github.io/doughmetry',
+  ].join('\n');
+
+  const customEn = [
+    '〔Pizza〕 fiche technique',
+    '',
+    'Manitoba  500.0 g  (50.0%)',
+    'Tipo 00  400.0 g  (40.0%)',
+    'Mixing water  500.0 g',
+    'Salt  20.0 g  (2.0%)',
+    'Liquid levain 80%  180.0 g  (18.0%)',
+    '  ↳ Flour in levain  100.0 g  (PFF 10.0%)',
+    'Liquid  100.0 g  (10.0%) · water 90.0%',
+    'Honey  30.0 g  (3.0%) · water 17.0%',
+    'Walnuts  80.0 g  (8.0%)',
+    '',
+    'Total flour  1000.0 g',
+    'Total water  675.1 g',
+    'Total hydration  67.5%',
+    'Total dough weight  1810.0 g',
+    '',
+    '— Doughmetry · narudoc.github.io/doughmetry',
+  ].join('\n');
+
+  const customWeb = [
+    '〔피자〕 fiche technique',
+    '',
+    'Manitoba  500.0 g  (50.0%)',
+    'Tipo 00  400.0 g  (40.0%)',
+    '물 (본반죽)  500.0 g',
+    '소금  20.0 g  (2.0%)',
+    '르방 (리퀴드 liquide 80%)  180.0 g  (18.0%)',
+    '  ↳ 속 밀가루  100.0 g  (PFF 10.0%)',
+    '액체 1  100.0 g  (10.0%) · 수분 90.0%',
+    '꿀  30.0 g  (3.0%) · 수분 17.0%',
+    '호두  80.0 g  (8.0%)',
+    '',
+    '총 밀가루  1000.0 g',
+    '총 물  675.1 g',
+    '총 수분율  67.5%',
+    '총 반죽 무게  1810.0 g',
+    '',
+    '%는 총 밀가루 대비',
+  ].join('\n');
+
+  it.each([
+    [customKo, '피자', '액체', '꿀', '호두'],
+    [customEn, 'Pizza', 'Liquid', 'Honey', 'Walnuts'],
+    [customWeb, '피자', '액체 1', '꿀', '호두'],
+  ])(
+    '이름이 키워드가 아닌 밀가루·액체도 종류와 수분 함량이 그대로 돌아온다 — %#',
+    (text, name, blank, honey, walnuts) => {
+      const r = parseRecipeText(cleanForParsing(text));
+      expect(r.name).toBe(name);
+      expect(r.input.flours.map((f) => [f.name, f.grams])).toEqual([
+        ['Manitoba', 500],
+        ['Tipo 00', 400],
+      ]);
+      expect(r.input.water).toBe(500);
+      expect(r.input.salt).toBe(20);
+      expect(r.input.levain.grams).toBe(180);
+      expect(Math.abs(r.input.levain.hydration - 0.8)).toBeLessThan(1e-9);
+      expect(r.input.levain.type).toBe('liquide');
+      expect(r.input.liquids.map((l) => [l.name, l.grams])).toEqual([
+        [blank, 100],
+        [honey, 30],
+      ]);
+      expect(r.input.liquids.map((l) => l.waterRatio)).toEqual([0.9, 0.17]);
+      expect(r.input.extras.map((e) => [e.name, e.grams])).toEqual([[walnuts, 80]]);
+      const s = computeStats(r.input);
+      expect(Math.abs(s.totalFlour - 1000)).toBeLessThan(1e-9);
+      expect(Math.abs(s.totalWater - 675.1)).toBeLessThan(1e-9);
+      expect(Math.abs(s.pffPct - 10)).toBeLessThan(1e-9);
+      expect(Math.abs(s.doughWeight - 1810)).toBeLessThan(1e-9);
+    },
+  );
+
+  it('르방 행의 수분율이 50·100%가 아니어도 그대로 돌아온다', () => {
+    for (const [line, h] of [
+      ['르방 (리퀴드 liquide 80%)  200.0 g  (20.0%)', 0.8],
+      ['르방 (뒤흐 dur 60%)  200.0 g  (20.0%)', 0.6],
+      ['르방 (리퀴드 liquide 125%)  200.0 g  (20.0%)', 1.25],
+      ['르방 리퀴드 80%  200.0 g  (20.0%)', 0.8],
+      ['르방 뒤흐 60%  200.0 g  (20.0%)', 0.6],
+      ['Liquid levain 80%  200.0 g  (20.0%)', 0.8],
+      ['Stiff levain 65%  200.0 g  (20.0%)', 0.65],
+      ['levain liquide à 80% 150g', 0.8],
+      ['르방 뒤흐 (수분율 60%) 200g', 0.6],
+      // 0.745~0.75 미만은 뒤흐로 분류되지만 75%로 찍힌다
+      ['르방 (뒤흐 dur 75%)  200.0 g  (20.0%)', 0.75],
+      ['르방 뒤흐 75%  200.0 g  (20.0%)', 0.75],
+      ['Stiff levain 75%  200.0 g  (20.0%)', 0.75],
+      // 양 뒤의 %는 베이커스 퍼센트 — 타입 낱말을 따른다
+      ['르방 리퀴드 200g (40%)', 1.0],
+      ['르방 뒤흐 200g (20%)', 0.5],
+      // 양 앞의 %라도 타입 낱말과 어긋나면 베이커스 퍼센트다
+      ['Levain liquide 40% 400g', 1.0],
+      ['르방 뒤흐 100% 200g', 0.5],
+      ['르방 리퀴드 20% 200g', 1.0],
+    ] as const) {
+      const r = parseRecipeText(`T65 1000g\n물 650g\n${line}\n소금 20g`);
+      expect(Math.abs(r.input.levain.hydration - h), line).toBeLessThan(1e-9);
+      expect(r.input.levain.type, line).toBe(h >= 0.75 ? 'liquide' : 'dur');
+      expect(r.levainHydrationExplicit, line).toBe(true);
+      expect(r.input.extras, line).toHaveLength(0);
+    }
+  });
+
+  it('배합표의 밀가루 구간은 제목 줄 뒤, 밀가루가 아닌 첫 재료 앞까지다', () => {
+    // 본반죽 물이 0 g이어도 그 행에서 끝난다
+    const zero = parseRecipeText(
+      [
+        '〔X〕 fiche technique',
+        '',
+        'Manitoba  500.0 g  (100.0%)',
+        '물 (본반죽)  0.0 g',
+        '소금  0.0 g  (0.0%)',
+        '르방 (리퀴드 liquide 100%)  0.0 g  (0.0%)',
+        '  ↳ 속 밀가루  0.0 g  (PFF 0.0%)',
+        '호두  50.0 g  (10.0%)',
+      ].join('\n'),
+    );
+    expect(zero.input.flours.map((f) => f.name)).toEqual(['Manitoba']);
+    expect(zero.input.extras.map((e) => e.name)).toEqual(['호두']);
+    // 손으로 쓴 배합표에서 밀가루보다 앞선 다른 재료 — 그 뒤의 재료는 밀가루가 아니다
+    const typed = parseRecipeText('Pain aux noix fiche technique\nlevain 200g\nnoix 100g\nfarine 1000g\neau 700g');
+    expect(typed.input.flours.map((f) => f.name)).toEqual(['farine']);
+    expect(typed.input.extras.map((e) => e.name)).toEqual(['noix']);
+    // 배합표 제목이 없으면 이름으로만 분류한다 (이전과 같음)
+    const plain = parseRecipeText('Manitoba 500g\n물 350g');
+    expect(plain.input.flours).toHaveLength(0);
+    expect(plain.input.extras.map((e) => [e.name, e.grams])).toEqual([['Manitoba', 500]]);
+  });
+
+  it("'· 수분 N%' 표기가 붙은 줄은 이름과 무관하게 그 수분 함량의 액체다", () => {
+    // 공유 텍스트 일부만 붙여 넣어도(제목 줄 없이) 액체로 읽는다
+    const r = parseRecipeText(
+      [
+        '강력분 500g',
+        '물 300g',
+        'Yogurt  100.0 g  (10.0%) · water 90.0%',
+        'Yeast water  50.0 g  (5.0%) · water 100.0%',
+        '우유  50.0 g  (5.0%) · 수분 90.0%',
+        '르방 100g · 수분 100%',
+      ].join('\n'),
+    );
+    expect(r.input.water).toBe(300);
+    expect(r.input.yeast.grams).toBe(0);
+    expect(r.input.liquids.map((l) => [l.name, l.grams, l.waterRatio])).toEqual([
+      ['Yogurt', 100, 0.9],
+      ['Yeast water', 50, 1],
+      ['우유', 50, 0.9],
+    ]);
+    // 르방 줄은 수분 표기가 붙어도 르방이다
+    expect(r.input.levain.grams).toBe(100);
+    expect(r.input.levain.hydration).toBe(1.0);
+    expect(r.input.extras).toHaveLength(0);
+    // 퍼센트 괄호 없이 붙은 수분 표기는 배합표 행이 아니다 — 밀가루 그대로
+    const flour = parseRecipeText('강력분 500g · 수분 70%');
+    expect(flour.input.flours.map((f) => f.grams)).toEqual([500]);
+    expect(flour.input.liquids).toHaveLength(0);
   });
 
   it('공유 텍스트 끝의 앱 표기 줄은 재료도 레시피 이름도 아니다', () => {

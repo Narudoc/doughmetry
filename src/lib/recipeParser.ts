@@ -200,6 +200,13 @@ function matchesLevain(line: string): boolean {
   );
 }
 
+/** 르방 타입 낱말이 밝힌 수분율 — 리퀴드 100%, 뒤흐 50% */
+function typeHydration(line: string): number | undefined {
+  if (contains(line, ['리퀴드', 'liquide', 'liquid'])) return 1.0;
+  if (contains(line, ['뒤흐', '뒤르', '듀르', '스티프', 'stiff']) || containsWord(line, 'dur')) return 0.5;
+  return undefined;
+}
+
 /** 수분율을 밝히지 않은 풀리시·비가의 관례 수분율 — 풀리시 100%, 비가 50% */
 function prefermentHydration(line: string): number | undefined {
   if (contains(line, POOLISH_KEYWORDS)) return 1.0;
@@ -232,6 +239,11 @@ const EGG_KEYWORDS = ['계란', '달걀', '전란', 'egg', 'oeuf', 'œuf'];
  */
 function stripSocialTokens(line: string): string {
   return line
+    // 글자·숫자에 붙은 VS16과 바탕 없는 키캡 테두리("소금\u{FE0F}", "20\u{FE0F}g") — iOS는 앞 글자와 한 자소로 묶어
+    // 키워드·숫자를 놓친다. 키캡(1️⃣)은 남긴다
+    .replace(/(?<![\p{Extended_Pictographic}0-9#*]|[0-9#*]\u{FE0F})[\u{FE0F}\u{20E3}]|(?<=[0-9])\u{FE0F}(?!\u{20E3})/gu, '')
+    // 걷어낸 자리가 분해 한글 자모 사이였으면 다시 합친다 (iOS는 정준 동등 비교라 이미 맞춘다)
+    .normalize('NFC')
     .replace(/(?:[0-9#*]\u{FE0F}?\u{20E3}|\u{1F51F}\u{FE0F}?)[.)]?[ \t]*/gu, '')
     .replace(/@(?=[A-Za-z0-9_.]*[A-Za-z_])[A-Za-z0-9_.]+/gu, '')
     .replace(/#\S+/gu, '');
@@ -265,7 +277,7 @@ function stripTemperatures(line: string): string {
 }
 
 /**
- * 시간·차수 표기 제거 — "실온 6시간 발효", "30분 휴지", "1차 발효 3~4시간", "3회 폴딩" 같은 줄의 숫자가
+ * 시간·차수 표기 제거 — "실온 6시간 발효", "30분 휴지", "Pointage 3h30", "Apprêt 1 h 15", "1차 발효 3~4시간", "3회 폴딩" 같은 줄의 숫자가
  * 그램으로 합산되지 않도록 한다 (르방 빌드 섹션에서 특히 치명적). 범위("3~4시간", "3-4 hours" — 대시는 붙여 쓴 것만)는 앞 수까지 지운다.
  * 숫자가 앞서는 재료("50 초코칩", "20 분유", "4분할")는 시간이 아니고,
  * 차·회·번 뒤에 다른 글자가 붙으면("1회분", "번데기") 차수가 아니다.
@@ -273,7 +285,7 @@ function stripTemperatures(line: string): string {
 function stripDurations(line: string): string {
   return line
     .replace(
-      /(?:[0-9]+(?:[.,][0-9]+)?(?:[ \t]*[~〜～][ \t]*|[–-]))?[0-9]+(?:[.,][0-9]+)?[ \t]*(?:시간|분(?!유|당|말|할)|초(?!코|콜)|hours?|hrs?|minutes?|mins?|seconds?|secs?)(?![A-Za-z])/giu,
+      /(?:[0-9]+(?:[.,][0-9]+)?(?:[ \t]*[~〜～][ \t]*|[–-]))?[0-9]+(?:[.,][0-9]+)?[ \t]*(?:시간|분(?!유|당|말|할)|초(?!코|콜)|hours?|hrs?|heures?|h(?:[ \t]?[0-5][0-9](?![0-9]))?|minutes?|mins?|mn|seconds?|secs?)(?![A-Za-z])/giu,
       '',
     )
     .replace(
@@ -353,6 +365,8 @@ function shouldSkip(line: string): boolean {
   return false;
 }
 
+const NAME_TRIM = ' \t\u00A0\u202F\u2009:·.-—|';
+
 /** 숫자·단위를 걷어낸 재료 이름 */
 function ingredientName(line: string): string {
   let s = line.replace(
@@ -361,7 +375,16 @@ function ingredientName(line: string): string {
   );
   s = s.replace(/\([ \t]*\)/g, '');
   s = stripLeadingSymbols(s);
-  return trimCharacters(s, ' \t\u00A0\u202F\u2009:·.-—|');
+  return trimCharacters(s, NAME_TRIM);
+}
+
+/**
+ * 재료 이름 — 앱 배합표 행은 두 칸 띄운 그램 앞까지라("Tipo 00  400.0 g  (40.0%)") 이름 속 단독 숫자를 양으로
+ * 걷어내지 않는다. 두 칸 구분이 없으면(OCR·손으로 고친 줄) 일반 규칙
+ */
+function rowName(line: string, fiche: boolean): string {
+  const m = fiche ? /^.*?[^ \t](?=[ \t]{2,}[0-9])/u.exec(line) : null;
+  return m ? trimCharacters(stripLeadingSymbols(m[0]), NAME_TRIM) : ingredientName(line);
 }
 
 function trimCharacters(s: string, chars: string): string {
@@ -388,22 +411,19 @@ function stripLeadingSymbols(s: string): string {
   return s.replace(/^[^\p{L}\p{N}(]+/u, '');
 }
 
-/** 제목 후보에서 걷어낼 분량 괄호 하나 — "무화과 호두 캄파뉴 (2개 분량)" */
-const SERVINGS_PARENTHETICAL = /\([^)]*(?:분량|인분|loaf|loaves|servings?)[^)]*\)/iu;
-/** 개수만 적은 괄호("캄파뉴 (2개)")는 재료보다 앞선 줄에서만 분량으로 본다 — 재료 사이의 "계란 (2개)"는 재료 줄 */
+/** 제목 후보에서 걷어낼 분량 괄호 하나 — "무화과 호두 캄파뉴 (2개 분량)", "캄파뉴 (2개)" */
 const COUNT_PARENTHETICAL = /\([^)]*(?:분량|인분|개|판|덩어리|덩이|loaf|loaves|servings?)[^)]*\)/iu;
 
 /**
- * 그램 없는 줄이 레시피 이름이면 그 이름, 아니면 null.
- * % 표기만 있는 줄("캉파뉴 75%")은 재료보다 앞설 때만 이름이 된다 — 재료 사이의 "PFF 20%"는 이름이 아니다
+ * 재료보다 앞선, 그램 없는 줄이 레시피 이름이면 그 이름, 아니면 null.
+ * % 표기만 있는 줄("캉파뉴 75%")도 이름이 된다
  */
-function titleCandidate(line: string, matched: number): string | null {
-  const paren = matched === 0 ? COUNT_PARENTHETICAL : SERVINGS_PARENTHETICAL;
-  const s = paren.test(line) ? line.replace(paren, ' ').replace(/[ \t]{2,}/g, ' ') : line;
+function titleCandidate(line: string): string | null {
+  const s = COUNT_PARENTHETICAL.test(line)
+    ? line.replace(COUNT_PARENTHETICAL, ' ').replace(/[ \t]{2,}/g, ' ')
+    : line;
   const tokens = numberTokens(s);
-  if (!(tokens.length === 0 || (matched === 0 && tokens.every((t) => t.kind === 'pct')))) {
-    return null;
-  }
+  if (!tokens.every((t) => t.kind === 'pct')) return null;
   const t = stripLeadingSymbols(cleanTitle(s));
   if (graphemeCount(t) < 2) return null;
   // 베이커스 % 표의 재료 한 줄("강력분 100%", "르방 20%")은 이름이 아니다
@@ -471,6 +491,21 @@ function bassinageClause(line: string): { water: number; bassinage: number } | n
   if (extra === undefined || extra <= 0) return null;
   if (tail.includes('포함')) return water > extra ? { water: water - extra, bassinage: extra } : null;
   return { water, bassinage: extra };
+}
+
+/** 앱 배합표 제목 줄 — "〔캉파뉴〕 fiche technique" */
+const FICHE_TITLE = /fiche[ \t]+technique[ \t]*$/iu;
+
+/**
+ * 앱 배합표 액체 행의 수분 표기 — "요거트  100.0 g  (10.0%) · 수분 90.0%"(영어 "· water 90.0%").
+ * 표기를 뗀 줄과 수분 비율(0~1), 없으면 null
+ */
+function waterRatioNote(line: string): { rest: string; ratio: number } | null {
+  // 배합표가 늘 앞에 쓰는 퍼센트 괄호에 묶는다 — "강력분 500g · 수분 70%"는 밀가루다
+  const m = /\)[ \t]*·[ \t]*(?:수분|water)[ \t]*([0-9]+(?:\.[0-9]+)?)[ \t]*%[ \t]*$/iu.exec(line);
+  if (!m) return null;
+  const v = Number(m[1]);
+  return v <= 100 ? { rest: line.slice(0, m.index + 1), ratio: v / 100 } : null;
 }
 
 /** 분량 표기 — "빵 2개 분량", "2 loaves", 앱 배합표의 "분할 2개 — 개당"·"Divide by 2 — each" */
@@ -568,31 +603,43 @@ export function parseRecipeText(text: string): ParsedRecipeText {
   let buildTotal = 0;
   // 풀리시·비가의 관례 수분율 — 빌드 섹션의 물/밀가루 비가 있으면 그쪽이 먼저다
   let prefermentDefault: number | undefined;
+  // 앱 배합표 제목 줄 다음의 첫 재료들은 이름과 무관하게("Manitoba", "Tipo 00") 밀가루 행이다 — 배합표는 밀가루 행
+  // 다음에 늘 본반죽 물 행(0 g이어도)을 쓰므로, 물 줄이나 밀가루가 아닌 첫 재료에서 이 구간이 끝난다
+  let ficheFlours = true;
 
   // 전처리 + 구분자 분할
   const rawLines = text.normalize('NFC').split(NEWLINES);
-  const segments: { text: string; hadDuration: boolean; lineIndex: number }[] = [];
+  const segments: { text: string; hadDuration: boolean; lineIndex: number; fiche: boolean }[] = [];
+  let ficheTitleSeen = false;
   for (const [lineIndex, rawLine] of rawLines.entries()) {
+    const fiche = ficheTitleSeen;
+    if (FICHE_TITLE.test(rawLine)) ficheTitleSeen = true;
     // "G." "1)" 같은 머리 기호를 먼저 떼야 헤더("1. 재료")를 제대로 거른다
     const pre = stripTemperatures(stripSocialTokens(cleanTitle(rawLine)));
     if (pieces === null) pieces = servings(pre);
     const line = stripDurations(pre);
     // 시간·차수만 남았던 공정 줄("벌크 발효 4시간", "1차 발효")은 제목 후보가 아니다
     const hadDuration = line !== pre;
-    for (const part of splitSegments(line)) segments.push({ text: part, hadDuration, lineIndex });
+    for (const part of splitSegments(line)) {
+      segments.push({ text: part, hadDuration, lineIndex, fiche });
+    }
   }
 
   for (const segment of segments) {
     const line = segment.text.trim();
     if (section === 'stopped') continue;
     if (shouldSkip(line)) continue;
+    if (segment.fiche && matchesWater(line)) ficheFlours = false;
 
     const grams = pickGrams(line);
     // %는 괄호 안("(수분율 100%)")에도 오므로 전체에서 찾되,
     // "(총 수분율 75%)"처럼 반죽 전체를 가리키는 괄호는 이 재료의 %가 아니다
-    const percent = numberTokens(line.replace(/\([^)]*(?:총|반죽|total)[^)]*\)/giu, ' ')).find(
-      (t) => t.kind === 'pct',
-    )?.value;
+    const pctTokens = numberTokens(line.replace(/\([^)]*(?:총|반죽|total)[^)]*\)/giu, ' '));
+    const percent = pctTokens.find((t) => t.kind === 'pct')?.value;
+    const firstQty = pctTokens.findIndex((t) => t.kind === 'mass' || t.kind === 'bare');
+    const leadPct = pctTokens
+      .slice(0, firstQty < 0 ? undefined : firstQty)
+      .find((t) => t.kind === 'pct')?.value;
 
     if (grams === undefined || grams <= 0) {
       // 괄호 밖에 컵·스푼·개수만 있는 줄은 그램을 모르는 재료 줄 — 섹션 헤더·제목 후보가 아니다
@@ -607,8 +654,9 @@ export function parseRecipeText(text: string): ParsedRecipeText {
       } else if (matched >= 2 && isMethodHeader(line)) {
         section = 'stopped';
         methodStart = segment.lineIndex;
-      } else if (name === null && section === 'main' && !segment.hadDuration) {
-        name = titleCandidate(line, matched);
+      } else if (name === null && matched === 0 && section === 'main' && !segment.hadDuration) {
+        // 이름은 재료보다 앞선 줄에서만 — 재료 뒤의 맺음말("Enjoy", "PFF 20%")·"계란 (2개)"는 이름이 아니다
+        name = titleCandidate(line);
       }
       continue;
     }
@@ -628,6 +676,8 @@ export function parseRecipeText(text: string): ParsedRecipeText {
       continue;
     }
 
+    const note = waterRatioNote(line);
+    const flourCount = flours.length;
     if (contains(line, BASSINAGE_KEYWORDS)) {
       const clause = bassinageClause(line);
       if (clause) {
@@ -639,14 +689,20 @@ export function parseRecipeText(text: string): ParsedRecipeText {
     } else if (matchesLevain(line)) {
       levainGrams += grams;
       levainName = ingredientName(line);
-      if (contains(line, ['리퀴드', 'liquide', 'liquid'])) {
-        levainHydration = 1.0;
-        levainHydrationExplicit = true;
-      } else if (
-        contains(line, ['뒤흐', '뒤르', '듀르', '스티프', 'stiff']) ||
-        containsWord(line, 'dur')
+      const typeH = typeHydration(line);
+      if (
+        leadPct !== undefined &&
+        leadPct >= 30 &&
+        leadPct <= 150 &&
+        (typeH === undefined || (typeH >= 0.75 ? leadPct >= 75 : leadPct <= 75))
       ) {
-        levainHydration = 0.5;
+        // 양보다 앞선 30~150%는 이 르방의 수분율 — "르방 (리퀴드 liquide 80%)  200.0 g", "levain liquide à 80% 150g".
+        // 타입 낱말과 어긋나면("Levain liquide 40% 400g") 베이커스 퍼센트다. 뒤흐도 정확히 75%는 받는다 —
+        // 0.745~0.75 미만은 뒤흐로 분류되지만 %는 반올림해 75로 찍힌다
+        levainHydration = leadPct / 100;
+        levainHydrationExplicit = true;
+      } else if (typeH !== undefined) {
+        levainHydration = typeH;
         levainHydrationExplicit = true;
       } else if (percent !== undefined && percent >= 30 && percent <= 150) {
         // 30~150% 밖의 %는 수분율이 아니라 베이커스 퍼센트 표기일 가능성이 높다
@@ -657,6 +713,14 @@ export function parseRecipeText(text: string): ParsedRecipeText {
         const h = prefermentHydration(line);
         if (h !== undefined) prefermentDefault = h;
       }
+    } else if (note) {
+      // 수분 표기가 이름의 키워드보다 먼저다 — "Yeast water", "코코넛 워터", 수분율을 고친 우유
+      liquids.push({
+        id: newId(),
+        name: rowName(note.rest, segment.fiche),
+        grams,
+        waterRatio: note.ratio,
+      });
     } else if (matchesSalt(line)) {
       salt += grams;
     } else if (contains(line, ['이스트', 'yeast', 'levure', '효모']) || containsWord(line, 'IDY')) {
@@ -667,24 +731,25 @@ export function parseRecipeText(text: string): ParsedRecipeText {
     } else if (contains(line, MILK_KEYWORDS)) {
       liquids.push({
         id: newId(),
-        name: ingredientName(line),
+        name: rowName(line, segment.fiche),
         grams,
         waterRatio: LIQUID_PRESETS.milk.waterRatio,
       });
     } else if (contains(line, EGG_KEYWORDS)) {
       liquids.push({
         id: newId(),
-        name: ingredientName(line),
+        name: rowName(line, segment.fiche),
         grams,
         waterRatio: LIQUID_PRESETS.egg.waterRatio,
       });
     } else if (matchesWater(line)) {
       water += grams;
-    } else if (matchesFlour(line)) {
-      flours.push({ id: newId(), name: ingredientName(line), grams });
+    } else if (matchesFlour(line) || (segment.fiche && ficheFlours)) {
+      flours.push({ id: newId(), name: rowName(line, segment.fiche), grams });
     } else {
-      extras.push({ id: newId(), name: ingredientName(line), grams });
+      extras.push({ id: newId(), name: rowName(line, segment.fiche), grams });
     }
+    if (flours.length === flourCount) ficheFlours = false;
   }
 
   // 르방 빌드 섹션 정산:

@@ -1,6 +1,8 @@
 import type { TargetForm } from '../../state';
+import type { Precision } from '../../lib/format';
 import { fmtGrams } from '../../lib/format';
 import { Button } from '../ui/Button';
+import { Fr } from '../ui/Fr';
 import { NumberField } from '../ui/fields';
 import { Segmented } from '../ui/Segmented';
 import { SectionTitle } from './IngredientForm';
@@ -8,10 +10,11 @@ import { SectionTitle } from './IngredientForm';
 interface Props {
   target: TargetForm;
   onChange: (t: TargetForm) => void;
+  precision: Precision;
 }
 
 /** 모드 B — 목표 반죽 무게에서 역산 */
-export function TargetFormView({ target, onChange }: Props) {
+export function TargetFormView({ target, onChange, precision }: Props) {
   const patch = (p: Partial<TargetForm>) => onChange({ ...target, ...p });
 
   return (
@@ -42,7 +45,7 @@ export function TargetFormView({ target, onChange }: Props) {
               onChange={(pieceWeight) => patch({ pieceWeight })}
             />
             <p className="col-span-2 text-xs tabular-nums text-ink/70">
-              총 반죽 무게 = {fmtGrams(target.pieces * target.pieceWeight, 1)} g
+              총 반죽 무게 = {fmtGrams(target.pieces * target.pieceWeight, precision)} g
             </p>
           </div>
         ) : (
@@ -60,7 +63,11 @@ export function TargetFormView({ target, onChange }: Props) {
         <SectionTitle ko="목표 비율" fr="proportions" />
         <div className="grid grid-cols-2 gap-3">
           <NumberField
-            label="총 수분율 (hydratation)"
+            label={
+              <>
+                총 수분율 <Fr>hydratation</Fr>
+              </>
+            }
             unit="%"
             value={target.hydrationPct}
             onChange={(hydrationPct) => patch({ hydrationPct })}
