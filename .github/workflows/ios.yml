@@ -46,6 +46,19 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/app-build.log"
 
+      # 빌드가 실패하면 컴파일 오류를 주석으로 남긴다 — 작업 로그는 로그인해야 보이지만 주석은 누구나 본다
+      - name: Compiler errors
+        if: failure()
+        run: |
+          grep -E '^/.+:[0-9]+:[0-9]+: error: ' "$RUNNER_TEMP/app-build.log" | sort -u | head -50 | while IFS= read -r line; do
+            file=${line%%:*}
+            rest=${line#*:}
+            echo "::error file=${file#"$GITHUB_WORKSPACE"/},line=${rest%%:*}::${line#*: error: }"
+          done || true
+          grep -E 'error:' "$RUNNER_TEMP/app-build.log" | grep -vE '^/.+:[0-9]+:[0-9]+: error: ' | sort -u | head -20 | while IFS= read -r line; do
+            echo "::error::$line"
+          done || true
+
       # 아직 막지 않는다 — 러너의 Swift가 로컬(Xcode 27)과 달라 로컬에서 재현할 수 없는 경고로 빨개질 수 있다.
       # 러너에 Xcode 27이 들어오면 실패로 바꾼다
       - name: Compiler warnings (non-blocking)

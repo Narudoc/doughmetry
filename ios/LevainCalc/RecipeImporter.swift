@@ -342,39 +342,33 @@ enum RecipeImporter {
     static func parseWithAppleIntelligence(
         _ text: String, rules: ParsedRecipeText, session: LanguageModelSession
     ) async throws -> ImportedRecipe {
-        // 같은 텍스트는 같은 결과가 나오도록 탐욕 샘플링
-        let draft = try await session.respond(
-            to: text, generating: AIDraft.self,
-            options: GenerationOptions(samplingMode: .greedy)
-        ).content
+        // 같은 텍스트는 같은 결과가 나오도록 탐욕 샘플링. iOS 27 SDK가 init(sampling:)을 samplingMode로 바꿨다
+        // (새 이름은 iOS 26으로 back-deploy) — CI의 Xcode 26 SDK에는 새 이름이 없고 27에선 옛 이름이 경고다
+        #if compiler(>=6.4)
+        let options = GenerationOptions(samplingMode: .greedy)
+        #else
+        let options = GenerationOptions(sampling: .greedy)
+        #endif
+        let draft = try await session.respond(to: text, generating: AIDraft.self, options: options).content
 
         // 30~150% 밖은 베이커스 %("르방 100g (20%)")를 수분율로 읽은 값 — 규칙 파서와 같이 기본값으로
         let aiPct = draft.levain.hydrationPct
         let hydration = (30...150).contains(aiPct) ? aiPct / 100 : 1.0
+        let flours: [Flour] = draft.flours
+            .filter { $0.grams > 0 }
+            .map { Flour(name: $0.name, grams: $0.grams) }
+        let liquids: [Liquid] = draft.liquids
+            .filter { $0.grams > 0 }
+            .map { Liquid(name: $0.name, grams: $0.grams, waterRatio: min(1, max(0, $0.waterRatioPct / 100))) }
+        let extras: [Extra] = draft.extras
+            .filter { $0.grams > 0 }
+            .map { Extra(name: $0.name, grams: $0.grams) }
+        let levain = Levain(
+            type: levainTypeFor(hydration: hydration), hydration: hydration, grams: max(0, draft.levain.grams))
+        let yeast = Yeast(type: draft.yeastType == .instant ? .instant : .fresh, grams: max(0, draft.yeastGrams))
         let draftInput = DoughInput(
-            flours: draft.flours
-                .filter { $0.grams > 0 }
-                .map { Flour(name: $0.name, grams: $0.grams) },
-            water: max(0, draft.waterGrams),
-            bassinage: max(0, draft.bassinageGrams),
-            salt: max(0, draft.saltGrams),
-            levain: Levain(
-                type: levainTypeFor(hydration: hydration),
-                hydration: hydration,
-                grams: max(0, draft.levain.grams)),
-            liquids: draft.liquids
-                .filter { $0.grams > 0 }
-                .map {
-                    Liquid(
-                        name: $0.name, grams: $0.grams,
-                        waterRatio: min(1, max(0, $0.waterRatioPct / 100)))
-                },
-            yeast: Yeast(
-                type: draft.yeastType == .instant ? .instant : .fresh,
-                grams: max(0, draft.yeastGrams)),
-            extras: draft.extras
-                .filter { $0.grams > 0 }
-                .map { Extra(name: $0.name, grams: $0.grams) })
+            flours: flours, water: max(0, draft.waterGrams), bassinage: max(0, draft.bassinageGrams),
+            salt: max(0, draft.saltGrams), levain: levain, liquids: liquids, yeast: yeast, extras: extras)
 
         let input = try reconcileAIDraft(draftInput, rules: rules).get()
         return ImportedRecipe(
