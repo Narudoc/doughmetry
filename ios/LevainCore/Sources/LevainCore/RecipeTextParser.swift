@@ -66,7 +66,7 @@ public enum RecipeTextParser {
     /// 캡처 3: 단위 — 단어 중간("500g을", "gâteau")은 단위가 아니다
     static func numberTokens(in line: String) -> [(value: Double, kind: NumberKind)] {
         var tokens: [(Double, NumberKind)] = []
-        let pattern = #/(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u{A0}\u{202F}\u{2009}][0-9]{3})+(?=[ \t\u{A0}\u{202F}\u{2009}]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u{A0}\u{202F}\u{2009}][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u{A0}\u{202F}\u{2009}]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/#
+        let pattern = #/(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u{A0}\u{202F}\u{2009}][0-9]{3})+(?=[ \t\u{A0}\u{202F}\u{2009}]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u{A0}\u{202F}\u{2009}][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u{A0}\u{202F}\u{2009}]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|판|배합|loaf|loaves|servings?|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/#
             .ignoresCase()
             // 웹(/u 정규식)과 같은 코드포인트 단위 — 자소 단위면 "500️g"(숫자+VS16)의 마지막 0을 숫자로 못 읽는다
             .matchingSemantics(.unicodeScalar)
@@ -141,12 +141,16 @@ public enum RecipeTextParser {
         tokens.contains { $0.kind == .mass || $0.kind == .bare }
     }
 
+    /// 로캘과 무관한 대소문자 무시 (웹 toLowerCase와 같음) — localized 비교는 기기 지역이 터키어면 'I'를 'ı'로 접어
+    /// "Instant"·"MILK"를 놓친다
     static func contains(_ line: String, _ keywords: [String]) -> Bool {
-        keywords.contains { line.localizedCaseInsensitiveContains($0) }
+        keywords.contains { line.range(of: $0, options: .caseInsensitive) != nil }
     }
 
+    /// 단어 경계는 \b 대신 웹과 같은 lookaround로 — iOS 17의 String.range는 \b를 NSRegularExpression과 다르게 읽어
+    /// "d'eau"의 eau는 낱말로 못 보고 "르방dur"의 dur은 낱말로 본다 (18부터는 같다)
     static func containsWord(_ line: String, _ word: String) -> Bool {
-        line.range(of: "(?i)\\b\(word)\\b", options: rx) != nil
+        line.range(of: "(?i)(?<![\\p{L}\\p{M}\\p{N}_])\(word)(?![\\p{L}\\p{M}\\p{N}_])", options: rx) != nil
     }
 
     static func matchesFlour(_ line: String) -> Bool {
@@ -154,8 +158,8 @@ public enum RecipeTextParser {
         if contains(line, ["코코아", "카카오", "시나몬", "계피", "말차", "녹차", "커피"]) {
             return false
         }
-        if line.range(of: #"(?i)\bt[0-9]{2,3}\b"#, options: rx) != nil {
-            return true  // T45/T65/T110 …
+        if line.range(of: #"(?i)(?<![\p{L}\p{M}\p{N}_])t[0-9]{2,3}(?![\p{L}\p{M}\p{N}_])"#, options: rx) != nil {
+            return true  // T45/T65/T110 … — "밀T65"처럼 문자가 붙으면 아니다
         }
         return contains(line, [
             "밀가루", "가루", "강력", "중력", "박력", "호밀", "통밀", "스펠트", "세몰리나", "듀럼",
@@ -355,7 +359,7 @@ public enum RecipeTextParser {
     static func ingredientName(from line: String) -> String {
         var s = line
         s = s.replacingOccurrences(
-            of: #"(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?"#,
+            of: #"(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|판|배합|loaf|loaves|servings?|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?"#,
             with: "", options: [rx, .caseInsensitive])
         s = s.replacingOccurrences(of: #"\([ \t]*\)"#, with: "", options: rx)
         s = stripLeadingSymbols(s)
@@ -388,7 +392,8 @@ public enum RecipeTextParser {
     static func titleCandidate(_ line: String, matched: Int) -> String? {
         var s = line
         if let r = s.range(of: matched == 0 ? countParenthetical : servingsParenthetical, options: rx) {
-            s.removeSubrange(r)
+            s.replaceSubrange(r, with: " ")
+            s = s.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: rx)
         }
         let tokens = numberTokens(in: s)
         guard tokens.isEmpty || (matched == 0 && tokens.allSatisfy { $0.kind == .percent }) else {
@@ -401,6 +406,8 @@ public enum RecipeTextParser {
             let rest = ingredientName(from: t)
                 .replacingOccurrences(of: #"(?i)(?<!\p{L})(?:liquide|dur|리퀴드|뒤흐)(?!\p{L})"#, with: "", options: rx)
                 .trimmingCharacters(in: .whitespaces)
+            // 글자 없이 %만 남은 줄("75%", "(75%)")은 이름이 아니다
+            if rest.range(of: #"\p{L}"#, options: rx) == nil { return nil }
             if !rest.contains(where: \.isWhitespace),
                 matchesFlour(rest) || matchesLevain(rest) || matchesWater(rest) || matchesSalt(rest)
             {

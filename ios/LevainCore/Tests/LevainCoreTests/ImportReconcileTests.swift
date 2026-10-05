@@ -180,6 +180,28 @@ struct ImportReconcileTests {
         #expect(reconcileAIDraft(draft, rules: r) == .failure(.yeastMissing))
     }
 
+    /// 옛 스키마(르방 무게만 묻는 levainGrams)에서 온디바이스 모델이 내던 초안 — '르방 리퀴드'·'starter' 줄을
+    /// 통째로 빠뜨리고 나머지는 맞게 읽는다. 빠진 르방은 무게 검증에서 걸려야 한다
+    @Test("르방 줄을 빠뜨린 초안은 무게에서 버리고, 르방을 읽은 초안은 통과한다")
+    func droppedLevainLine() {
+        let r = rules("통밀 캉파뉴\nT65 밀가루 400g\n통밀가루 100g\n물 350g\n르방 리퀴드 100g\n소금 10g")
+        #expect(r.matchedLineCount == 5)
+        #expect(r.input.levain.grams == 100)
+        var dropped = r.input
+        dropped.levain.grams = 0
+        #expect(reconcileAIDraft(dropped, rules: r) == .failure(.weight))
+        // 모델이 밀가루 이름을 줄여 적어도("T65 밀가루" → "밀가루") 수치가 같으면 받고, 이름은 규칙 파서의 긴 이름으로 되돌린다
+        var read = r.input
+        read.flours[0].name = "밀가루"
+        #expect((try? reconcileAIDraft(read, rules: r).get())?.flours.map(\.name) == ["T65 밀가루", "통밀가루"])
+
+        let stiff = rules("800g bread flour\n150 starter (stiff)\n600 water\n5 instant yeast\n18 salt")
+        #expect(stiff.input.levain.grams == 150)
+        var stiffDropped = stiff.input
+        stiffDropped.levain.grams = 0
+        #expect(reconcileAIDraft(stiffDropped, rules: stiff) == .failure(.weight))
+    }
+
     @Test("규칙 결과의 재료 줄이 3개 미만이면 교차 검증하지 않는다")
     func fewRuleLinesSkipCrossCheck() {
         let r = rules("강력분 500g\n물 350g")

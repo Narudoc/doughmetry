@@ -5,6 +5,7 @@ import UIKit
 /// 도구 탭 — 르방 빌드 계산기 · 물 온도(DDT) 계산기 · 타임라인 (+ 설정 바로가기)
 struct ToolsView: View {
     @State private var showSettings = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         NavigationStack {
@@ -47,6 +48,8 @@ struct ToolsView: View {
             }
             .readableFormWidth()
             .navigationTitle(L("도구"))
+            // 넓은 창에선 다른 탭처럼 작은 제목 — 큰 제목은 가운데로 모은 목록에서 떨어져 왼쪽 끝에 붙는다
+            .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .automatic)
             .sheet(isPresented: $showSettings) {
                 SettingsSheet()
             }
@@ -69,7 +72,8 @@ private struct ToolRow: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(Color.bottle)
                     .accessibilityHidden(true)
-                Text(title)
+                // 좁은 폰(393pt 이하)에선 "temperature" 한 낱말이 한 줄보다 넓어 중간에서 끊긴다 — 줄여서 맞춘다
+                Text(title).lineLimit(2).minimumScaleFactor(0.8)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary)
             }
         } else {
@@ -99,6 +103,77 @@ private extension View {
     }
 }
 
+/// LabeledContent — iOS 26 전에는 접근성 글자 크기에서도 라벨과 값을 한 줄에 두어 낱말이 중간에서 끊긴다
+/// ("Ratio (starte|r"). 그때만 라벨을 윗줄로 올린다 (26부터는 시스템이 스스로 쌓는다)
+struct StackingLabeledContent<Title: View, Value: View>: View {
+    private let title: Title
+    private let value: Value
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(@ViewBuilder content: () -> Value, @ViewBuilder label: () -> Title) {
+        value = content()
+        title = label()
+    }
+
+    private var stacks: Bool {
+        if #unavailable(iOS 26) { return typeSize.isAccessibilitySize }
+        return false
+    }
+
+    var body: some View {
+        if stacks {
+            VStack(alignment: .leading, spacing: 4) {
+                title
+                value
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            LabeledContent {
+                value
+            } label: {
+                title
+            }
+        }
+    }
+}
+
+extension StackingLabeledContent where Title == Text {
+    init(_ title: String, @ViewBuilder content: () -> Value) {
+        self.init(content: content) { Text(title) }
+    }
+}
+
+/// 세그먼트 피커 행 — 접근성 글자 크기에선 이름과 고른 값(value)을 위아래로 그린 메뉴 (adaptiveSegmented)
+struct StackingSegmentedPicker<Selection: Hashable, Options: View>: View {
+    private let title: String
+    private let value: String
+    @Binding private var selection: Selection
+    private let options: Options
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(
+        _ title: String, value: String, selection: Binding<Selection>, @ViewBuilder content: () -> Options
+    ) {
+        self.title = title
+        self.value = value
+        _selection = selection
+        options = content()
+    }
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            AXMenuPicker(title, value: value) {
+                Picker(title, selection: $selection) { options }
+            }
+        } else {
+            // 세그먼트는 피커 이름을 읽히지 않는다 — 메뉴(접근성 크기)는 제 이름·값을 읽으므로 여기만 단다
+            Picker(title, selection: $selection) { options }
+                .pickerStyle(.segmented)
+                .accessibilityLabel(title)
+        }
+    }
+}
+
 // MARK: - 르방 빌드
 
 struct LevainBuildView: View {
@@ -112,6 +187,7 @@ struct LevainBuildView: View {
     @State private var chefSameHydration = true
     @State private var appliedFeedback = false
     @State private var keyboardVisible = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var spec: LevainBuildSpec {
         LevainBuildSpec(
@@ -138,12 +214,14 @@ struct LevainBuildView: View {
             } header: {
                 Text(L("목표"))
             }
+            .textCase(nil)
             Section {
-                Picker(L("종 입력"), selection: $chefByPercent) {
+                StackingSegmentedPicker(
+                    L("종 입력"), value: chefByPercent ? L("르방 대비 %") : L("그램"), selection: $chefByPercent
+                ) {
                     Text(L("르방 대비 %")).tag(true)
                     Text(L("그램")).tag(false)
                 }
-                .pickerStyle(.segmented)
                 if chefByPercent {
                     NumberField(label: L("종 비율"), value: $chefPercent, unit: "%", maxValue: 1000)
                 } else {
@@ -159,6 +237,7 @@ struct LevainBuildView: View {
             } footer: {
                 Text(L("종은 이전 르방(스타터)에서 남긴 씨앗입니다. 보통 르방 무게의 10~20%."))
             }
+            .textCase(nil)
             switch result {
             case .success(let b):
                 Section {
@@ -171,7 +250,7 @@ struct LevainBuildView: View {
                         StatValue(value: fmtGrams(b.total, model.precision) + " g")
                     }
                     if let r = b.ratio {
-                        LabeledContent(L("비율 (종 : 밀가루 : 물)")) {
+                        StackingLabeledContent(L("비율 (종 : 밀가루 : 물)")) {
                             StatValue(value: "1 : \(trim(r.flour)) : \(trim(r.water))", size: 15)
                         }
                     }
@@ -180,6 +259,7 @@ struct LevainBuildView: View {
                 } footer: {
                     Text(L("종을 밀가루·물과 섞어 발효시키면 목표 무게·수분율의 르방이 됩니다."))
                 }
+                .textCase(nil)
             case .failure(.chefTooLarge(let maxChef)):
                 Section(L("계산 불가")) {
                     Label(L("종이 너무 많습니다 — 밀가루나 물이 음수가 됩니다."), systemImage: "exclamationmark.triangle.fill")
@@ -194,6 +274,7 @@ struct LevainBuildView: View {
                         }
                     }
                 }
+                .textCase(nil)
             }
             Section {
                 NavigationLink {
@@ -210,19 +291,22 @@ struct LevainBuildView: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            ResultBar(isEditing: keyboardVisible) {
-                switch result {
-                case .success(let b):
-                    StatChipRow(chips: [
-                        StatChip(title: L("종"), value: fmtGrams(b.chef, model.precision) + " g"),
-                        StatChip(title: L("밀가루"), value: fmtGrams(b.flour, model.precision) + " g"),
-                        StatChip(title: L("물"), value: fmtGrams(b.water, model.precision) + " g"),
-                    ])
-                case .failure:
-                    Label(L("종이 너무 많습니다 — 밀가루나 물이 음수가 됩니다."), systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(Color.danger)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            // 넓은 창에선 결과 칸이 폼 안에 다 보여 되풀이일 뿐이고, 가로 화면에선 아래 행을 가린다 — 편집 중에만
+            if sizeClass != .regular || keyboardVisible {
+                ResultBar(isEditing: keyboardVisible) {
+                    switch result {
+                    case .success(let b):
+                        StatChipRow(chips: [
+                            StatChip(title: L("종"), value: fmtGrams(b.chef, model.precision) + " g"),
+                            StatChip(title: L("밀가루"), value: fmtGrams(b.flour, model.precision) + " g"),
+                            StatChip(title: L("물"), value: fmtGrams(b.water, model.precision) + " g"),
+                        ])
+                    case .failure:
+                        Label(L("종이 너무 많습니다 — 밀가루나 물이 음수가 됩니다."), systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color.danger)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
         }
@@ -264,6 +348,7 @@ struct WaterTemperatureView: View {
     /// 마찰계수 프리셋 — '직접'(2)도 실제 선택 가능하도록 @State로 유지하고 값 변경과 동기화한다
     @State private var frictionSel = 0
     @State private var keyboardVisible = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var isFahrenheit: Bool { unit == "f" }
     private var unitSymbol: String { isFahrenheit ? "°F" : "°C" }
@@ -328,8 +413,9 @@ struct WaterTemperatureView: View {
         Form {
             Section {
                 // 입력 중인 칸을 먼저 닫는다 — 열린 칸은 바뀐 단위로 다시 쓴 글자(소수 한 자리)를 저장값으로 되읽는다
-                Picker(
+                StackingSegmentedPicker(
                     L("온도 단위"),
+                    value: unitSymbol,
                     selection: Binding(
                         get: { unit },
                         set: { newUnit in
@@ -341,8 +427,6 @@ struct WaterTemperatureView: View {
                     Text("°C").tag("c")
                     Text("°F").tag("f")
                 }
-                .pickerStyle(.segmented)
-                .accessibilityLabel(L("온도 단위"))
                 NumberField(
                     label: L("목표 반죽 온도 (DDT)"), value: temperature($desired), unit: unitSymbol,
                     fractionDigits: 1)
@@ -358,13 +442,14 @@ struct WaterTemperatureView: View {
                         label: L("르방"), value: temperature($levainTemp), unit: unitSymbol, fractionDigits: 1)
                 }
             }
+            .textCase(nil)
             Section {
-                Picker(L("마찰계수"), selection: $frictionSel) {
-                    Text(L("손반죽")).tag(0)
-                    Text(L("스탠드 믹서")).tag(1)
-                    Text(L("직접")).tag(2)
+                let frictionNames = [L("손반죽"), L("스탠드 믹서"), L("직접")]
+                StackingSegmentedPicker(L("마찰계수"), value: frictionNames[frictionSel], selection: $frictionSel) {
+                    ForEach(frictionNames.indices, id: \.self) { i in
+                        Text(frictionNames[i]).tag(i)
+                    }
                 }
-                .pickerStyle(.segmented)
                 .onChange(of: frictionSel) { _, sel in applyFrictionPreset(sel) }
                 .onChange(of: friction, initial: true) { _, f in syncFrictionPreset(f) }
                 NumberField(
@@ -377,7 +462,7 @@ struct WaterTemperatureView: View {
                         hint(6, delta: true), hint(10, delta: true), unitSymbol))
             }
             Section {
-                LabeledContent {
+                StackingLabeledContent {
                     StatValue(value: fmtTemp(water), size: 22)
                 } label: {
                     BilingualLabel(L("사용할 물 온도"), fr: "température de l'eau")
@@ -398,25 +483,29 @@ struct WaterTemperatureView: View {
                     ? L("물 온도 = DDT × 4 − (밀가루 + 실온 + 르방 + 마찰계수)")
                     : L("물 온도 = DDT × 3 − (밀가루 + 실온 + 마찰계수)"))
             }
+            .textCase(nil)
         }
         .readableFormWidth()
         .navigationTitle(L("물 온도 계산기"))
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            ResultBar(isEditing: keyboardVisible) {
-                HStack(spacing: 12) {
-                    StatChip(title: L("사용할 물 온도"), value: fmtTemp(water), emphasized: true)
-                    if water < 4 {
-                        Image(systemName: "snowflake")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(L("얼음물이 필요합니다 — 얼음을 넣어 물 온도를 맞추세요."))
-                    } else if water > 40 {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.title3)
-                            .foregroundStyle(Color.danger)
-                            .accessibilityLabel(tooHotMessage)
+            // 르방 빌드 계산기와 같은 이유로 넓은 창에선 편집 중에만
+            if sizeClass != .regular || keyboardVisible {
+                ResultBar(isEditing: keyboardVisible) {
+                    HStack(spacing: 12) {
+                        StatChip(title: L("사용할 물 온도"), value: fmtTemp(water), emphasized: true)
+                        if water < 4 {
+                            Image(systemName: "snowflake")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel(L("얼음물이 필요합니다 — 얼음을 넣어 물 온도를 맞추세요."))
+                        } else if water > 40 {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.title3)
+                                .foregroundStyle(Color.danger)
+                                .accessibilityLabel(tooHotMessage)
+                        }
                     }
                 }
             }

@@ -17,7 +17,7 @@
 | 개발 팀 | `Kiyoung Ha (G46DT9WHWV)` — Personal Team 아님 |
 | Apple 계정 (ASC 로그인·Xcode·TestFlight 초대·심사 연락처) | `juvesoul@icloud.com` — Xcode 관리 프로파일의 팀이 `Kiyoung Ha`("(Personal Team)" 아님)이고 프로파일에 iCloud 컨테이너 엔타이틀먼트가 들어 있으므로(무료 Personal Team은 iCloud 불가) 개발자 프로그램 계정이다. 키체인의 `Apple Development` 인증서도 이 계정으로 발급돼 있다. 빌드 처리 완료·TestFlight 초대·심사 결과 메일이 전부 이 주소로 온다. |
 | 버전 / 빌드 | `1.0` / `1` (MARKETING_VERSION / CURRENT_PROJECT_VERSION) |
-| 최소 iOS · 기기 | iOS 17.0 — **0-9에서 iOS 17 런타임으로 실제로 돌려 보기 전까지는 잠정값**이고, 문제가 많으면 18.0으로 올린다(0-9 5번). iPhone + iPad 네이티브(`TARGETED_DEVICE_FAMILY = "1,2"`): iPhone은 세로만, iPad는 네 방향 모두(`UISupportedInterfaceOrientations~ipad`). Apple Silicon Mac에서는 iPad 앱으로 실행된다(6-3). **iPad 지원은 한 번 출시하면 이후 업데이트에서 뺄 수 없다.** |
+| 최소 iOS · 기기 | iOS 17.0 — iOS 17.5·18.2·27 시뮬레이터(iPhone·iPad) 점검 뒤 **유지하기로 결정**(2026-10, 0-9 5번). 옛 OS에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고쳤고, CI `oldest-ios`가 17.5·18.2에서 코어 테스트를 돈다. iPhone + iPad 네이티브(`TARGETED_DEVICE_FAMILY = "1,2"`): iPhone은 세로만, iPad는 네 방향 모두(`UISupportedInterfaceOrientations~ipad`). Apple Silicon Mac에서는 iPad 앱으로 실행된다(6-3). **iPad 지원은 한 번 출시하면 이후 업데이트에서 뺄 수 없다.** |
 | 스토어 이름 | KR `도우메트리: 사워도우 계산기` (15자) / EN `Doughmetry: Sourdough Calc` (26자) — 2026-09-11 결정. ASC에는 2026-09-10에 `사워도우 브레드 계산기`(번들 ID `com.narudoc.levaincalc`)로 만든 레코드가 있으므로 2장에서 이름·번들 ID를 바꾼다. App Store 검색·웹에 `Doughmetry`/`도우메트리` 앱·제품 없음 확인(2026-09-11). |
 | 홈 화면 이름 (CFBundleDisplayName) | KR `도우메트리` / EN `Doughmetry` — 브랜드명만. 홈 화면 라벨은 한글 약 8자·영문 약 14자를 넘으면 잘리므로(실측) 설명어는 붙이지 않는다. 스토어 제목과 달라도 된다(비슷하면 됨). |
 | SKU | `levaincalc` |
@@ -122,7 +122,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
 ### 0-9. [필수] iOS 17/18·iPad에서 실행 확인 (첫 업로드 전)
 
-최소 iOS 17.0은 **아직 iOS 17 런타임에서 돌려 본 적이 없다** — 이 확인을 통과해야 17.0을 유지한다(고정값 표). FoundationModels(iOS 26 전용)는 weak link + `#available(iOS 26.0, *)` 가드라 iOS 17/18에서 심볼 오류로 죽지 않게 되어 있다(바인딩 전부 weak-import 확인). 이 Mac에는 iOS 17.5·18.2·26.5·27.0 시뮬레이터 런타임이 있다(2026-10-02, `xcrun simctl list runtimes`).
+최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터 점검(2026-10) 뒤 유지하기로 했다(고정값 표) — 출시마다 이 확인으로 회귀가 없는지 본다. FoundationModels(iOS 26 전용)는 weak link + `#available(iOS 26.0, *)` 가드라 iOS 17/18에서 심볼 오류로 죽지 않게 되어 있다(바인딩 전부 weak-import 확인). 이 Mac에는 iOS 17.5·18.2·26.5·27.0 시뮬레이터 런타임이 있다(2026-10-02, `xcrun simctl list runtimes`).
 
 1. 런타임 내려받기 — 위 런타임이 없을 때만(예: 다른 Mac): `Xcode > Settings… (⌘,) > Components` → `Platform Support` 왼쪽 아래 `+` → `iOS` → `iOS 18.x Simulator`, 이어서 `iOS 17.x Simulator` → `Download`. CLI 대안: `xcodebuild -downloadPlatform iOS -buildVersion 18.2`, `xcodebuild -downloadPlatform iOS -buildVersion 17.5`. Xcode 27이 17.x 런타임을 내려주지 않으면 iOS 17 실기기(5장 TestFlight)로 확인하고, 그것도 없으면 5번대로 최소 버전을 올린다.
 2. 시뮬레이터 만들기 — 런타임 ID는 `xcrun simctl list runtimes`로 확인해 맞춘다. 이름에 괄호를 넣지 않는다(`-destination` 이름 매칭).
@@ -145,7 +145,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
    끝에 찍히는 `.xcresult`를 `open`해 첨부 스크린샷(`ko-tab0` …)에서 탭 바·하단 요약 바가 겹치거나 잘리지 않는지 본다.
 4. 손으로 확인 — `iPhone SE iOS17`에서는 전부, `iPhone 15 iOS18`에서는 빠르게: 사진 선택기가 열리고 사진 가져오기가 규칙 파서로 동작해 확인 시트가 뜸 / 숫자 입력 중 키보드 `완료`로 닫힘 / 도구 → 타임라인 알림 권한 요청·예약 / 설정 맨 아래 개인정보 처리방침·지원 링크가 Safari로 열림 / 설정에서 언어 전환.
-5. 결정: iOS 17에서 고치는 데 품이 드는 문제가 나오면 고치지 말고 최소 버전을 올린다 — `project.pbxproj`의 프로젝트 수준 `IPHONEOS_DEPLOYMENT_TARGET = 17.0;` 두 곳(Debug·Release — 앱과 UI 테스트 타깃이 함께 따른다)을 `18.0`으로 바꾸고, 고정값 표와 [ios/README.md](../README.md)의 "iOS 17"을 함께 고친다. `LevainCore` 패키지의 `.iOS(.v17)`은 그대로 둬도 된다. 통과하면 고정값 표의 "잠정값" 문구를 지운다.
+5. 결정(2026-10): iOS 17.5·18.2 점검에서 나온 문제는 `#unavailable(iOS 26)`/`#available` 가지로 모두 고칠 수 있어 **17.0을 유지한다**. 앞으로 iOS 17에서 고치는 데 품이 드는 문제가 나오면 고치지 말고 최소 버전을 올린다 — `project.pbxproj`의 프로젝트 수준 `IPHONEOS_DEPLOYMENT_TARGET = 17.0;` 두 곳(Debug·Release — 앱과 UI 테스트 타깃이 함께 따른다)을 `18.0`으로 바꾸고, 고정값 표와 [ios/README.md](../README.md)의 "iOS 17"을 함께 고친다. `LevainCore` 패키지의 `.iOS(.v17)`은 그대로 둬도 된다.
 6. iPad (iOS 27 시뮬레이터 `iPad Pro 13-inch (M5)`와 `iPad Air 11-inch (M4)`, 15분) — 심사관이 iPad로 열 수 있다:
    - 세로·가로(`⌘←`/`⌘→`)에서 화면이 똑바로 서고 잘리는 곳이 없음. 넓은 화면에서 폼이 읽기 좋은 폭으로 가운데에 모임.
    - 창 크기 조절(창 모드에서 모서리를 최소 크기까지)과 Split View·Slide Over의 좁은 폭(약 320pt)에서 세그먼트·숫자 행이 깨지지 않음.

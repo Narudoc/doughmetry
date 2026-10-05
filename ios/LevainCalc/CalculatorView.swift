@@ -12,6 +12,13 @@ struct CalculatorView: View {
     @State private var toastMessage: String?
     /// VoiceOver 결과 안내 — 입력이 멈춘 뒤 한 번만 읽도록 미룬다
     @State private var announceTask: Task<Void, Never>?
+    @State private var wideEnoughForFiche = false
+    @State private var showGlossary = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// 넓은 가로 창(iPad 가로 — 13″ 1376pt, 11″ 1210pt)에선 배합표를 오른쪽 열에 늘 보인다.
+    /// 결과 바·배합표 시트를 대신하고, 결과 바는 키보드를 내릴 '완료'가 필요한 편집 중에만 보인다
+    private var showsSideFiche: Bool { sizeClass == .regular && wideEnoughForFiche }
 
     var body: some View {
         @Bindable var model = model
@@ -25,47 +32,82 @@ struct CalculatorView: View {
         let spokenResult = spokenSummary(dough: dough, stats: stats)
 
         NavigationStack {
-            Form {
-                Section {
-                    Picker(L("입력 모드"), selection: $model.calc.mode) {
-                        Text(L("재료 입력")).tag(CalcMode.a)
-                        Text(L("목표 역산")).tag(CalcMode.b)
-                    }
-                    .pickerStyle(.segmented)
-                    TextField(L("레시피 이름"), text: $model.calc.name)
-                        .accessibilityLabel(L("레시피 이름"))
-                }
-
-                if model.calc.mode == .a {
-                    IngredientFormSections(
-                        input: $model.calc.input, stats: stats, precision: model.precision,
-                        basis: model.pctBasis)
+            HStack(spacing: 0) {
+                Form {
                     Section {
-                        NumberField(
-                            label: L("분할 개수"), value: $model.calc.pieces,
-                            unit: L("개"), maxValue: 1000, integer: true)
-                        ScaleRecipeButton(doughWeight: stats.doughWeight)
-                    } header: {
-                        Text(L("분할"))
-                    } footer: {
-                        Text(L("0이면 분할하지 않습니다."))
+                        Picker(L("입력 모드"), selection: $model.calc.mode) {
+                            Text(L("재료 입력")).tag(CalcMode.a)
+                            Text(L("목표 역산")).tag(CalcMode.b)
+                        }
+                        .adaptiveSegmented(
+                            L("입력 모드"), value: model.calc.mode == .a ? L("재료 입력") : L("목표 역산"))
+                        TextField(L("레시피 이름"), text: $model.calc.name)
+                            .accessibilityLabel(L("레시피 이름"))
                     }
-                } else {
-                    TargetFormSections(target: $model.calc.target)
-                    targetErrors(dough: dough)
-                    TargetResultSection(dough: dough, precision: model.precision)
+
+                    if model.calc.mode == .a {
+                        IngredientFormSections(
+                            input: $model.calc.input, stats: stats, precision: model.precision,
+                            basis: model.pctBasis)
+                        Section {
+                            NumberField(
+                                label: L("분할 개수"), value: $model.calc.pieces,
+                                unit: L("개"), maxValue: 1000, integer: true)
+                            ScaleRecipeButton(doughWeight: stats.doughWeight)
+                        } header: {
+                            Text(L("분할"))
+                        } footer: {
+                            Text(L("0이면 분할하지 않습니다."))
+                        }
+                        .textCase(nil)
+                    } else {
+                        TargetFormSections(target: $model.calc.target)
+                        targetErrors(dough: dough)
+                        TargetResultSection(dough: dough, precision: model.precision)
+                    }
+                    Section {
+                        Button {
+                            model.sendToConverter(name: model.calc.name, input: dough)
+                        } label: {
+                            Label(L("이 배합으로 르방 변환"), systemImage: "arrow.left.arrow.right")
+                        }
+                        .disabled(infeasible || dough.levain.hydration <= 0)
+                    }
                 }
-                Section {
-                    Button {
-                        model.sendToConverter(name: model.calc.name, input: dough)
-                    } label: {
-                        Label(L("이 배합으로 르방 변환"), systemImage: "arrow.left.arrow.right")
+                .scrollDismissesKeyboard(.interactively)
+                .readableFormWidth()
+                // 결과 바 안쪽에 단다 — 바깥(safeAreaInset 뒤)에 달면 토스트가 결과 바를 가린다
+                .toast($toastMessage)
+                // keyboardDoneButton()을 달지 않는다 — 편집 중엔 아래 결과 바가 완료를 보인다 (내비게이션 바에 완료가 둘이 된다)
+                .safeAreaInset(edge: .bottom) {
+                    if !showsSideFiche || keyboardVisible {
+                        ResultBar(
+                            chips: model.calc.mode == .a
+                                ? summaryChips(stats: stats, pieces: pieces, precision: model.precision)
+                                : solvedChips(
+                                    dough: dough, negativeWater: negativeWater, negativeFlour: negativeFlour),
+                            isEditing: keyboardVisible,
+                            onExpand: { showTable = true },
+                            expandHint: L("전체 배합표를 엽니다")
+                        )
+                        .accessibilityIdentifier("calc.resultBar")
                     }
-                    .disabled(infeasible || dough.levain.hydration <= 0)
+                }
+                if showsSideFiche {
+                    FicheColumn(
+                        name: model.calc.name, input: dough, stats: stats, pieces: pieces,
+                        precision: model.precision, basis: model.pctBasis,
+                        onGlossary: { showGlossary = true })
+                    .frame(width: 460)
+                    .accessibilityIdentifier("calc.sideFiche")
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .readableFormWidth()
+            .onGeometryChange(for: Bool.self) { $0.size.width >= 1100 } action: {
+                wideEnoughForFiche = $0
+            }
+            .modifier(LegacyBarBackground(visible: showsSideFiche))
+            // 배합표 열 안에 달지 않는다 — 세로로 돌려 열이 사라지면 열린 용어 설명도 함께 빠진다
+            .navigationDestination(isPresented: $showGlossary) { GlossaryView() }
             // 두 손가락 두 번 탭 — 어디서든 지금 결과를 다시 읽는다
             .accessibilityAction(.magicTap) { announce(spokenResult, priority: .default) }
             .navigationTitle(L("계산기"))
@@ -97,6 +139,10 @@ struct CalculatorView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("저장")) {
+                        // 떠 있던 키보드를 먼저 내린다 — 포커스가 남은 채 시트를 띄우면 시트가 닫힐 때 UIKit이
+                        // 그 칸(레시피 이름 등)에 포커스를 되돌려 키보드가 다시 뜬다
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         showSave = true
                     }
                     .accessibilityIdentifier("calc.save")
@@ -104,20 +150,28 @@ struct CalculatorView: View {
                     .disabled(infeasible || dough.levain.hydration <= 0)
                 }
             }
-            // 결과 바 안쪽에 단다 — 바깥(safeAreaInset 뒤)에 달면 토스트가 결과 바를 가린다
-            .toast($toastMessage)
-            // keyboardDoneButton()을 달지 않는다 — 편집 중엔 아래 결과 바가 완료를 보인다 (내비게이션 바에 완료가 둘이 된다)
-            .safeAreaInset(edge: .bottom) {
-                ResultBar(
-                    chips: model.calc.mode == .a
-                        ? summaryChips(stats: stats, pieces: pieces, precision: model.precision)
-                        : solvedChips(
-                            dough: dough, negativeWater: negativeWater, negativeFlour: negativeFlour),
-                    isEditing: keyboardVisible,
-                    onExpand: { showTable = true },
-                    expandHint: L("전체 배합표를 엽니다")
-                )
-                .accessibilityIdentifier("calc.resultBar")
+            // ⌘N·⌘S는 보이는 탭에서만 — 툴바 버튼에 달면 한 번 들른 탭(TabView가 살려 둔다)의 단축키가
+            // 다른 탭에서도 눌려 보이지 않는 확인창·저장 시트를 띄운다. 제목은 ⌘ 길게 누르기 목록에 나온다
+            .background {
+                if model.selectedTab == .calculator {
+                    Group {
+                        Button(L("새 배합")) {
+                            guard !modalIsPresented() else { return }
+                            showResetDialog = true
+                        }
+                        .keyboardShortcut("n", modifiers: .command)
+                        Button(L("저장")) {
+                            guard !modalIsPresented() else { return }
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            showSave = true
+                        }
+                        .keyboardShortcut("s", modifiers: .command)
+                        .disabled(infeasible || dough.levain.hydration <= 0)
+                    }
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                }
             }
             .onChange(of: spokenResult) { _, text in scheduleAnnouncement(text) }
             .onReceive(
@@ -240,6 +294,20 @@ struct CalculatorView: View {
     }
 }
 
+/// 26 미만의 내비게이션·탭 막대는 화면의 스크롤 뷰 하나만 보고 배경을 켠다 — 폼과 배합표 열(List)이 나란히 있으면
+/// 폼이 막대 밑으로 스크롤돼도 투명한 채라 글자가 겹친다. 그동안은 배경을 늘 켠다
+private struct LegacyBarBackground: ViewModifier {
+    let visible: Bool
+
+    func body(content: Content) -> some View {
+        if #unavailable(iOS 26) {
+            content.toolbarBackground(visible ? .visible : .automatic, for: .navigationBar, .tabBar)
+        } else {
+            content
+        }
+    }
+}
+
 private typealias AnnouncementPriority = AttributeScopes.AccessibilityAttributes
     .AnnouncementPriorityAttribute
 
@@ -332,6 +400,7 @@ private struct ScaleRecipeSheet: View {
     @State private var count: Double
     @State private var each: Double = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(
         doughWeight: Double, pieces: Double, precision: Precision,
@@ -360,21 +429,43 @@ private struct ScaleRecipeSheet: View {
         return k.isFinite && k > 0 ? k : nil
     }
 
+    private var modeName: String {
+        switch mode {
+        case .factor: L("배율")
+        case .weight: L("총 반죽")
+        case .pieces: L("개수 × 개당")
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     Picker(L("배율 조정"), selection: $mode) {
                         Text(L("배율")).tag(Mode.factor)
-                        Text(L("총 반죽 무게")).tag(Mode.weight)
+                        // 칸 이름(총 반죽 무게)보다 짧게 — 영어 "Total dough weight"는 375pt 폭에서 잘린다
+                        Text(L("총 반죽")).tag(Mode.weight)
                         Text(L("개수 × 개당")).tag(Mode.pieces)
                     }
-                    .pickerStyle(.segmented)
+                    .adaptiveSegmented(L("배율 조정"), value: modeName)
                     switch mode {
                     case .factor:
-                        HStack(spacing: 12) {
-                            Button(L("절반으로 (×½)")) { apply(0.5, pieces: nil) }
-                            Button(L("두 배로 (×2)")) { apply(2, pieces: nil) }
+                        // 접근성 글자 크기에선 위아래로 — 나란히 두면 버튼 이름이 단어 중간에서 끊긴다
+                        let ax = typeSize.isAccessibilitySize
+                        let buttons =
+                            ax
+                            ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                        buttons {
+                            Button {
+                                apply(0.5, pieces: nil)
+                            } label: {
+                                Text(L("절반으로 (×½)")).frame(maxWidth: ax ? .infinity : nil)
+                            }
+                            Button {
+                                apply(2, pieces: nil)
+                            } label: {
+                                Text(L("두 배로 (×2)")).frame(maxWidth: ax ? .infinity : nil)
+                            }
                         }
                         // 한 행의 기본 버튼은 행 전체가 눌려 둘 다 실행된다 — 테두리 버튼으로 따로 누르게
                         .buttonStyle(.bordered)
@@ -396,19 +487,8 @@ private struct ScaleRecipeSheet: View {
                             fmtGrams(doughWeight, precision)))
                 }
                 Section {
-                    HStack(spacing: 6) {
-                        Text("\(fmtGrams(doughWeight, precision)) g →").monospacedDigit()
-                        Spacer(minLength: 0)
-                        if let k {
-                            StatValue(value: "\(fmtGrams(doughWeight * k, precision)) g")
-                            Text("(×\(fmtCount((k * 1000).rounded() / 1000)))")
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
+                    preview
+                        .accessibilityElement(children: .combine)
                 }
             }
             .navigationTitle(L("배율 조정"))
@@ -428,6 +508,44 @@ private struct ScaleRecipeSheet: View {
         }
     }
 
+    /// 지금 무게 → 바뀔 무게 (배율). 접근성 글자 크기에선 한 줄에 두면 지금 무게가 조각나고 결과가 줄어든다 —
+    /// 결과를 아랫줄에 두고, 배율 표시도 결과 옆에 안 들어가면 그 아래로
+    @ViewBuilder
+    private var preview: some View {
+        let from = Text("\(fmtGrams(doughWeight, precision)) g →").monospacedDigit()
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                from
+                if let k {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { scaled(k) }
+                        VStack(alignment: .leading, spacing: 4) { scaled(k) }
+                    }
+                } else {
+                    Text("—").foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            HStack(spacing: 6) {
+                from
+                Spacer(minLength: 0)
+                if let k {
+                    scaled(k)
+                } else {
+                    Text("—").foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func scaled(_ k: Double) -> some View {
+        StatValue(value: "\(fmtGrams(doughWeight * k, precision)) g")
+        Text("(×\(fmtCount((k * 1000).rounded() / 1000)))")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+    }
+
     private func apply(_ factor: Double, pieces: Double?) {
         onApply(factor, pieces)
         dismiss()
@@ -444,7 +562,7 @@ struct TargetFormSections: View {
                 Text(L("총 반죽 무게")).tag(false)
                 Text(L("개수 × 개당")).tag(true)
             }
-            .pickerStyle(.segmented)
+            .adaptiveSegmented(L("무게 입력"), value: target.byPieces ? L("개수 × 개당") : L("총 반죽 무게"))
             if target.byPieces {
                 NumberField(
                     label: L("분할 개수"), value: $target.pieces, unit: L("개"),
@@ -459,6 +577,7 @@ struct TargetFormSections: View {
                 NumberField(label: L("총 반죽 무게"), value: $target.doughWeight)
             }
         }
+        .textCase(nil)
         Section {
             NumberField(label: L("총 수분율"), value: $target.hydrationPct, unit: "%")
             NumberField(label: L("소금"), value: $target.saltPct, unit: "%")
@@ -471,6 +590,7 @@ struct TargetFormSections: View {
         } footer: {
             Text(L("밀가루·물·소금·르방만 역산합니다. 바시나주·액체·이스트는 재료 입력 모드에서."))
         }
+        .textCase(nil)
     }
 }
 
@@ -486,11 +606,14 @@ struct TargetResultSection: View {
             row(L("소금"), dough.salt)
             row(levainName(dough.levain.hydration), dough.levain.grams)
         }
+        .textCase(nil)
     }
 
     private func row(_ name: String, _ grams: Double) -> some View {
         let g = fmtGrams(grams, precision)
-        return TableRow(name: name, grams: g, pct: nil, bold: true)
+        // 불가능한 조합의 음수는 결과값(brass)이 아니다 — 결과 바 칩과 같은 danger로
+        return TableRow(
+            name: name, grams: g, pct: nil, bold: true, valueTint: grams < -1e-9 ? .danger : nil)
             .ficheRowAccessibility(name: name, grams: g, pct: nil)
     }
 }

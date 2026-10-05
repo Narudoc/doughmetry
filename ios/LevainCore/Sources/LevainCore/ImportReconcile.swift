@@ -76,5 +76,14 @@ public func reconcileAIDraft(
         if input.extras.count < rules.input.extras.count { return .failure(.extrasMissing) }
         if rules.input.yeast.grams > 0, input.yeast.grams == 0 { return .failure(.yeastMissing) }
     }
+    // 모델은 "T65 밀가루"를 "밀가루"로 줄여 적곤 한다 — 같은 줄(같은 무게)을 규칙 파서가 더 길게 읽었으면 그 이름을 쓴다
+    if input.flours.count == rules.input.flours.count {
+        for (i, ruled) in rules.input.flours.enumerated()
+        where abs(input.flours[i].grams - ruled.grams) < 0.5 && ruled.name.count > input.flours[i].name.count
+            && ruled.name.range(of: input.flours[i].name, options: .caseInsensitive) != nil
+        {
+            input.flours[i].name = ruled.name
+        }
+    }
     return .success(input)
 }

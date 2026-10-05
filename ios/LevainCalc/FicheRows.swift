@@ -149,6 +149,8 @@ struct FicheSections: View {
     let precision: Precision
     let basis: PctBasis
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         Section {
             ForEach(ficheRows(input: input, stats: stats, basis: basis, precision: precision)) {
@@ -162,18 +164,14 @@ struct FicheSections: View {
                     ? L("%는 첨가 밀가루 기준(베이커스 퍼센트)입니다.")
                     : L("%는 총 밀가루(첨가 + 르방 속) 기준입니다."))
         }
+        .textCase(nil)
         Section {
             totalRow(L("총 밀가루"), stats.totalFlour, pct: "100%")
             totalRow(L("총 물"), stats.totalWater, pct: fmtPct(stats.hydrationPct))
-            LabeledContent {
-                StatValue(value: fmtPct(stats.hydrationPct), size: 17)
-            } label: {
-                BilingualLabel(L("총 수분율"), fr: "hydratation totale")
-                    .fontWeight(.semibold)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L("총 수분율"))
-            .accessibilityValue(fmtPct(stats.hydrationPct))
+            hydrationRow
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("총 수분율"))
+                .accessibilityValue(fmtPct(stats.hydrationPct))
             totalRow(L("총 반죽 무게"), stats.doughWeight, pct: nil)
             if let pieces, pieces > 0 {
                 totalRow(LF("분할 %@개 — 개당", fmtCount(pieces)), stats.doughWeight / pieces, pct: nil)
@@ -183,6 +181,32 @@ struct FicheSections: View {
         } footer: {
             Text(
                 L("총 수분율 = 총 물 ÷ 총 밀가루. 총 물에는 본반죽 물·바시나주·르방 속 물·액체 재료의 수분이 모두 들어가서, 본반죽 물 ÷ 밀가루로 적은 레시피의 수분율보다 높게 나옵니다."))
+        }
+        .textCase(nil)
+    }
+
+    /// iOS 17·18의 LabeledContent는 접근성 글자 크기에서 이름과 값을 위아래로 쌓지 않아 값이 줄어든다 —
+    /// 26부터는 시스템이 쌓는다
+    private var stacksLabeledRows: Bool {
+        if #unavailable(iOS 26) { return typeSize.isAccessibilitySize }
+        return false
+    }
+
+    @ViewBuilder
+    private var hydrationRow: some View {
+        let label = BilingualLabel(L("총 수분율"), fr: "hydratation totale").fontWeight(.semibold)
+        let value = StatValue(value: fmtPct(stats.hydrationPct), size: 17)
+        if stacksLabeledRows {
+            VStack(alignment: .leading, spacing: 4) {
+                label
+                value
+            }
+        } else {
+            LabeledContent {
+                value
+            } label: {
+                label
+            }
         }
     }
 

@@ -132,11 +132,11 @@ EOF
   esac
 }
 
-# 03-import에서 '텍스트 붙여넣기'에 붙여 넣을 레시피 — 실행 전에 시뮬레이터 클립보드에 넣어 둔다
+# 03-import에서 '텍스트 붙여넣기'에 붙여 넣을 레시피 — 실행 전에 시뮬레이터 클립보드에 넣어 둔다.
+# 두 예시 모두 기기 안 모델 초안이 규칙 분석과 맞는다 — 어긋나는 예시는 확인 시트 맨 위에 경고가 뜬다
 import_text() {
   case $1 in
   ko) print -r -- $'통밀 캉파뉴\nT65 밀가루 400g\n통밀가루 100g\n물 350g\n르방 리퀴드 100g\n소금 10g' ;;
-  # 이 예시는 기기 안 모델 초안이 규칙 분석과 맞는다 — 어긋나는 예시는 확인 시트 맨 위에 경고가 뜬다
   en) print -r -- $'Country sourdough (2 loaves)\n\n800g bread flour\n200g whole wheat flour\n700g water\n200g levain\n20g salt' ;;
   *) print -u2 "언어는 ko 또는 en"; return 1 ;;
   esac
@@ -147,8 +147,8 @@ instruction() {
   case $1 in
   01-convert) print -r -- "레시피 / Recipes 탭 → 캉파뉴 T65 / Pain de campagne → 변환기로 보내기(⇄ 아이콘) → 목표 '뒤흐 50% / Stiff 50%', 변환 모드 '르방 질량 고정 / Fixed levain mass' 확인 → '변환 결과 — 재료 / Result — ingredients' 표와 보존 지표(✓) 행이 탭 바 위에 다 보이게 스크롤" ;;
   02-calculator) print -r -- "계산기 / Calculator 탭 → 맨 위로 스크롤, 키보드 닫기. 하단 요약 바가 72.0% / 1740 g / PFF 10%인지 확인 (기본 예시 캉파뉴 / Campagne)" ;;
-  03-import) print -r -- "레시피 / Recipes 탭 → 가져오기 버튼 → '텍스트 붙여넣기 / Paste text' → 입력란에 붙여넣기(클립보드에 예시가 있다) → 분석 / Analyze → 확인 시트 맨 위가 Apple Intelligence/규칙 기반 안내인지 확인 — ⚠ 'AI 결과가 규칙 분석과 달라… / The AI result didn't match…' 경고면 취소하고 다시. 이름·밀가루가 보이게 (iPad 13형은 지표까지). 찍은 뒤 시트는 취소" ;;
-  04-timeline) print -r -- "도구 / Tools 탭 → 타임라인 / Timeline → 기준 '완성 시각 / Finish time' → 빵이 완성될 시각을 내일 오전 10:00 근처로 → 단계 시각이 보이게. 알림 예약은 누르지 않는다" ;;
+  03-import) print -r -- "레시피 / Recipes 탭 → 가져오기 버튼 → '텍스트 붙여넣기 / Paste text' → 입력란에 붙여넣기(클립보드에 예시가 있다) → 분석 / Analyze → 확인 시트 맨 위가 Apple Intelligence/규칙 기반 안내인지 확인 (지운 뒤 10분쯤은 시뮬레이터가 Apple Intelligence를 쓸 수 없다고 답해 규칙 기반 안내가 뜬다 — 둘 다 된다) — ⚠ 'AI 결과가 규칙 분석과 달라… / The AI result didn't match…' 경고면 취소하고 다시. 이름·밀가루가 보이게 (iPad 13형은 지표까지). 찍은 뒤 시트는 취소" ;;
+  04-timeline) print -r -- "도구 / Tools 탭 → 타임라인 / Timeline → 기준 '완성 시각 / Finish time' → 완성 시각을 내일 오전 10:00 근처로 → 단계 시각이 보이게. 알림 예약은 누르지 않는다" ;;
   05-bakelog) print -r -- "레시피 / Recipes 탭 → 캉파뉴 T65 / Pain de campagne → 별점·베이킹 로그가 보이게 스크롤. 예시 레시피가 없으면 -uiTestDataDir 훅이 빠진 빌드다 (Debug 빌드·AppModel 확인)" ;;
   06-fiche) print -r -- "(다크 모드로 바꿔 두었다) 레시피 / Recipes 탭 → 캉파뉴 T65 / Pain de campagne → 계산기로 불러오기 / Load into calculator → 하단 요약 바(⌃)를 눌러 배합표 시트 / tap the summary bar to open the formula sheet (처음부터 큰 높이로 열린다)" ;;
   07-scale) print -r -- "(선택) 계산기 / Calculator 탭 → 분할 / Divide 섹션의 '배율 조정 / Scale recipe' → 시트에서 배율 / Factor 1.5 입력, 키보드를 닫아 미리보기 '1760.0 g → 2640.0 g (×1.5)'가 보이게 — 06에서 불러온 캉파뉴 T65 / Pain de campagne 기준 (적용은 누르지 않는다)" ;;

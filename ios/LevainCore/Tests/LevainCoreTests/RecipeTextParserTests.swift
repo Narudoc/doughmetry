@@ -317,6 +317,36 @@ struct RecipeTextParserParityTests {
         #expect(r.input.water == 350)
     }
 
+    @Test("아포스트로피 뒤 eau는 물이고, 문자에 붙은 dur·IDY는 낱말이 아니다 (iOS 17 단어 경계)")
+    func apostropheAndAttachedWords() {
+        for line in ["350 g d'eau", "350 g d’eau", "l'eau 350g"] {
+            let r = RecipeTextParser.parse("farine T65 500g\n\(line)\nsel 10g")
+            #expect(r.input.water == 350, "\(line)")
+            #expect(r.input.extras.isEmpty, "\(line)")
+            #expect(r.matchedLineCount == 3, "\(line)")
+        }
+        let dur = RecipeTextParser.parse("강력분 500g\n물 350g\n르방dur 200")
+        #expect(dur.input.levain.grams == 200)
+        #expect(dur.input.levain.hydration == 1.0)
+        #expect(!dur.levainHydrationExplicit)
+        let idy = RecipeTextParser.parse("강력분 500g\n물 350g\n이스트IDY 3g")
+        #expect(idy.input.yeast == Yeast(type: .fresh, grams: 3))
+    }
+
+    @Test("대문자 I 키워드는 기기 지역과 무관하게 읽는다 (터키어 로캘의 I → ı)")
+    func capitalIKeywords() {
+        let r = RecipeTextParser.parse(
+            "BREAD FLOUR 500G\nWATER 350G\nLIQUID LEVAIN 100G\nMILK 50G\nInstant yeast 2G\nSALT 10G")
+        #expect(r.input.flours.map(\.grams) == [500])
+        #expect(r.input.water == 350)
+        #expect(r.input.levain.grams == 100)
+        #expect(r.levainHydrationExplicit)
+        #expect(r.input.liquids.map(\.waterRatio) == [0.88])
+        #expect(r.input.yeast == Yeast(type: .instant, grams: 2))
+        #expect(r.input.salt == 10)
+        #expect(r.input.extras.isEmpty)
+    }
+
     @Test("U+2028·단독 \\r 개행도 줄로 분리된다")
     func newlines() {
         let a = RecipeTextParser.parse("강력분 500\u{2028}물 350g\u{2028}소금 10g")
@@ -902,6 +932,17 @@ struct RecipeImportTextTests {
         }
         #expect(RecipeTextParser.parse("오늘 파네토네 구웠다\n강력분 500g\n물 300g").name == nil)
         #expect(RecipeTextParser.parse("맛있네\n강력분 500g\n물 300g").name == nil)
+        // 판·servings도 개수다 — 괄호 속 숫자를 그램으로 읽지 않는다
+        let pizza = RecipeTextParser.parse("피자 도우 (3판 분량)\n강력분 400g\n물 300g")
+        #expect(pizza.name == "피자 도우")
+        #expect(pizza.input.extras.isEmpty)
+        #expect(pizza.matchedLineCount == 2)
+        #expect(RecipeTextParser.parse("포카치아 (1판)\n강력분 500g\n물 400g").name == "포카치아")
+        let focaccia = RecipeTextParser.parse("Focaccia (2 servings)\n500 g flour\n350 g water")
+        #expect(focaccia.name == "Focaccia")
+        #expect(focaccia.input.extras.isEmpty)
+        // 가운데의 분량 괄호를 걷어내도 공백이 겹치지 않는다
+        #expect(RecipeTextParser.parse("치아바타 (2개 분량) 레시피\n강력분 400g\n물 300g").name == "치아바타 레시피")
     }
 
     @Test("글머리 이모지·기호는 재료 이름에 남지 않는다")
@@ -928,6 +969,9 @@ struct RecipeImportTextTests {
         #expect(RecipeTextParser.parse("Hydration: 75%\n강력분 500g\n물 350g").name == nil)
         #expect(RecipeTextParser.parse("강력분 500g\n물 350g\nPFF 20%").name == nil)
         #expect(RecipeTextParser.parse("PFF 20%\n강력분 500g\n물 350g").name == nil)
+        // 글자 없이 %만 있는 줄은 재료보다 앞서도 이름이 아니다
+        #expect(RecipeTextParser.parse("75%\n강력분 500g\n물 350g").name == nil)
+        #expect(RecipeTextParser.parse("수분율\n75%\n강력분 500g\n물 350g").name == nil)
         // 발효종·재료 머리글의 수분율 표기도 통계 줄이다
         for header in [
             "스타터 (수분율 100%)", "Starter (100% hydration)", "Poolish (100% hydration)", "재료 (수분율 75%)",

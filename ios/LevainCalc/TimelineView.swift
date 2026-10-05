@@ -271,6 +271,7 @@ struct TimelineView: View {
     @State private var showAddStage = false
     @State private var didPrependLevainBuild = false
     @FocusState private var focusedName: String?
+    @ScaledMetric(relativeTo: .caption) private var captionGap: CGFloat = 3.5
     /// 르방 빌드 계산기에서 들어오면 맨 앞에 르방 빌드 단계를 넣는다 (피크 알림)
     private let prependLevainBuild: Bool
 
@@ -310,28 +311,31 @@ struct TimelineView: View {
         let scheduled = scheduleTimeline(store.plan)
         Form {
             Section {
-                Picker(L("기준"), selection: Binding(
-                    get: { anchorIsFinish ? 1 : 0 },
-                    set: { v in store.plan.setAnchorKind(finish: v == 1) })
+                StackingSegmentedPicker(
+                    L("기준"), value: anchorIsFinish ? L("완성 시각") : L("시작 시각"),
+                    selection: Binding(
+                        get: { anchorIsFinish ? 1 : 0 },
+                        set: { v in store.plan.setAnchorKind(finish: v == 1) })
                 ) {
                     Text(L("시작 시각")).tag(0)
                     Text(L("완성 시각")).tag(1)
                 }
-                .pickerStyle(.segmented)
-                DatePicker(
-                    anchorIsFinish ? L("빵이 완성될 시각") : L("첫 단계 시작"),
+                // 라벨은 짧게 — 날짜·시각 두 칸 옆에서 긴 라벨은 기본 글자 크기에서도 두 줄로 접히거나 칸을 아랫줄로 민다
+                AXDatePicker(
+                    anchorIsFinish ? L("완성 시각") : L("시작 시각"),
                     selection: anchorDate, displayedComponents: [.date, .hourAndMinute])
                 Button {
                     store.plan.anchor = .start(isoString(from: Date()))
                 } label: {
                     Label(L("지금 시작"), systemImage: "play.circle")
                 }
-                LabeledContent(L("총 소요")) {
+                StackingLabeledContent(L("총 소요")) {
                     StatValue(value: fmtDuration(store.plan.totalMinutes))
                 }
             } header: {
                 Text(L("일정"))
             }
+            .textCase(nil)
 
             Section {
                 ForEach(scheduled, id: \.stage.id) { s in
@@ -351,8 +355,12 @@ struct TimelineView: View {
                             } else {
                                 Text(stageName(s.stage))
                             }
-                            Text(caption(s))
-                                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            CaptionFlow(spacing: captionGap) {
+                                ForEach(Array(captionPieces(s).enumerated()), id: \.offset) { Text($0.element) }
+                            }
+                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(captionPieces(s).joined(separator: " "))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // 인덱스를 잡아 두면 삭제된 마지막 행의 바인딩이 한 번 더 읽혀 범위를 벗어난다 — id로 찾는다
@@ -394,7 +402,21 @@ struct TimelineView: View {
                         }
                     }
                 } label: {
-                    Label(L("단계 추가"), systemImage: "plus.circle")
+                    Group {
+                        if typeSize.isAccessibilitySize {
+                            // Menu 안의 Label은 접근성 글자 크기에서 낱말 중간에서 끊긴다 ("Ad | d stage") — 직접 늘어놓는다
+                            HStack {
+                                Image(systemName: "plus.circle")
+                                    .accessibilityHidden(true)
+                                Text(L("단계 추가"))
+                            }
+                        } else {
+                            Label(L("단계 추가"), systemImage: "plus.circle")
+                        }
+                    }
+                    // Menu 행은 라벨 글자·아이콘만 눌린다 — 행 폭 전체를 탭 영역으로
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
             } header: {
                 HStack {
@@ -405,6 +427,7 @@ struct TimelineView: View {
             } footer: {
                 Text(L("길게 눌러 순서를 바꾸고, 밀어서 삭제합니다. 냉장 발효는 12시간(720분)이 기본입니다."))
             }
+            .textCase(nil)
 
             Section {
                 Button {
@@ -430,7 +453,7 @@ struct TimelineView: View {
                 // 단계가 없으면 "모든 단계가 이미 지났습니다"로 잘못 안내된다
                 .disabled(store.plan.stages.isEmpty)
                 if store.scheduledCount > 0 {
-                    LabeledContent(L("예약된 알림")) {
+                    StackingLabeledContent(L("예약된 알림")) {
                         Text(LF("%d개", store.scheduledCount)).foregroundStyle(.secondary)
                     }
                     Button(role: .destructive) {
@@ -488,40 +511,82 @@ struct TimelineView: View {
         }
     }
 
-    /// 시각 안에서는 끊지 않는다. 날짜 접두어 뒤는 기본보다 큰 글자에서만 끊게 둔다 — 편집 모드의 좁은 칸에선
-    /// XL부터 "Tomorrow 8:00 AM"이 한 줄을 넘고, 그러면 iOS가 NBSP에서 끊는다 ("8:00 | AM")
+    /// 날짜 접두어 뒤는 보통 공백 — 조각이 한 줄보다 넓을 때만 거기서 끊긴다 (CaptionFlow)
     private func fmtClock(_ d: Date) -> String {
         let cal = Calendar.current
         let time = nonBreaking(fmtTime(d))
         if cal.isDateInToday(d) { return time }
         let day = cal.isDateInTomorrow(d) ? L("내일") : fmtMonthDay(d)
-        return nonBreaking(day) + (typeSize > .large ? " " : "\u{00A0}") + time
+        return nonBreaking(day) + " " + time
     }
 
-    /// 시작–끝 시각. 날짜 접두어(내일/9. 12.)는 시작에 한 번만, 끝은 날이 바뀔 때만 붙인다
-    private func fmtRange(_ start: Date, _ end: Date) -> String {
-        let endStr =
-            Calendar.current.isDate(end, inSameDayAs: start) ? nonBreaking(fmtTime(end)) : fmtClock(end)
-        // 줄바꿈은 화살표 뒤에서 — "오후 | 11:06"이나 "Tomorrow | 12:10 AM"처럼 시각 중간에서 끊기지 않게
-        return fmtClock(start) + "\u{00A0}→ " + endStr
+    /// 단계 행의 시각 줄 조각: "시작 →", 끝(날이 바뀔 때만 날짜), 1시간 이상이면 "· 12시간".
+    /// 날짜 접두어(내일/9. 12.)는 시작에 한 번만, 끝은 날이 바뀔 때만 붙인다
+    private func captionPieces(_ s: ScheduledStage) -> [String] {
+        let end =
+            Calendar.current.isDate(s.end, inSameDayAs: s.start) ? nonBreaking(fmtTime(s.end)) : fmtClock(s.end)
+        var pieces = [fmtClock(s.start) + "\u{00A0}→", end]
+        if s.stage.minutes >= 60 { pieces.append("·\u{00A0}" + nonBreaking(fmtDuration(s.stage.minutes))) }
+        return pieces
     }
 
-    /// 단계 행의 시각 줄 — 1시간 이상인 단계는 시간 단위 길이를 덧붙인다 (720분 → 12시간).
-    /// 넘치면 "· 12시간"이 통째로 다음 줄로 간다
-    private func caption(_ s: ScheduledStage) -> String {
-        let range = fmtRange(s.start, s.end)
-        guard s.stage.minutes >= 60 else { return range }
-        return range + " ·\u{00A0}" + nonBreaking(fmtDuration(s.stage.minutes))
-    }
-
-    /// en 시각은 오전/오후 앞에 U+202F를 쓰는데, iOS는 거기서도 줄을 바꾼다
+    /// en 시각은 오전/오후 앞에 U+202F를 쓰는데, iOS는 거기서도 줄을 바꾼다. 숫자와 뒤 글자 사이엔
+    /// WORD JOINER — 시스템 언어가 한국어가 아니면 "4 | 시간"처럼 숫자와 한글 단위 사이에서도 끊는다
     private func nonBreaking(_ s: String) -> String {
         s.replacingOccurrences(of: " ", with: "\u{00A0}").replacingOccurrences(of: "\u{202F}", with: "\u{00A0}")
+            .replacingOccurrences(of: "(\\d)(?=\\p{L})", with: "$1\u{2060}", options: .regularExpression)
     }
 
     private func fmtDuration(_ minutes: Double) -> String {
         let m = clampedInt(minutes)
         if m < 60 { return LF("%d분", m) }
         return m % 60 == 0 ? LF("%d시간", m / 60) : LF("%d시간 %d분", m / 60, m % 60)
+    }
+}
+
+/// 조각을 왼쪽부터 채우고 안 들어가는 조각은 통째로 다음 줄로 — 시각 중간("12:10 | AM")에서 끊기지 않게.
+/// 한 조각이 한 줄보다 넓을 때만 그 안(날짜 접두어 뒤)에서 끊긴다
+private struct CaptionFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? .infinity, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let r = arrange(bounds.width, subviews)
+        for (i, v) in subviews.enumerated() {
+            v.place(
+                at: CGPoint(x: bounds.minX + r.frames[i].minX, y: bounds.minY + r.frames[i].minY),
+                proposal: ProposedViewSize(r.frames[i].size))
+        }
+    }
+
+    private func arrange(_ maxWidth: CGFloat, _ subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, width: CGFloat = 0
+        for v in subviews {
+            var size = v.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += lineHeight
+                lineHeight = 0
+            }
+            let wraps = size.width > maxWidth - x
+            if wraps { size = v.sizeThatFits(ProposedViewSize(width: maxWidth - x, height: nil)) }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            width = max(width, x + size.width)
+            lineHeight = max(lineHeight, size.height)
+            if wraps {
+                // 안에서 끊긴 조각 다음은 새 줄로 — 옆에 두면 그 조각의 첫 줄 끝에 붙어 순서가 뒤섞인다
+                // ("Tomorrow  4:21 AM" / "4:11 AM →")
+                x = 0
+                y += lineHeight
+                lineHeight = 0
+            } else {
+                x += size.width + spacing
+            }
+        }
+        return (frames, CGSize(width: width, height: y + lineHeight))
     }
 }

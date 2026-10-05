@@ -169,9 +169,90 @@ struct LibrarySyncTests {
         #expect(abs(ms - (base + 0.123)) < 1e-6)
         #expect(parseISO("2026-09-03T19:00:00+09:00")?.timeIntervalSince1970 == base)
         #expect(parseISO("2026-09-03T19:00:00.250+09:00")?.timeIntervalSince1970 == base + 0.25)
+        #expect(parseISO("2026-09-03T19:00:00+09")?.timeIntervalSince1970 == base)
+        #expect(parseISO("2026-09-03T19:00:00+9")?.timeIntervalSince1970 == base)
         #expect(parseISO("2026-09-03") == nil)
         #expect(parseISO("x") == nil)
         #expect(parseISO("") == nil)
+    }
+
+    @Test("syncInstant — 웹 문법은 밀리초 기준, 분 없는 ±HH·±H는 ±HH:00, 소문자 z는 Z, 한 자리 월·일은 두 자리, 그 밖은 nil")
+    func syncInstantForms() {
+        func ms(_ s: String) -> Double? { LibrarySync.syncInstant(s).map { ($0.timeIntervalSince1970 * 1000).rounded() } }
+        #expect(ms("2026-09-03T10:00:00Z") == 1_788_429_600_000)
+        #expect(ms("2026-09-03T10:00:00.0005Z") == 1_788_429_600_000)
+        #expect(ms("2026-09-03T10:00:00.1239Z") == 1_788_429_600_123)
+        #expect(ms("2026-09-03T19:00:00+09") == 1_788_429_600_000)
+        #expect(ms("2026-09-03T01:00:00.250-09") == 1_788_429_600_250)
+        #expect(ms("2026-02-30T10:00:00Z") == 1_772_445_600_000)  // 3월 2일로 넘어간다
+        #expect(ms("2026-09-03T19:00:00+9") == 1_788_429_600_000)
+        #expect(ms("2026-09-03T10:00:00z") == 1_788_429_600_000)
+        #expect(ms("2026-09-03T10:00:00.0005z") == 1_788_429_600_000)
+        #expect(ms("2026-02-29T10:00:00z") == ms("2026-03-01T10:00:00Z"))
+        #expect(ms("2026-9-3T10:00:00Z") == 1_788_429_600_000)
+        #expect(ms("2026-9-03T19:00:00+9") == 1_788_429_600_000)
+        #expect(ms("2026-09-3T10:00:00z") == 1_788_429_600_000)
+        // ICU가 OS마다 다르게 읽는 형식(앞 공백·Z 앞 공백은 17만, 25시·60분은 27만 받는다)은 어느 OS에서도 읽지 않는다
+        for s in [
+            " 2026-09-03T10:00:00Z", "2026-09-03T10:00:00 Z", "2026-09-03T25:00:00Z", "2026-09-03T10:60:00Z",
+            "2026-09-03T10:00:60Z", "2026-9-3T25:00:00Z", "2026--3T10:00:00Z", "2026-09-03T10:00Z", "2026-09-03",
+            "-09", "x", "",
+        ] {
+            #expect(LibrarySync.syncInstant(s) == nil, "\(s)")
+        }
+        // JSON 가져오기(isNewerOnWeb)는 웹 문법 그대로 — ±HH를 시각으로 읽지 않는다
+        #expect(LibrarySync.webEpochMillis("2026-09-03T19:00:00+09") == nil)
+    }
+
+    // iOS 17(밀리초 아래를 버리고 그 달에 없는 날·25시를 거절, 앞 공백은 받음)·18.2(±HH를 거절)·27(25시를 넘겨 읽음)의 parseISO가 서로 다른 판을 골라
+    // 기기끼리 계속 다시 쓰던 쌍. 밀리초까지 같으면 동률이라 인코딩이 큰 쪽이 이긴다
+    @Test(
+        "병합 승자는 OS와 무관하다 — 밀리초 아래·그 달에 없는 날·분 없는 오프셋",
+        arguments: [
+            // (A updatedAt, B updatedAt, 이기는 판)
+            ("2026-09-03T10:00:00.0005Z", "2026-09-03T10:00:00Z", "2026-09-03T10:00:00Z"),
+            ("2026-09-03T10:00:00.1234Z", "2026-09-03T10:00:00.123Z", "2026-09-03T10:00:00.123Z"),
+            ("2026-02-30T10:00:00Z", "2026-03-01T00:00:00Z", "2026-02-30T10:00:00Z"),
+            ("2026-09-03T10:00:00+09", "2026-09-03T05:00:00Z", "2026-09-03T05:00:00Z"),
+            ("2026-09-03T10:00:00+9", "2026-09-03T05:00:00Z", "2026-09-03T05:00:00Z"),
+            ("2026-09-03T10:00:00.0005z", "2026-09-03T10:00:00z", "2026-09-03T10:00:00z"),
+            ("2026-02-30T10:00:00z", "2026-03-01T00:00:00z", "2026-02-30T10:00:00z"),
+            ("2026-9-3T10:00:00Z", "2026-09-03T09:00:00Z", "2026-9-3T10:00:00Z"),
+            // 시각으로 읽지 않는 형식은 문자열 비교
+            (" 2026-09-03T10:00:00Z", "2026-09-03T09:00:00Z", "2026-09-03T09:00:00Z"),
+            ("2026-09-03T25:00:00Z", "2026-09-04T00:30:00Z", "2026-09-04T00:30:00Z"),
+        ])
+    func mergeWinnerIsRuntimeIndependent(a: String, b: String, winner: String) {
+        let ra = recipe("r", name: "R", updatedAt: a)
+        let rb = recipe("r", name: "R", updatedAt: b)
+        for (local, remote) in [(ra, rb), (rb, ra)] {
+            let remoteDoc = LibrarySync.normalized(LibraryDocument(recipes: [remote]))
+            let plan = LibrarySync.plan(
+                local: LibraryDocument(recipes: [local]), remote: LibrarySync.Snapshot(current: remoteDoc))
+            #expect(plan.merged.recipes.map(\.updatedAt) == [winner])
+            #expect(plan.writeRemote == (remote.updatedAt != winner))
+        }
+    }
+
+    @Test("분 없는 오프셋(±HH)의 미래 시각 항목도 묘비·편집 시각이 그 뒤로 간다")
+    func hourOffsetTombstoneAndEditTime() {
+        let future = "2099-01-01T09:00:00+09"  // 2099-01-01T00:00:00Z
+        let t = LibrarySync.tombstoneTime(for: future, now: Date())
+        #expect(t == "2099-01-01T00:00:01Z")
+        #expect(LibrarySync.isNewer(t, than: future))
+        #expect(LibrarySync.editTime(replacing: future, now: Date()) == "2099-01-01T00:00:01Z")
+    }
+
+    @Test("정규 순서도 밀리초 기준 — 밀리초 아래만 다른 구운 날짜는 같은 시각이라 id 순")
+    func canonicalOrderUsesMillisecondBasis() {
+        func bake(_ id: String, _ bakedAt: String) -> BakeLog {
+            BakeLog(id: id, recipeId: "r", bakedAt: bakedAt, createdAt: bakedAt, updatedAt: bakedAt)
+        }
+        let doc = LibrarySync.canonical(LibraryDocument(logs: [
+            bake("b", "2026-09-03T10:00:00.0005Z"), bake("a", "2026-09-03T10:00:00Z"),
+            bake("c", "2026-09-03T10:00:00.001Z"),
+        ]))
+        #expect(doc.logs.map(\.id) == ["c", "a", "b"])
     }
 
     @Test("isoString은 초 단위 UTC 형식 그대로다 (저장값 형식 호환)")

@@ -13,7 +13,22 @@ enum RecipeSort: String, CaseIterable {
 
 struct RecipesView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.windowIsRegular) private var windowIsRegular
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var search = ""
+    @State private var searchPresented = false
+    /// 마지막으로 받은 ⌘F 요청 — 탭을 처음 그릴 때 이미 올라간 요청은 받고, 목록을 다시 그릴 때는 되풀이하지 않는다
+    @State private var handledSearchRequest = 0
+    /// 두 열(regular 폭)에서 상세에 보이는 레시피
+    @State private var selectedID: String?
+    @State private var splitVisibility: NavigationSplitViewVisibility = .all
+    /// 상세 열에서 민 화면(전체 기록) — 다른 레시피를 고르면 비운다. 안 비우면 앞 레시피의 기록 화면이 남아
+    /// 기록 추가가 그 레시피로 간다
+    @State private var detailPath = NavigationPath()
+    /// 한 열(compact 폭)의 내비게이션 경로 — 창 폭 등급이 바뀌어도 열어 둔 레시피를 잇는다
+    @State private var compactPath = NavigationPath()
+    /// 레시피 상세·전체 기록의 시트 — 상세는 창 폭 등급이 바뀔 때 다시 만들어지므로 여기서 띄운다 (적던 내용이 남게)
+    @State private var detailSheet: RecipeDetailSheet?
     @AppStorage("recipeSort") private var sort: RecipeSort = .updated
     @State private var showImporter = false
     @State private var importError: String?
@@ -82,8 +97,69 @@ struct RecipesView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            content
+        presentations(columns)
+            .onChange(of: selectedID) { detailPath = NavigationPath() }
+            // 넓은 창에서 열어 둔 레시피를 좁은 창에서도 연 채로 둔다
+            .onChange(of: windowIsRegular) { _, regular in
+                // 창을 줄이는 동안 두 열이 목록을 접어(.detailOnly) 둔다 — 다시 넓어지면 편다
+                guard !regular else { splitVisibility = .all; return }
+                if let id = selectedID, model.recipes.contains(where: { $0.id == id }) {
+                    compactPath = NavigationPath([id])
+                } else {
+                    compactPath = NavigationPath()
+                }
+            }
+            .recipeDetailSheets($detailSheet)
+    }
+
+    /// 창 폭 등급이 바뀌면(iPad 창 크기 조절·Split View) 두 갈래가 통째로 바뀐다 — 시트·알림·선택처럼 입력을 담은 것은
+    /// 갈래 밖(body)에 단다. Group은 수식어를 갈래마다 따로 달아 갈래와 함께 사라지므로 ZStack으로 감싼다
+    private var columns: some View {
+        ZStack {
+            if windowIsRegular {
+                // 넓은 창: 목록 | 상세 두 열. 세로 화면에서도 목록을 상세 위에 덮지 않고 옆에 둔다
+                NavigationSplitView(columnVisibility: $splitVisibility) {
+                    decorated(splitContent)
+                } detail: {
+                    NavigationStack(path: $detailPath) {
+                        splitDetail
+                    }
+                }
+                .navigationSplitViewStyle(.balanced)
+                .overlay {
+                    if importingAI {
+                        importProgress
+                    }
+                }
+            } else {
+                NavigationStack(path: $compactPath) {
+                    decorated(content)
+                    .overlay {
+                        if importingAI {
+                            importProgress
+                        }
+                    }
+                    .navigationDestination(for: String.self) { id in
+                        Group {
+                            if let recipe = model.recipes.first(where: { $0.id == id }) {
+                                RecipeDetailView(recipe: recipe, sheet: $detailSheet)
+                            } else {
+                                deletedRecipe
+                            }
+                        }
+                        .onAppear { selectedID = id }
+                    }
+                }
+                .onChange(of: compactPath) { _, path in
+                    if path.isEmpty { selectedID = nil }
+                }
+            }
+        }
+    }
+
+    /// 목록 열에 붙는 제목·툴바 — 내비게이션 열 안에 있어야 하므로 갈래마다 단다
+    private func decorated<Content: View>(_ base: Content) -> some View {
+        base
             .safeAreaInset(edge: .bottom) {
                 if model.libraryWriteFailed {
                     LibraryWriteErrorLabel()
@@ -95,17 +171,12 @@ struct RecipesView: View {
                 }
             }
             .navigationTitle(L("레시피"))
-            .navigationDestination(for: String.self) { id in
-                if let recipe = model.recipes.first(where: { $0.id == id }) {
-                    RecipeDetailView(recipe: recipe)
-                } else {
-                    // 다른 기기에서 삭제된 레시피가 동기화로 사라진 경우
-                    ContentUnavailableView(
-                        L("삭제된 레시피"), systemImage: "trash",
-                        description: Text(L("이 레시피는 다른 기기에서 삭제되었습니다.")))
-                }
-            }
             .toolbar { toolbarContent }
+    }
+
+    /// 가져오기 흐름·설정의 시트와 알림 — 창 폭 등급이 바뀌어도 닫히지 않게 두 갈래 밖에 단다
+    private func presentations<Content: View>(_ base: Content) -> some View {
+        base
             .fileImporter(
                 isPresented: $showImporter,
                 allowedContentTypes: [.json, .plainText]
@@ -180,13 +251,30 @@ struct RecipesView: View {
                     importSaved.toggle()
                 }
             }
-            .overlay {
-                if importingAI {
-                    importProgress
+            .sensoryFeedback(.success, trigger: importSaved)
+            .onChange(of: model.searchRequest, initial: true) { _, request in
+                guard request != handledSearchRequest else { return }
+                handledSearchRequest = request
+                // 빈 라이브러리엔 검색 칸이 없다 — 켜 두면 첫 레시피가 생길 때 검색이 저절로 열린다
+                guard !model.recipes.isEmpty else { return }
+                splitVisibility = .all
+                guard searchPresented else {
+                    searchPresented = true
+                    return
+                }
+                // 이미 열린 검색(키보드만 내려간 상태)은 true를 다시 넣어도 포커스가 돌아오지 않는다. 닫은 것이 검색 칸에
+                // 반영되기 전에 다시 열면 둘이 합쳐져 아무 일도 없으므로 한 박자 쉬고 연다 — 닫으면 지워지는 검색어도 되살린다
+                // 검색어는 먼저 비워 둔다 — 닫힐 때 칸만 비고 search는 남아, 빈 칸 아래 옛 검색어로 거른 목록이 보인다
+                let query = search
+                search = ""
+                searchPresented = false
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(250))
+                    searchPresented = true
+                    try? await Task.sleep(for: .milliseconds(100))
+                    if search.isEmpty { search = query }
                 }
             }
-            .sensoryFeedback(.success, trigger: importSaved)
-        }
     }
 
     @ViewBuilder
@@ -194,23 +282,111 @@ struct RecipesView: View {
         if model.recipes.isEmpty {
             emptyState
         } else {
+            let rows = filtered
             List {
-                ForEach(filtered) { recipe in
+                ForEach(rows) { recipe in
                     row(recipe)
                 }
             }
+            .overlay { noResults(rows) }
             .readableFormWidth()
             .searchable(
-                text: $search, placement: .navigationBarDrawer(displayMode: .always),
+                text: $search, isPresented: $searchPresented,
+                placement: .navigationBarDrawer(displayMode: .always),
                 prompt: L("이름·메모·태그 검색"))
         }
     }
 
-    private func row(_ recipe: Recipe) -> some View {
-        NavigationLink(value: recipe.id) {
-            RecipeRow(recipe: recipe, precision: model.precision)
+    /// 두 열의 목록 — 검색은 목록 열 안에 둔다. 화면 전체 폭 검색(.toolbar 배치 포함)은 검색 중에 탭 막대를 가린다.
+    /// List(selection:)은 고른 행 글자를 흰색으로 뒤집어 brass 수분율·bottle 르방 종류를 가리므로 직접 고른다
+    @ViewBuilder
+    private var splitContent: some View {
+        if model.recipes.isEmpty {
+            emptyState
+        } else {
+            let rows = filtered
+            List {
+                ForEach(rows) { recipe in
+                    sidebarRow(recipe)
+                }
+            }
+            .overlay { noResults(rows) }
+            .searchable(
+                text: $search, isPresented: $searchPresented, placement: sidebarSearchPlacement,
+                prompt: L("이름·메모·태그 검색"))
         }
-        .accessibilityIdentifier("recipes.row")
+    }
+
+    /// iOS 17·18의 자동 배치는 목록이 스크롤되지 않으면 검색 칸을 숨겨 둔다 (끌어내려야 보인다)
+    private var sidebarSearchPlacement: SearchFieldPlacement {
+        if #available(iOS 26, *) { return .automatic }
+        return .navigationBarDrawer(displayMode: .always)
+    }
+
+    @ViewBuilder
+    private var splitDetail: some View {
+        if let id = selectedID {
+            if let recipe = model.recipes.first(where: { $0.id == id }) {
+                RecipeDetailView(recipe: recipe, sheet: $detailSheet)
+                    .id(id)
+            } else {
+                deletedRecipe
+            }
+        } else if !model.recipes.isEmpty {
+            ContentUnavailableView(
+                L("레시피를 고르세요"), systemImage: "book.closed",
+                description: Text(L("왼쪽 목록에서 레시피를 고르면 배합표와 베이킹 로그가 여기에 보입니다.")))
+        }
+    }
+
+    /// 다른 기기에서 삭제된 레시피가 동기화로 사라진 경우
+    private var deletedRecipe: some View {
+        ContentUnavailableView(
+            L("삭제된 레시피"), systemImage: "trash",
+            description: Text(L("이 레시피는 다른 기기에서 삭제되었습니다.")))
+    }
+
+    /// 검색어에 맞는 레시피가 없을 때 — 빈 목록만 남기지 않는다. 시스템 .search는 앱 언어가 아니라 번들 현지화를 따른다
+    @ViewBuilder
+    private func noResults(_ rows: [Recipe]) -> some View {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        if rows.isEmpty, !q.isEmpty {
+            ContentUnavailableView(
+                LF("'%@'에 대한 결과 없음", q), systemImage: "magnifyingglass",
+                description: Text(L("철자를 확인하거나 다른 검색어로 찾아보세요.")))
+        }
+    }
+
+    private func row(_ recipe: Recipe) -> some View {
+        deletable(
+            NavigationLink(value: recipe.id) {
+                RecipeRow(recipe: recipe, precision: model.precision)
+            }
+            .accessibilityIdentifier("recipes.row"),
+            recipe)
+    }
+
+    private func sidebarRow(_ recipe: Recipe) -> some View {
+        let selected = selectedID == recipe.id
+        return deletable(
+            Button {
+                selectedID = recipe.id
+            } label: {
+                RecipeRow(recipe: recipe, precision: model.precision)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(
+                selected ? RoundedRectangle(cornerRadius: 12).fill(Color.bottle.opacity(0.12)) : nil)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("recipes.row"),
+            recipe)
+    }
+
+    /// 밀어서 삭제 + 확인 — 한 열과 두 열의 목록 행이 같이 쓴다
+    private func deletable<Row: View>(_ base: Row, _ recipe: Recipe) -> some View {
+        base
         // 끝까지 밀어도 바로 지우지 않는다 — 소속 베이킹 로그까지 모든 기기에서 사라진다.
         // role: .destructive는 확인 전에 행을 치우므로 쓰지 않는다
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -231,6 +407,7 @@ struct RecipesView: View {
         ) {
             Button(L("삭제"), role: .destructive) {
                 pendingDelete = nil
+                if selectedID == recipe.id { selectedID = nil }
                 model.delete(recipe.id)
             }
             Button(L("취소"), role: .cancel) {}
@@ -253,27 +430,18 @@ struct RecipesView: View {
                 Label(L("설정"), systemImage: "gearshape")
             }
         }
-        if model.recipes.count > 1 {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker(L("정렬"), selection: $sort) {
-                        Text(L("최근 수정")).tag(RecipeSort.updated)
-                        Text(L("최근 구움")).tag(RecipeSort.lastBaked)
-                        Text(L("이름")).tag(RecipeSort.name)
-                    }
-                } label: {
-                    Label(L("정렬"), systemImage: "arrow.up.arrow.down")
-                }
-            }
-        }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 showImportDialog = true
             } label: {
-                // iOS 26+ 툴바는 Label의 labelStyle(.titleAndIcon)을 무시하고 아이콘만 그린다
-                HStack(spacing: 4) {
+                if importIconOnly {
                     Image(systemName: "sparkles")
-                    Text(L("가져오기"))
+                } else {
+                    // iOS 26+ 툴바는 Label의 labelStyle(.titleAndIcon)을 무시하고 아이콘만 그린다
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text(L("가져오기"))
+                    }
                 }
             }
             .accessibilityLabel(L("사진·텍스트에서 가져오기"))
@@ -287,24 +455,46 @@ struct RecipesView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
-                if !model.recipes.isEmpty {
-                    ShareLink(
-                        item: RecipesExport(recipes: model.recipes),
-                        preview: SharePreview(RecipesExport.libraryFileName)
-                    ) {
-                        Label(L("JSON 내보내기"), systemImage: "square.and.arrow.up")
+                // 정렬은 막대에 따로 두지 않는다 — iPad 세로·영어나 접근성 크기에서 가져오기 버튼까지 시스템 '더 보기'로 밀어낸다.
+                // 하위 메뉴로 둔다: 메뉴 안 Section 제목은 Picker와 함께면 보이지 않아 '이름' 같은 항목만 덩그러니 남는다
+                if model.recipes.count > 1 {
+                    Picker(selection: $sort) {
+                        Text(L("최근 수정")).tag(RecipeSort.updated)
+                        Text(L("최근 구움")).tag(RecipeSort.lastBaked)
+                        Text(L("이름")).tag(RecipeSort.name)
+                    } label: {
+                        Label(L("정렬"), systemImage: "arrow.up.arrow.down")
                     }
+                    .pickerStyle(.menu)
                 }
-                Button {
-                    showImporter = true
-                } label: {
-                    Label(L("JSON 가져오기"), systemImage: "square.and.arrow.down")
+                Section {
+                    if !model.recipes.isEmpty {
+                        ShareLink(
+                            item: RecipesExport(recipes: model.recipes),
+                            preview: SharePreview(RecipesExport.libraryFileName)
+                        ) {
+                            Label(L("JSON 내보내기"), systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label(L("JSON 가져오기"), systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(importingAI)
                 }
-                .disabled(importingAI)
             } label: {
-                Label(L("가져오기/내보내기"), systemImage: "ellipsis.circle")
+                Label(L("더 보기"), systemImage: "ellipsis.circle")
             }
         }
+    }
+
+    /// 가져오기 버튼에 글자를 빼는 곳 — 두 열의 좁은 목록 열, 그리고 막대 글자가 글자 크기를 따라 커지는 iOS 17·18의
+    /// 접근성 크기. 글자까지 넣으면 막대가 넘쳐 시스템 '더 보기'로 숨는다
+    private var importIconOnly: Bool {
+        if windowIsRegular { return true }
+        if #available(iOS 26, *) { return false }
+        return typeSize.isAccessibilitySize
     }
 
     /// 레시피가 하나도 없을 때 — 레시피를 들여오는 길을 바로 보인다
@@ -322,6 +512,8 @@ struct RecipesView: View {
                     } label: {
                         Label(L("사진·텍스트에서 가져오기"), systemImage: "sparkles")
                             .foregroundStyle(Color.paper)
+                            .multilineTextAlignment(.center)
+                            .frame(width: emptyActionWidth(proxy))
                     }
                     .buttonStyle(.borderedProminent)
                     // 빈 화면의 actions는 바깥 controlSize를 따르지 않는다 — 버튼마다 준다 (44pt 탭 영역)
@@ -337,6 +529,8 @@ struct RecipesView: View {
                         addSamples()
                     } label: {
                         Label(L("예시 레시피 추가"), systemImage: "text.badge.plus")
+                            .multilineTextAlignment(.center)
+                            .frame(width: emptyActionWidth(proxy))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -345,6 +539,8 @@ struct RecipesView: View {
                     } label: {
                         // 테두리 없는 버튼은 글자 높이만 눌린다 — 44pt 탭 영역
                         Text(L("계산기로 가기"))
+                            .multilineTextAlignment(.center)
+                            .frame(width: emptyActionWidth(proxy))
                             .frame(minHeight: 44)
                             .contentShape(Rectangle())
                     }
@@ -354,6 +550,13 @@ struct RecipesView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+    }
+
+    /// iOS 17의 빈 화면은 접근성 글자 크기에서 버튼 글자를 줄바꿈하지 않고 한 줄로 늘여 제목·설명까지 화면 밖으로 민다 —
+    /// 버튼 폭을 정해 준다. 18부터는 스스로 줄바꿈한다 (폭 그대로 두면 가운데만 옮겨질 뿐 넘친다)
+    private func emptyActionWidth(_ proxy: GeometryProxy) -> CGFloat? {
+        if #available(iOS 18, *) { return nil }
+        return typeSize.isAccessibilitySize ? max(0, proxy.size.width - 120) : nil
     }
 
     /// 사진·텍스트 가져오기 선택지 — 어느 쪽이든 결과는 확인 시트를 거쳐 저장된다.
@@ -559,7 +762,7 @@ struct RecipeRow: View {
 /// 화면용 날짜 — 한국어는 웹과 같은 2026.10.01, 영어는 Oct 1, 2026
 func fmtDay(iso: String) -> String {
     guard Lang.shared.current != .ko else { return fmtDate(iso: iso) }
-    guard let date = parseISO(iso) else { return "" }
+    guard let date = LibrarySync.syncInstant(iso) else { return "" }
     var style = Date.FormatStyle(date: .abbreviated, time: .omitted).locale(Lang.shared.current.locale)
     // 사용자 달력(불교력·일본력 등)과 무관하게 — fmtDate와 같은 그레고리력 보장
     style.calendar = Calendar(identifier: .gregorian)
@@ -568,19 +771,22 @@ func fmtDay(iso: String) -> String {
 
 /// VoiceOver용 날짜 (2025년 10월 20일 / October 20, 2025) — 점 표기는 숫자 나열로 읽힌다
 func fmtSpokenDate(_ iso: String) -> String {
-    guard let date = parseISO(iso) else { return "" }
+    guard let date = LibrarySync.syncInstant(iso) else { return "" }
     var style = Date.FormatStyle.dateTime.year().month(.wide).day().locale(Lang.shared.current.locale)
     style.calendar = Calendar(identifier: .gregorian)
     return date.formatted(style)
 }
 
+/// 전체 기록 화면 — 값으로 밀어야 두 열 상세의 경로(detailPath)를 비울 때 함께 빠진다
+struct BakeLogListRoute: Hashable {
+    let recipeId: String
+}
+
 struct RecipeDetailView: View {
     @Environment(AppModel.self) private var model
     let recipe: Recipe
+    @Binding var sheet: RecipeDetailSheet?
 
-    @State private var showNoteEdit = false
-    @State private var showNewLog = false
-    @State private var editingLog: BakeLog?
     @State private var confirmLoad = false
 
     /// 상세에 바로 보이는 최근 기록 수 — 기록이 쌓여도 '기록 추가'가 밀려나지 않게 나머지는 전체 목록으로
@@ -603,7 +809,7 @@ struct RecipeDetailView: View {
                 basis: model.pctBasis)
             Section {
                 Button {
-                    showNoteEdit = true
+                    sheet = .note(recipeId: recipe.id)
                 } label: {
                     if let note = recipe.note, !note.isEmpty {
                         // 가져온 만드는 법은 길다 — 전체는 누르면 열리는 편집 시트에서
@@ -619,19 +825,18 @@ struct RecipeDetailView: View {
             } header: {
                 Text(L("노트"))
             }
+            .textCase(nil)
             Section {
                 Button {
-                    showNewLog = true
+                    sheet = .newLog(recipeId: recipe.id)
                 } label: {
                     Label(L("기록 추가"), systemImage: "plus.circle")
                 }
                 ForEach(logs.prefix(recentLogCount)) { log in
-                    EditableBakeLogRow(log: log) { editingLog = log }
+                    EditableBakeLogRow(log: log) { sheet = .editLog(log) }
                 }
                 if logs.count > recentLogCount {
-                    NavigationLink {
-                        BakeLogListView(recipeId: recipe.id)
-                    } label: {
+                    NavigationLink(value: BakeLogListRoute(recipeId: recipe.id)) {
                         Text(LF("기록 모두 보기 (%d)", logs.count))
                     }
                 }
@@ -642,8 +847,10 @@ struct RecipeDetailView: View {
                     Text(L("이 레시피로 구운 날짜·별점·메모를 남겨 다음 굽기에 참고하세요."))
                 }
             }
+            .textCase(nil)
         }
         .readableFormWidth()
+        .navigationDestination(for: BakeLogListRoute.self) { BakeLogListView(recipeId: $0.recipeId, sheet: $sheet) }
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -671,15 +878,6 @@ struct RecipeDetailView: View {
                     Label(L("공유"), systemImage: "square.and.arrow.up")
                 }
             }
-        }
-        .sheet(isPresented: $showNoteEdit) {
-            NoteEditSheet(initial: recipe.note ?? "") { text in
-                model.updateNote(recipeId: recipe.id, note: text)
-            }
-        }
-        .newBakeLogSheet(isPresented: $showNewLog, recipeId: recipe.id)
-        .sheet(item: $editingLog) { log in
-            BakeLogSheet(recipeId: recipe.id, existing: log) { model.saveLog($0) }
         }
     }
 
@@ -771,7 +969,7 @@ struct SettingsSheet: View {
                             set: { cloud.enabled = $0 })
                     )
                     .disabled(!cloud.isAvailable)
-                    LabeledContent(L("상태")) {
+                    StackingLabeledContent(L("상태")) {
                         Text(cloudStatusText)
                             .foregroundStyle(.secondary)
                     }
@@ -788,8 +986,11 @@ struct SettingsSheet: View {
                 } footer: {
                     Text(L("레시피·베이킹 로그를 iCloud로 기기 간 동기화합니다. 충돌 시 최신 수정본이 유지됩니다."))
                 }
+                .textCase(nil)
                 Section {
-                    Picker(L("언어"), selection: Bindable(Lang.shared).current) {
+                    AXStackedPicker(
+                        label: L("언어"), value: Lang.shared.current.label, selection: Bindable(Lang.shared).current
+                    ) {
                         ForEach(AppLanguage.allCases, id: \.self) { lang in
                             Text(lang.label).tag(lang)
                         }
@@ -798,7 +999,11 @@ struct SettingsSheet: View {
                     Text(L("검색 같은 시스템 화면은 앱을 다시 열면 바뀝니다. 공유 시트의 일부 항목은 기기 언어를 따릅니다."))
                 }
                 Section {
-                    Picker(L("% 표기"), selection: $model.pctBasis) {
+                    AXStackedPicker(
+                        label: L("% 표기"),
+                        value: model.pctBasis == .totalFlour ? L("총 밀가루 기준") : L("베이커스 퍼센트"),
+                        selection: $model.pctBasis
+                    ) {
                         Text(L("총 밀가루 기준")).tag(PctBasis.totalFlour)
                         Text(L("베이커스 퍼센트")).tag(PctBasis.addedFlour)
                     }
@@ -807,7 +1012,7 @@ struct SettingsSheet: View {
                     Text(L("표시만 바뀝니다 — 계산과 총 수분율·PFF는 항상 총 밀가루 기준입니다."))
                 }
                 Section {
-                    Picker(L("표시 자릿수"), selection: $model.precision) {
+                    AXStackedPicker(label: L("표시 자릿수"), value: model.precision.label, selection: $model.precision) {
                         ForEach(Precision.allCases, id: \.self) { p in
                             Text(p.label).tag(p)
                         }
@@ -817,7 +1022,10 @@ struct SettingsSheet: View {
                     Text(L("내부 계산은 항상 full precision — 반올림은 표시에만 적용됩니다."))
                 }
                 Section {
-                    LabeledContent(L("버전"), value: "\(AppInfo.version) (\(AppInfo.build))")
+                    StackingLabeledContent(L("버전")) {
+                        Text(verbatim: "\(AppInfo.version) (\(AppInfo.build))")
+                            .foregroundStyle(.secondary)
+                    }
                     Link(L("개인정보 처리방침"), destination: AppLinks.privacy)
                     Link(L("지원·문의"), destination: AppLinks.support)
                     Link(L("웹 버전"), destination: AppLinks.web)
@@ -834,6 +1042,7 @@ struct SettingsSheet: View {
                 } footer: {
                     Text(L("광고·계정·추적 없음"))
                 }
+                .textCase(nil)
             }
             .navigationTitle(L("설정"))
             .navigationBarTitleDisplayMode(.inline)
@@ -843,7 +1052,33 @@ struct SettingsSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .adaptiveDetents([.medium, .large])
+    }
+}
+
+/// 메뉴 Picker 행. iOS 17·18의 메뉴 Picker는 접근성 글자 크기에서도 이름과 값을 한 줄에 나눠 둬 단어 중간에서 끊고,
+/// 값이 두 줄로 접혀도 한 줄 높이만 잡아 이름과 겹친다 — 그때만 이름 아래에 값을 그린 메뉴로 (AXMenuPicker).
+/// 26부터는 시스템이 스스로 위아래로 쌓는다
+private struct AXStackedPicker<Selection: Hashable, Options: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let label: String
+    let value: String
+    @Binding var selection: Selection
+    @ViewBuilder let options: Options
+
+    private var stacks: Bool {
+        if #available(iOS 26, *) { return false }
+        return typeSize.isAccessibilitySize
+    }
+
+    var body: some View {
+        if stacks {
+            AXMenuPicker(label, value: value) {
+                Picker(label, selection: $selection) { options }
+            }
+        } else {
+            Picker(label, selection: $selection) { options }
+        }
     }
 }
 

@@ -25,6 +25,8 @@ enum ConvMode: String, CaseIterable {
 
 struct ConverterView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.windowIsRegular) private var windowIsRegular
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// nil = 손대지 않은 기본 이름 — 보일 때 현재 언어로 옮긴다 (한국어 원문을 저장해 두면 영어 화면에 그대로 샌다)
     @State private var name: String?
@@ -38,6 +40,7 @@ struct ConverterView: View {
     @State private var distFlourId = ""
     @State private var editingSource = false
     @State private var showLoadSheet = false
+    @State private var loadAsPopover = false
     @State private var showSave = false
     @State private var savedFeedback = false
     @State private var appliedFeedback = false
@@ -46,7 +49,10 @@ struct ConverterView: View {
     /// 예시 안내에서 계산기 배합을 가져오지 못한 이유 — 탭할 때만 따진다 (본문이 계산기 입력을 구독하지 않도록)
     @State private var calcPickError: String?
 
-    /// 변환 불가 섹션의 스크롤 기준점 — 성공 시엔 BeforeAfterSections.anchorID
+    /// 결과 바를 탭하면 성공 시 목표 수분율 행을 위로 올린다 — List의 scrollTo는 섹션 머리글을 건너뛰어,
+    /// 결과 섹션을 기준점으로 삼으면 그 머리글이 내비게이션 바 밑에 숨는다
+    private static let targetRowID = "converter.targetRow"
+    /// 변환 불가 섹션의 스크롤 기준점
     private static let errorAnchorID = "converter.error"
 
     var body: some View {
@@ -72,8 +78,12 @@ struct ConverterView: View {
                 .safeAreaInset(edge: .bottom) {
                     resultBar(result) {
                         withAnimation {
+                            // 접근성 글자 크기에선 설정 행·꼬리말만으로 화면이 차 결과가 한 줄도 안 보인다 —
+                            // 머리글을 포기하고 첫 결과 행을 위로
                             proxy.scrollTo(
-                                isSuccess(result) ? BeforeAfterSections.anchorID : Self.errorAnchorID,
+                                !isSuccess(result)
+                                    ? Self.errorAnchorID
+                                    : typeSize.isAccessibilitySize ? BeforeAfterSections.anchorID : Self.targetRowID,
                                 anchor: .top)
                         }
                     }
@@ -85,15 +95,40 @@ struct ConverterView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     // 계산기의 불러오기·레시피 탭과 같은 기호 — 책 = 저장된 레시피
                     Button {
+                        // 모양은 여는 순간에 정한다 — 연 채로 창 크기 등급이 바뀌면 띄운 쪽이 닫히고 다른 쪽은 뜨지 않아
+                        // showLoadSheet가 true로 남고 버튼이 먹통이 된다
+                        loadAsPopover = windowIsRegular
                         showLoadSheet = true
                     } label: {
                         Label(L("불러오기"), systemImage: "book.closed")
+                    }
+                    // 넓은 창(iPad)에선 버튼에 붙은 팝오버로 — 행 두어 개에 시트는 거의 빈 화면이다
+                    .popover(
+                        isPresented: Binding(
+                            get: { loadAsPopover && showLoadSheet },
+                            set: { showLoadSheet = $0 })
+                    ) {
+                        loadSheet
+                            .frame(idealWidth: 420, idealHeight: 420)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("저장")) { showSave = true }
                         // 르방 수분율 0 이하는 코덱 검증에서 탈락해 저장해도 다음 실행 때 사라진다
                         .disabled(!isSuccess(result) || newHydration <= 0)
+                }
+            }
+            // ⌘S는 보이는 탭에서만 — 계산기 CalculatorView의 같은 단축키 참고
+            .background {
+                if model.selectedTab == .converter {
+                    Button(L("저장")) {
+                        guard !modalIsPresented() else { return }
+                        showSave = true
+                    }
+                        .keyboardShortcut("s", modifiers: .command)
+                        .disabled(!isSuccess(result) || newHydration <= 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
                 }
             }
             // keyboardDoneButton()을 달지 않는다 — 편집 중엔 아래 결과 바가 완료를 보인다 (완료가 둘이 된다)
@@ -103,11 +138,12 @@ struct ConverterView: View {
             .onReceive(
                 NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
             ) { _ in keyboardVisible = false }
-            .sheet(isPresented: $showLoadSheet) {
-                ConverterLoadSheet(
-                    calcError: calcError,
-                    onPickCalc: pickCalcDough,
-                    onPickRecipe: { adopt(name: $0.name, input: $0.doughInput) })
+            .sheet(
+                isPresented: Binding(
+                    get: { !loadAsPopover && showLoadSheet },
+                    set: { showLoadSheet = $0 })
+            ) {
+                loadSheet
             }
             .sheet(isPresented: $showSave) {
                 SaveRecipeSheet(
@@ -135,6 +171,13 @@ struct ConverterView: View {
             // 예시를 고쳐 쓰기 시작하면 더는 예시가 아니다
             .onChange(of: input) { showsExample = false }
         }
+    }
+
+    private var loadSheet: some View {
+        ConverterLoadSheet(
+            calcError: calcError,
+            onPickCalc: pickCalcDough,
+            onPickRecipe: { adopt(name: $0.name, input: $0.doughInput) })
     }
 
     private var displayName: String { name ?? L("캉파뉴") }
@@ -191,23 +234,17 @@ struct ConverterView: View {
                 text: Binding(get: { displayName }, set: { name = $0 })
             )
             .accessibilityLabel(L("레시피 이름"))
-            LabeledContent {
+            StackingLabeledContent(L("현재 르방")) {
                 Text(
                     "\(levainShort(input.levain.hydration)) \(clampedInt(input.levain.hydration * 100))% · \(fmtGrams(input.levain.grams, model.precision)) g"
                 )
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-            } label: {
-                Text(L("현재 르방"))
             }
-            LabeledContent {
+            StackingLabeledContent(L("총 수분율")) {
                 StatValue(value: fmtPct(sourceStats.hydrationPct))
-            } label: {
-                Text(L("총 수분율"))
             }
-            DisclosureGroup(L("원본 직접 편집"), isExpanded: $editingSource) {
-                EmptyView()
-            }
+            sourceEditToggle
         } header: {
             Text(L("원본 배합"))
         } footer: {
@@ -215,6 +252,7 @@ struct ConverterView: View {
                 exampleFooter
             }
         }
+        .textCase(nil)
         if editingSource {
             IngredientFormSections(
                 input: $input, stats: sourceStats, precision: model.precision,
@@ -222,10 +260,54 @@ struct ConverterView: View {
         }
     }
 
+    /// iOS 17의 DisclosureGroup 행은 VoiceOver에 버튼으로 드러나지 않고, 화살표만 이름 없는 작은 버튼으로 남는다
+    /// (라벨에 접근성 특성을 달아도 그대로) — 17에선 같은 모양의 버튼으로 그린다
+    @ViewBuilder
+    private var sourceEditToggle: some View {
+        if #available(iOS 18, *) {
+            DisclosureGroup(L("원본 직접 편집"), isExpanded: $editingSource) {
+                EmptyView()
+            }
+        } else {
+            Button {
+                withAnimation { editingSource.toggle() }
+            } label: {
+                HStack {
+                    Text(L("원본 직접 편집"))
+                        .foregroundStyle(Color.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .rotationEffect(.degrees(editingSource ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            }
+            .accessibilityValue(editingSource ? L("펼침") : L("접힘"))
+        }
+    }
+
+    /// 고르기 행. 접근성 글자 크기에선 이름과 값을 한 메뉴 단추 안에 위아래로 그린다 (AXMenuPicker)
+    @ViewBuilder
+    private func pickerRow<P: View>(
+        _ label: String, value: String, segmented: Bool = false, @ViewBuilder picker: () -> P
+    ) -> some View {
+        if typeSize.isAccessibilitySize {
+            AXMenuPicker(label, value: value, picker: picker)
+        } else if segmented {
+            picker()
+                .pickerStyle(.segmented)
+        } else {
+            picker()
+        }
+    }
+
     /// 기본 예시 배합임을 밝히고, 계산기 배합을 한 번에 가져오게 한다
     private var exampleFooter: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // 접근성 글자 크기에서 말줄임으로 잘리지 않게 세로로 늘린다
             Text(L("예시 배합입니다 — 내 배합을 변환하려면 불러오세요"))
+                .fixedSize(horizontal: false, vertical: true)
             Button(action: pickCalcDoughFromFooter) {
                 Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
                     .fontWeight(.semibold)
@@ -234,7 +316,9 @@ struct ConverterView: View {
             }
             .buttonStyle(.borderless)
             if let calcPickError {
-                Text(calcPickError).foregroundStyle(Color.danger)
+                Text(calcPickError)
+                    .foregroundStyle(Color.danger)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -258,36 +342,47 @@ struct ConverterView: View {
         targetPresetSel = sel
     }
 
+    /// 목표 프리셋 이름 (태그 = 위치) — 계산기 르방 프리셋과 같은 순서 (리퀴드 → 뒤흐)
+    private var targetPresetNames: [String] { [L("리퀴드 100%"), L("뒤흐 50%"), L("직접")] }
+
     private var targetPresetPicker: some View {
-        let picker = Picker(L("목표"), selection: $targetPresetSel) {
-            // 계산기 르방 프리셋과 같은 순서 (리퀴드 → 뒤흐)
-            Text(L("리퀴드 100%")).tag(0)
-            Text(L("뒤흐 50%")).tag(1)
-            Text(L("직접")).tag(2)
+        let names = targetPresetNames
+        return pickerRow(L("목표"), value: names[targetPresetSel], segmented: true) {
+            Picker(L("목표"), selection: $targetPresetSel) {
+                ForEach(names.indices, id: \.self) { i in
+                    Text(names[i]).tag(i)
+                }
+            }
         }
-        return picker
-            .pickerStyle(.segmented)
-            .onChange(of: targetPresetSel) { _, sel in applyTargetPreset(sel) }
-            .onChange(of: targetHydrationPct, initial: true) { _, pct in syncTargetPreset(pct) }
+        .onChange(of: targetPresetSel) { _, sel in applyTargetPreset(sel) }
+        .onChange(of: targetHydrationPct, initial: true) { _, pct in syncTargetPreset(pct) }
     }
 
     private var settingsSection: some View {
         Section {
-            Picker(L("변환 모드"), selection: $convMode) {
-                ForEach(ConvMode.allCases, id: \.self) { m in
-                    Text(m.label).tag(m)
+            pickerRow(L("변환 모드"), value: convMode.label, segmented: true) {
+                Picker(L("변환 모드"), selection: $convMode) {
+                    ForEach(ConvMode.allCases, id: \.self) { m in
+                        Text(m.label).tag(m)
+                    }
                 }
             }
-            .pickerStyle(.segmented)
             targetPresetPicker
             NumberField(
                 label: L("목표 르방 수분율"), value: $targetHydrationPct, unit: "%",
-                minValue: 1, maxValue: 1000)
+                minValue: 1, maxValue: 1000
+            )
+            .id(Self.targetRowID)
             if convMode == .fixedMass && input.flours.count > 1 {
-                Picker(L("밀가루 증감 배분"), selection: $distFlourId) {
-                    Text(L("비례 배분")).tag("")
-                    ForEach(input.flours) { f in
-                        Text(flourLabel(f)).tag(f.id)
+                pickerRow(
+                    L("밀가루 증감 배분"),
+                    value: input.flours.first { $0.id == distFlourId }.map(flourLabel) ?? L("비례 배분")
+                ) {
+                    Picker(L("밀가루 증감 배분"), selection: $distFlourId) {
+                        Text(L("비례 배분")).tag("")
+                        ForEach(input.flours) { f in
+                            Text(flourLabel(f)).tag(f.id)
+                        }
                     }
                 }
             }
@@ -296,6 +391,7 @@ struct ConverterView: View {
         } footer: {
             Text(convMode.desc)
         }
+        .textCase(nil)
     }
 
     // MARK: 결과
@@ -310,6 +406,7 @@ struct ConverterView: View {
             Section(L("변환 불가")) {
                 errorView(error, newHydration: newHydration)
             }
+            .textCase(nil)
             .id(Self.errorAnchorID)
         }
     }
@@ -412,16 +509,19 @@ struct ConverterLoadSheet: View {
                 if !model.recipes.isEmpty {
                     Section(L("저장된 레시피")) {
                         ForEach(model.recipes) { recipe in
+                            // 탭 영역은 라벨 안에서 넓힌다 — .plain 버튼 바깥의 contentShape는 글자 밖 탭을 받지 못한다
                             Button {
                                 onPickRecipe(recipe)
                                 dismiss()
                             } label: {
                                 RecipeRow(recipe: recipe, precision: model.precision)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .contentShape(Rectangle())
                         }
                     }
+                    .textCase(nil)
                 }
             }
             .navigationTitle(L("불러오기"))
@@ -432,6 +532,6 @@ struct ConverterLoadSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .adaptiveDetents([.medium, .large])
     }
 }

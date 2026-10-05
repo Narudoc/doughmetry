@@ -79,6 +79,13 @@ struct CodecTests {
         #expect(fmtDate(iso: "2026-08-22T00:00:00Z").hasPrefix("2026."))
     }
 
+    @Test("fmtDate는 그 달에 없는 날·분 없는 오프셋도 정렬과 같은 시각으로 표시한다 (iOS 17·18.2에서 비지 않게)")
+    func dateFormattingLenientForms() {
+        #expect(fmtDate(iso: "2026-02-30T10:00:00Z") == fmtDate(iso: "2026-03-02T10:00:00Z"))
+        #expect(fmtDate(iso: "2026-09-03T10:00:00+09") == fmtDate(iso: "2026-09-03T01:00:00Z"))
+        #expect(!fmtDate(iso: "2026-09-03T10:00:00+9").isEmpty)
+    }
+
     @Test("이 버전보다 새 레시피 schemaVersion은 거부한다 (새 버전 앱의 형식)")
     func rejectsNewerSchemaVersion() {
         let json = """

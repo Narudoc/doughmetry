@@ -66,6 +66,16 @@ final class LevainCalcUITests: XCTestCase {
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 1) + text)
     }
 
+    /// 시트 안 요소는 올라오는 애니메이션이 시작될 때부터 보이는데, 시트 전환은 탭 전의 '앱이 한가해질 때까지
+    /// 기다림'에 잡히지 않는다 — 전환 중의 탭은 앱에 전달되지 않고 버려진다 (iOS 27에서 확인). Apple Intelligence
+    /// 초안처럼 결과가 늦게 오면 존재 확인 직후가 전환 한가운데일 수 있어, 시트 안을 누르기 전에 전환이 끝나기를 기다린다
+    @MainActor
+    private func waitForSheetToSettle(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        guard element.waitForExistence(timeout: timeout) else { return false }
+        Thread.sleep(forTimeInterval: 1)
+        return element.isHittable
+    }
+
     /// 결과 바는 목록 위에 떠 있다 — 그 뒤에 가린 칸을 누르면 결과 바가 눌려 배합표 시트가 열린다.
     /// 작은 화면이나 키보드가 올라온 상태에서는 칸이 결과 바 위로 올라올 때까지 목록을 민다
     @MainActor
@@ -165,18 +175,21 @@ final class LevainCalcUITests: XCTestCase {
             paste.tap()
 
             let text = app.textViews.firstMatch
-            XCTAssertTrue(text.waitForExistence(timeout: 5))
+            XCTAssertTrue(waitForSheetToSettle(text, timeout: 5))
             text.tap()
-            // iPad 폼 시트는 키보드가 올라오면 위로 옮겨 간다 — 옮긴 뒤에 쳐야 '분석'을 제자리에서 누른다
-            _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+            // iPad 폼 시트는 키보드가 올라오면 위로 옮겨 간다 — 옮긴 뒤에 쳐야 '분석'을 제자리에서 누른다.
+            // 지운 시뮬레이터의 첫 키보드는 20초 가까이 걸린다
+            _ = app.keyboards.firstMatch.waitForExistence(timeout: 30)
             text.typeText("Flour T65 900g\nWater 620g\nSalt 20g\nLevain 200g")
             element(app, "textImport.analyze").tap()
 
-            // 인식 결과는 저장 전에 반드시 확인 시트로 — 확인 없이 라이브러리에 들어가면 안 된다
+            // 인식 결과는 저장 전에 반드시 확인 시트로 — 확인 없이 라이브러리에 들어가면 안 된다.
+            // Apple Intelligence 분석은 10초 기한을 넘기면 규칙 결과로 넘어간다 — 설치 직후 모델을 처음 올리는 시간까지 넉넉히
             let reviewSave = element(app, "importReview.save")
-            XCTAssertTrue(reviewSave.waitForExistence(timeout: 30))
+            XCTAssertTrue(waitForSheetToSettle(reviewSave, timeout: 60), "확인 시트가 뜨지 않았다")
             if confirmSave {
                 reviewSave.tap()
+                XCTAssertTrue(reviewSave.waitForNonExistence(timeout: 5), "저장을 눌렀는데 확인 시트가 닫히지 않았다")
                 XCTAssertTrue(element(app, "recipes.row").waitForExistence(timeout: 5))
             } else {
                 element(app, "importReview.cancel").tap()

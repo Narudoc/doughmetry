@@ -86,13 +86,17 @@ struct BilingualLabel: View {
     }
 
     var body: some View {
-        if let gloss {
-            (Text("\(ko) ").foregroundStyle(.primary)
-                + Text(gloss).italic().font(.caption).foregroundStyle(.secondary))
-                .accessibilityLabel("\(ko), \(gloss)")
-        } else {
-            Text(ko)
+        // 섹션 머리말에 놓이면 iOS 17/18이 대문자로 바꾼다 ("LEVAIN LIQUIDE") — 원어 표기는 그대로 보인다
+        Group {
+            if let gloss {
+                (Text("\(ko) ").foregroundStyle(.primary)
+                    + Text(gloss).italic().font(.caption).foregroundStyle(.secondary))
+                    .accessibilityLabel("\(ko), \(gloss)")
+            } else {
+                Text(ko)
+            }
         }
+        .textCase(nil)
     }
 }
 
@@ -108,11 +112,61 @@ private struct ReadableFormWidth: ViewModifier {
     func body(content: Content) -> some View {
         if sizeClass == .regular {
             GeometryReader { proxy in
-                content.contentMargins(
-                    .horizontal, max(20, (proxy.size.width - 700) / 2), for: .scrollContent)
+                // 여백은 스크롤 뷰 가장자리부터 잰다 — iPadOS 26+ 떠 있는 사이드바 아래로 깔린 만큼(safe area)을 더한다
+                let side = max(20, (proxy.size.width - 700) / 2)
+                content
+                    .contentMargins(.leading, proxy.safeAreaInsets.leading + side, for: .scrollContent)
+                    .contentMargins(.trailing, proxy.safeAreaInsets.trailing + side, for: .scrollContent)
             }
         } else {
             content
         }
+    }
+}
+
+extension EnvironmentValues {
+    /// 앱 창이 regular 폭인지 — RootView가 정한다. 시트 안의 크기 클래스는 iPad에서도 compact라
+    /// 시트 높이처럼 띄운 창에 따라 달라지는 판단은 이 값을 쓴다
+    @Entry var windowIsRegular: Bool = false
+}
+
+extension View {
+    /// 시트 높이 — 넓은 창(iPad)에선 늘 큰 시트(가운데 폼 시트), 좁은 창은 주어진 높이들.
+    /// 넓은 창의 중간 높이는 iOS 17/18에선 내용이 잘린 짧은 카드, 26+에선 아래에 붙은 반 높이 시트가 된다
+    func adaptiveDetents(_ detents: Set<PresentationDetent> = [.medium, .large]) -> some View {
+        modifier(AdaptiveDetents(detents: detents))
+    }
+
+    func adaptiveDetents(
+        _ detents: Set<PresentationDetent>, selection: Binding<PresentationDetent>
+    ) -> some View {
+        modifier(AdaptiveDetentsSelection(detents: detents, selection: selection))
+    }
+}
+
+// 창 폭이 바뀌어도(iPad 분할 화면) 같은 호출 하나로 — 가지를 나누면 시트 내용이 새로 만들어져 입력 상태를 잃는다
+private struct AdaptiveDetents: ViewModifier {
+    let detents: Set<PresentationDetent>
+    @Environment(\.windowIsRegular) private var windowIsRegular
+
+    func body(content: Content) -> some View {
+        content.presentationDetents(windowIsRegular ? [.large] : detents)
+    }
+}
+
+private struct AdaptiveDetentsSelection: ViewModifier {
+    let detents: Set<PresentationDetent>
+    @Binding var selection: PresentationDetent
+    @Environment(\.windowIsRegular) private var windowIsRegular
+
+    func body(content: Content) -> some View {
+        // 넓은 창에선 선택값이 고를 수 없는 높이(.medium)로 남지 않게 .large로 읽힌다
+        let regular = windowIsRegular
+        let selection = $selection
+        return content.presentationDetents(
+            regular ? [.large] : detents,
+            selection: Binding(
+                get: { regular ? .large : selection.wrappedValue },
+                set: { if !regular { selection.wrappedValue = $0 } }))
     }
 }

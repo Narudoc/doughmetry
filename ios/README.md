@@ -9,8 +9,8 @@
   - `Sources/LevainCore/Codec.swift` — 레시피 JSON 검증·가져오기·내보내기 (웹 스키마 v2 호환, v1 자동 마이그레이션)
   - `Tests/LevainCoreTests/` — 웹 스펙 케이스 1~5 전체 이식 (Swift Testing, Xcode 필요)
   - `Sources/levain-core-check/` — Xcode 없이 도는 스모크 체크: `swift run levain-core-check`
-- `LevainCalc/` — SwiftUI 앱 (iOS 17+, iPhone은 세로 고정 / iPad는 네 방향·Split View). 최소 iOS 17.0은 iOS 17 런타임에서 돌려 보기 전까지 잠정값 — [AppStore/submission.md](AppStore/submission.md) 0-9
-- `LevainCalcUITests/` — UI 스모크 테스트 4개(두 언어로 네 탭 · 계산기 입력 → 요약 바 · 저장 → 불러오기 · 텍스트 가져오기는 확인 시트를 거침). DEBUG 빌드 전용 실행 인자 `-uiTestDataDir <경로>`로 빈 저장 폴더에서 시작하고 iCloud와 합치지 않는다. 화면 요소는 접근성 식별자로 찾는다(라벨은 `-appLanguage`에 따라 바뀜)
+- `LevainCalc/` — SwiftUI 앱 (iOS 17+, iPhone은 세로 고정 / iPad는 네 방향·Split View). 최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터(iPhone·iPad) 점검 뒤 그대로 두기로 했다(2026-10) — 옛 OS에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고치고 iOS 26+ 동작은 바꾸지 않는다. 하드웨어 키보드: ⌘1–4 탭 · ⌘F 레시피 검색([LevainCalcApp.swift](LevainCalc/LevainCalcApp.swift) — 26 미만은 메뉴 명령이 받지 못해 뷰 단축키로도 단다), ⌘N·⌘S는 계산기 탭, ⌘S는 변환 탭에서도
+- `LevainCalcUITests/` — UI 스모크 테스트 4개(두 언어로 네 탭 · 계산기 입력 → 요약 바 · 저장 → 불러오기 · 텍스트 가져오기는 확인 시트를 거침)와 하드웨어 키보드 숫자 입력 회귀 테스트(`NumberFieldKeyboardUITests`, iPad). DEBUG 빌드 전용 실행 인자 `-uiTestDataDir <경로>`로 빈 저장 폴더에서 시작하고 iCloud와 합치지 않는다. 화면 요소는 접근성 식별자로 찾는다(라벨은 `-appLanguage`에 따라 바뀜)
 - `AppStore/` — 스토어 문구 원본([listing.md](AppStore/listing.md)), 출시 절차([submission.md](AppStore/submission.md)), 스크린샷 캡처 스크립트([capture-screenshots.sh](AppStore/capture-screenshots.sh) — 전용 시뮬레이터·언어별 예시 데이터·9:41 상태 바, iPhone 6.9형·iPad 13형 JPEG)
 - `LevainCalc.xcodeproj` — Xcode 16 형식 (파일시스템 동기화 그룹 — 파일 추가 시 프로젝트 수정 불필요)
 
@@ -28,6 +28,15 @@ open ios/LevainCalc.xcodeproj   # 또는 xcodebuild -project ios/LevainCalc.xcod
 cd ios/LevainCore && swift test          # 전체 스펙 테스트 (Xcode 필요)
 cd ios/LevainCore && swift run levain-core-check  # 스모크 체크 (CLT만으로 가능)
 ```
+
+`swift test`는 Mac의 Foundation으로 돈다 — 정규식 단어 경계·ISO 8601 파싱처럼 iOS 버전마다 달라지는 동작은 옛 iOS 시뮬레이터에서 확인한다. 패키지의 자동 스킴 중 테스트 동작이 있는 것은 `LevainCore-Package`뿐이다(`LevainCore`는 라이브러리만):
+
+```bash
+cd ios/LevainCore && xcodebuild test -scheme LevainCore-Package \
+  -destination 'platform=iOS Simulator,OS=17.5,name=iPhone 15'   # 런타임이 없으면: xcodebuild -downloadPlatform iOS -buildVersion 17.5
+```
+
+CI([ios.yml](../.github/workflows/ios.yml))의 `oldest-ios`가 ios/ 변경마다 iOS 17.5·18.2 시뮬레이터에서 이 테스트를 돌리고, 수동 실행(workflow_dispatch)에선 UI 스모크 테스트도 같은 런타임에서 돌린다. GitHub 러너 이미지(macos-26)에는 iOS 26.x 런타임뿐이라 실행마다 내려받는다 — 받지 못하면 경고를 남기고 설치된 가장 오래된 런타임으로 돈다(작업 요약에 실제 런타임이 남는다).
 
 UI 스모크 테스트 (공유 스킴 `LevainCalc`):
 

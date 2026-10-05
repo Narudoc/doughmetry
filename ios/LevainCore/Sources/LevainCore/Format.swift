@@ -114,13 +114,33 @@ public func isoString(from date: Date) -> String {
     isoFormatter.string(from: date)
 }
 
-/// 웹(밀리초 포함)과 iOS(초 단위) ISO 8601을 모두 파싱
+/// 웹(밀리초 포함)과 iOS(초 단위) ISO 8601을 모두 파싱.
+/// 결과가 iOS 버전마다 조금씩 다르다 — 기기 사이에서 비교·정렬하는 시각은 LibrarySync.syncInstant로 읽을 것.
 public func parseISO(_ s: String) -> Date? {
-    (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(s))
-        ?? (try? Date.ISO8601FormatStyle().parse(s))
+    func parse(_ s: String) -> Date? {
+        (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(s))
+            ?? (try? Date.ISO8601FormatStyle().parse(s))
+    }
+    return parse(s) ?? hourOffsetExpanded(s).flatMap(parse)
 }
 
+/// 끝이 분 없는 오프셋(±HH, 숫자 뒤의 ±H)이면 ±HH:00으로 고친 문자열, 아니면 nil.
+/// ISO8601FormatStyle은 iOS 18.2만 ±HH를, 27 미만은 ±H를 거절한다 — 같은 저장값을 기기마다 다르게 읽지 않도록.
+func hourOffsetExpanded(_ s: String) -> String? {
+    let b = Array(s.utf8.suffix(4))
+    guard s.utf8.count >= 20, b.count == 4 else { return nil }
+    func isDigit(_ c: UInt8) -> Bool { c &- 48 < 10 }
+    func isSign(_ c: UInt8) -> Bool { c == UInt8(ascii: "+") || c == UInt8(ascii: "-") }
+    if isSign(b[1]), isDigit(b[2]), isDigit(b[3]) { return s + ":00" }
+    if isDigit(b[1]), isSign(b[2]), isDigit(b[3]) {
+        return String(s.dropLast()) + "0" + String(UnicodeScalar(b[3])) + ":00"
+    }
+    return nil
+}
+
+/// 날짜 표시도 기기 사이 정렬과 같은 시각으로 읽는다 — parseISO는 iOS 17에서 그 달에 없는 날(2026-02-30 등)을 거절해
+/// 맨 위로 정렬된 기록의 날짜가 비어 보인다.
 public func fmtDate(iso: String) -> String {
-    guard let d = parseISO(iso) else { return "" }
+    guard let d = LibrarySync.syncInstant(iso) else { return "" }
     return dotDateFormatter.string(from: d)
 }

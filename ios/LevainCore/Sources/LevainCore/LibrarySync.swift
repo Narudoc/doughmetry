@@ -11,12 +11,36 @@ import Foundation
 public enum LibrarySync {
     // MARK: ISO 시각 비교 (웹은 밀리초 포함, iOS는 미포함 — 둘 다 파싱)
 
-    /// a가 b보다 최신이면 true (파싱 실패 시 문자열 비교).
-    /// 병합·묘비 판정은 웹 문법(isNewerOnWeb)으로 좁히지 말 것 — 손으로 고친 백업의 느슨한 시각(한 자리 월·일 등)이
+    /// a가 b보다 최신이면 true (syncInstant로 읽지 못하면 문자열 비교).
+    /// 병합·묘비 판정은 웹 문법(isNewerOnWeb)으로 좁히지 말 것 — 손으로 고친 백업의 느슨한 시각(한 자리 월·일, ±HH, 소문자 z)이
     /// 문자열 비교로 떨어지면 이 기기의 새 편집·삭제가 다른 기기의 옛 판에 밀린다.
     public static func isNewer(_ a: String, than b: String) -> Bool {
-        if let da = parseISO(a), let db = parseISO(b) { return da > db }
+        if let da = syncInstant(a), let db = syncInstant(b) { return da > db }
         return a > b
+    }
+
+    /// 기기 사이에서 비교·정렬하는 시각 (병합·묘비·정규 순서·로그 정렬).
+    /// 웹 문법(webEpochMillis — 밀리초까지, 그 달에 없는 날은 다음 달로)으로만 읽는다. 끝의 ±HH·±H 오프셋은 ±HH:00으로,
+    /// 끝의 소문자 z는 Z로, 한 자리 월·일은 두 자리로 고쳐 다시 읽고, 그래도 안 되면 nil(isNewer는 문자열 비교).
+    /// parseISO(ISO8601FormatStyle)로 대신 읽지 말 것 — iOS 17은 밀리초 아래를 버리고 그 달에 없는 날·25시를 거절하며 앞 공백을 받아 주고,
+    /// 18.2만 ±HH를 거절하고, 27은 25시·60분을 넘겨 읽어, 같은 문서를 두고 기기마다 다른 판을 골라 서로 계속 다시 쓴다.
+    public static func syncInstant(_ s: String) -> Date? {
+        let padded = zeroPaddedDate(s) ?? s
+        let tailFixed = padded.hasSuffix("z") ? String(padded.dropLast()) + "Z" : hourOffsetExpanded(padded)
+        guard let ms = webEpochMillis(padded) ?? tailFixed.flatMap(webEpochMillis) else { return nil }
+        return Date(timeIntervalSince1970: Double(ms) / 1000)
+    }
+
+    /// 'T' 앞 날짜의 한 자리 월·일을 두 자리로 고친 문자열 (2026-9-3T… → 2026-09-03T…), 그런 형식이 아니면 nil.
+    static func zeroPaddedDate(_ s: String) -> String? {
+        guard let t = s.firstIndex(of: "T") else { return nil }
+        let parts = s[..<t].split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4,
+            parts[1...].allSatisfy({ (1...2).contains($0.count) }),
+            parts[1...].contains(where: { $0.count == 1 })
+        else { return nil }
+        let date = parts.map { $0.count == 1 ? "0" + $0 : String($0) }.joined(separator: "-")
+        return date + s[t...]
     }
 
     /// 웹 storage.ts isNewer와 같은 판정 — JSON 가져오기(importable)가 웹 mergeImported와 같은 결과를 내도록.
@@ -126,7 +150,7 @@ public enum LibrarySync {
         let id: String
 
         init(_ raw: String, id: String) {
-            self.date = parseISO(raw)
+            self.date = syncInstant(raw)
             self.raw = raw
             self.id = id
         }
@@ -261,14 +285,14 @@ public enum LibrarySync {
     /// 삭제 묘비 시각 — 지금 시각과 '항목 updatedAt + 1초' 중 늦은 쪽.
     /// 다른 기기 시계가 앞서 있어 항목이 미래 시각을 갖더라도 묘비가 반드시 이기게 한다.
     public static func tombstoneTime(for updatedAt: String, now: Date = Date()) -> String {
-        let itemPlus = (parseISO(updatedAt) ?? .distantPast).addingTimeInterval(1)
+        let itemPlus = (syncInstant(updatedAt) ?? .distantPast).addingTimeInterval(1)
         return isoString(from: max(now, itemPlus))
     }
 
     /// 편집 시각 — 지금 시각과 '바꾸는 판의 updatedAt + 1초' 중 늦은 쪽.
     /// 시계가 앞선 기기가 남긴 미래 시각의 판을 고쳐도 새 편집이 병합에서 이기게 한다 (tombstoneTime과 같은 방어).
     public static func editTime(replacing previous: String?, now: Date = Date()) -> String {
-        guard let p = previous.flatMap(parseISO) else { return isoString(from: now) }
+        guard let p = previous.flatMap(syncInstant) else { return isoString(from: now) }
         return isoString(from: max(now, p.addingTimeInterval(1)))
     }
 
@@ -341,7 +365,7 @@ public enum LibrarySync {
     /// 기기에 같은 id가 있으면 가져온 판이 더 최신이고 내용도 다를 때만 받는다 — iCloud 병합과 같은 규칙이라
     /// 동기화를 켜든 끄든 결과가 같다. 묘비만 남은 id는 복원으로 받는다 (저장 시 묘비 뒤로 밀린다).
     /// '더 최신'은 웹 mergeImported와 같은 문법으로 판정한다(isNewerOnWeb) — 병합과는 두 앱이 쓰지 않는
-    /// 형식(밀리초 아래 자릿수, 소문자 z, 한 자리 월·일 등)에서만 갈린다.
+    /// 형식(분 없는 ±HH 오프셋, 소문자 z, 한 자리 월·일 등)에서만 갈린다.
     public static func importable(
         _ imported: [Recipe], local: [Recipe]
     ) -> (accepted: [Recipe], skipped: Int) {

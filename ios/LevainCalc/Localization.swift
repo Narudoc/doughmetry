@@ -120,6 +120,8 @@ struct LocalizedEditButton: View {
         } label: {
             // 탭 영역은 레이블 안에서 넓힌다 — Button 바깥의 frame은 탭·접근성 영역을 늘리지 못한다
             Text(isEditing ? L("완료") : L("편집"))
+                // 섹션 머리글 안에서 iOS 17·18이 대문자(EDIT)로 바꾸지 않게
+                .textCase(nil)
                 .frame(minWidth: 44, minHeight: 36, alignment: .trailing)
                 .contentShape(Rectangle())
         }
@@ -137,6 +139,7 @@ private let en: [String: String] = [
     "계산기": "Calculator",
     "변환": "Convert",
     "레시피": "Recipes",
+    "레시피 검색": "Search Recipes",
     "저장": "Save",
     "취소": "Cancel",
     "닫기": "Close",
@@ -296,6 +299,8 @@ private let en: [String: String] = [
     "저장된 레시피": "Saved recipes",
     "현재 르방": "Current levain",
     "원본 직접 편집": "Edit source",
+    "펼침": "Expanded",
+    "접힘": "Collapsed",
     "변환 설정": "Conversion settings",
     "변환 모드": "Conversion mode",
     "르방 질량 고정": "Fixed levain mass",
@@ -336,10 +341,15 @@ private let en: [String: String] = [
     "사진·텍스트에서 레시피를 가져오거나 계산기에서 만든 배합을 저장하세요. 저장한 레시피에는 굽기마다 날짜·별점·메모를 남길 수 있습니다.":
         "Import a recipe from a photo or text, or save one you build in the calculator. Each saved recipe keeps a bake log with the date, rating and notes of every bake.",
     "이름·메모·태그 검색": "Search name, notes or tags",
+    "'%@'에 대한 결과 없음": "No results for '%@'",
+    "철자를 확인하거나 다른 검색어로 찾아보세요.": "Check the spelling or try a different search.",
+    "레시피를 고르세요": "Select a recipe",
+    "왼쪽 목록에서 레시피를 고르면 배합표와 베이킹 로그가 여기에 보입니다.":
+        "Choose a recipe from the list to see its formula and bake log here.",
     "설정": "Settings",
     "JSON 내보내기": "Export JSON",
     "JSON 가져오기": "Import JSON",
-    "가져오기/내보내기": "Import / Export",
+    "더 보기": "More",
     "가져오기 실패": "Import failed",
     "가져오기 완료": "Import complete",
     "%d개의 레시피를 가져왔습니다.": "Imported %d recipes.",
@@ -543,8 +553,6 @@ private let en: [String: String] = [
     "기준": "Anchor",
     "시작 시각": "Start time",
     "완성 시각": "Finish time",
-    "빵이 완성될 시각": "Bread ready at",
-    "첫 단계 시작": "First stage starts",
     "지금 시작": "Start now",
     "총 소요": "Total time",
     "일정": "Schedule",

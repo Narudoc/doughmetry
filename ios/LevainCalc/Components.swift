@@ -22,8 +22,17 @@ struct NumberField: View {
     /// 편집 중 자기 자신이 쓴 값 — 외부 변경(레시피 불러오기·이스트 환산 등)과 구분
     @State private var selfWritten: Double?
     @FocusState private var focused: Bool
-    @ScaledMetric(relativeTo: .body) private var fieldMaxWidth: CGFloat = 110
+    /// 라벨 오른쪽에 비워 둘 폭 — 입력 칸 최소 폭(70)과 간격. 긴 라벨은 숫자 밑으로 들어가지 않고 줄을 바꾼다
+    @ScaledMetric(relativeTo: .body) private var labelTrailingRoom: CGFloat = 86
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// iOS 26 미만 iPad 하드웨어 키보드에선 첫 키에 FocusState가 false로 바뀌어도 UITextField는 계속 편집 중이다.
+    /// 그 뒤의 키를 버리지 않도록 focused만 믿지 않는다 — 프로그램이 쓰는 텍스트는 늘 display(value)라
+    /// 그와 다른 텍스트는 사용자 입력이고, selfWritten이 남아 있으면 아직 편집 중이다
+    private var focusMayLag: Bool {
+        if #available(iOS 26, *) { return false }
+        return true
+    }
 
     private func format(_ v: Double) -> String {
         if v == v.rounded() && abs(v) < 1e12 {
@@ -52,21 +61,19 @@ struct NumberField: View {
 
     var body: some View {
         // 접근성 글자 크기에선 라벨을 윗줄로 — 한 줄에 두면 긴 라벨이 글자 단위로 쪼개진다
-        let layout =
-            typeSize.isAccessibilitySize && !label.isEmpty
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
-        layout {
-            if !label.isEmpty {
-                // 라벨이 먼저 제 폭을 받는다 — 입력 칸은 minWidth가 있어 좁아지지 않고, 그래도 넘치는 라벨만 줄을 바꾼다
-                Text(label)
-                    .foregroundStyle(.primary)
-                    .layoutPriority(1)
-                    .accessibilityHidden(true)
-                    .allowsHitTesting(false)
-            }
+        let stacked = typeSize.isAccessibilitySize && !label.isEmpty
+        // 입력 칸(UITextField)이 라벨 밑까지 행 전체에 깔리고 라벨은 그 위에 글자만 얹는다 — 라벨·빈 간격을 누르면
+        // 입력 칸이 직접 탭을 받는다. 탭으로 FocusState를 쓰면 목록을 민 뒤나 결과 바 '완료' 뒤에
+        // 탭이 죽거나 다른 재료 칸에 포커스가 간다 (iOS 17·27)
+        VStack(alignment: .leading, spacing: 4) {
+            if stacked { labelText }
             HStack {
-                Spacer(minLength: 8)
-                inputField
+                ZStack(alignment: .leading) {
+                    inputField
+                    if !stacked && !label.isEmpty {
+                        labelText.padding(.trailing, labelTrailingRoom)
+                    }
+                }
                 Text(unit)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -76,13 +83,13 @@ struct NumberField: View {
                     .allowsHitTesting(false)
             }
         }
-        // 라벨·빈 간격·단위를 눌러도 이 칸에 포커스 — 입력 칸은 이 층 위에 있어 자기 탭(커서 위치)을 그대로 받는다
-        .background {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { focused = true }
-                .accessibilityHidden(true)
-        }
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .foregroundStyle(.primary)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
     }
 
     private var inputField: some View {
@@ -92,10 +99,10 @@ struct NumberField: View {
             .multilineTextAlignment(.trailing)
             .monospacedDigit()
             .focused($focused)
-            .frame(minWidth: 70, maxWidth: fieldMaxWidth)
+            .frame(minWidth: 70, maxWidth: .infinity)
             .accessibilityLabel(accessibilityText)
             .onChange(of: text) { _, newText in
-                guard focused else { return }
+                guard focused || (focusMayLag && newText != display(value)) else { return }
                 // 바인딩이 실제로 저장한 값을 다시 읽어 기록 — 하한·상한·환산 setter의 반향을
                 // 외부 변경으로 오인해 입력 중인 텍스트를 덮어쓰지 않도록.
                 // 붙여넣은 " 500 "도 받도록 앞뒤 공백을 걷는다 (웹 NumberField와 동일)
@@ -110,6 +117,10 @@ struct NumberField: View {
             }
             .onChange(of: focused) { _, isFocused in
                 if !isFocused {
+                    // 26 미만 하드웨어 키보드는 편집 중에도 FocusState가 false로 거듭 튄다 — 그때마다 "700."을 "700"으로
+                    // 되돌리면 다음 키가 잘린 글자 뒤에 붙는다(700.5 → 7005). 칸이 아직 편집 중이면 끝날 때
+                    // (textDidEndEditing) 맞춘다
+                    if focusMayLag, let field = FirstResponder.current as? UITextField, field.text == text { return }
                     text = display(value)
                     selfWritten = nil
                 }
@@ -120,15 +131,45 @@ struct NumberField: View {
                 // 도착해(100 → 10 → 1에서 newValue 10, 바인딩은 이미 1) 낡은 값을 외부 변경으로 오인하고
                 // 텍스트를 되돌린다. 그러면 text·value 핸들러가 10 ↔ 1을 끝없이 주고받아 메인 스레드가 멈춘다
                 let current = value
-                if !focused || current != selfWritten {
+                let editing = focused || (focusMayLag && selfWritten != nil)
+                if !editing || current != selfWritten {
                     text = display(current)
                     selfWritten = focused ? current : nil
                 }
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(for: UITextField.textDidEndEditingNotification)
+            ) { _ in
+                // 포커스 해제(onChange(of: focused))를 못 받은 하드웨어 키보드 편집도 끝나면 표시 형식으로 맞춘다
+                guard focusMayLag, !focused else { return }
+                text = display(value)
+                selfWritten = nil
             }
             .onAppear {
                 SelectAllOnFocus.install()
                 text = display(value)
             }
+    }
+}
+
+/// 지금 키 입력을 받는 응답자 — UIKit은 직접 묻는 API가 없어 대상 없는 액션을 보내 받는 쪽을 잡는다
+@MainActor
+private enum FirstResponder {
+    private static weak var found: UIResponder?
+
+    static var current: UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.levainCaptureFirstResponder(_:)), to: nil, from: nil, for: nil)
+        defer { found = nil }
+        return found
+    }
+
+    fileprivate static func capture(_ responder: UIResponder) { found = responder }
+}
+
+extension UIResponder {
+    @objc fileprivate func levainCaptureFirstResponder(_ sender: Any?) {
+        FirstResponder.capture(self)
     }
 }
 
@@ -158,6 +199,100 @@ private final class SelectAllOnFocus: NSObject {
             guard field.isFirstResponder else { return }
             field.selectedTextRange = field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)
         }
+    }
+}
+
+/// iOS 26 미만: 키보드가 뜬 채 iPad를 돌리면(세로 → 가로) 포커스된 칸이 키보드·결과 바 뒤에 남는다.
+/// 키보드가 뜨거나 틀이 바뀔 때마다 편집 중인 칸을 둘러싼 스크롤 뷰를 칸이 보이는 데까지 민다 (계산기·변환기·가져오기 확인·타임라인 공용).
+/// 26+는 시스템이 스스로 다시 맞추므로 설치하지 않는다
+enum KeyboardAvoidance {
+    @MainActor static func install() {
+        if #available(iOS 26, *) { return }
+        KeyboardAvoidanceObserver.install()
+    }
+}
+
+@MainActor
+private final class KeyboardAvoidanceObserver: NSObject {
+    private static var shared: KeyboardAvoidanceObserver?
+
+    static func install() {
+        if shared == nil { shared = KeyboardAvoidanceObserver() }
+    }
+
+    private weak var activeField: UITextField?
+    /// 화면 좌표의 키보드 틀 — 화면 아래에 붙은 키보드만 (떠 있는·분리된 키보드는 칸을 가리지 않는다)
+    private var dockedKeyboard: CGRect?
+
+    override private init() {
+        super.init()
+        let center = NotificationCenter.default
+        center.addObserver(
+            self, selector: #selector(didBeginEditing(_:)),
+            name: UITextField.textDidBeginEditingNotification, object: nil)
+        center.addObserver(
+            self, selector: #selector(keyboardDidChange(_:)),
+            name: UIResponder.keyboardDidShowNotification, object: nil)
+        center.addObserver(
+            self, selector: #selector(keyboardDidChange(_:)),
+            name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+    }
+
+    @objc private func didBeginEditing(_ note: Notification) {
+        activeField = note.object as? UITextField
+    }
+
+    @objc private func keyboardDidChange(_ note: Notification) {
+        let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+        let screen = activeField?.window?.windowScene?.screen.bounds
+        if let frame, let screen, !frame.isEmpty, frame.maxY >= screen.maxY - 1 {
+            dockedKeyboard = frame
+        } else {
+            dockedKeyboard = nil
+        }
+        // 돌린 직후엔 SwiftUI가 키보드·결과 바만큼 줄인 안전 영역(adjustedContentInset)을 반 박자 늦게 반영한다 —
+        // 첫 번은 알림의 키보드 틀로 키보드 위까지, 늦게 반영된 안전 영역을 보고 결과 바 위까지 몇 번 더 맞춘다
+        for delay in [0, 0.3, 0.6] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.revealActiveField() }
+        }
+    }
+
+    private func revealActiveField() {
+        guard let field = activeField, field.isFirstResponder, let window = field.window,
+            let scrollView = enclosingScrollView(of: field)
+        else { return }
+        let inset = scrollView.adjustedContentInset
+        let bounds = scrollView.bounds
+        var visibleBottom = bounds.maxY - inset.bottom
+        if let keyboard = dockedKeyboard {
+            let local = scrollView.convert(keyboard, from: window.screen.coordinateSpace)
+            visibleBottom = min(visibleBottom, local.minY)
+        }
+        let visibleTop = bounds.minY + inset.top
+        let target = field.convert(field.bounds, to: scrollView).insetBy(dx: 0, dy: -12)
+        var offset = scrollView.contentOffset
+        if target.maxY > visibleBottom {
+            offset.y += min(target.maxY - visibleBottom, target.minY - visibleTop)
+        } else if target.minY < visibleTop {
+            offset.y -= visibleTop - target.minY
+        } else {
+            return
+        }
+        let maxOffset = max(-inset.top, scrollView.contentSize.height + inset.bottom - bounds.height)
+        offset.y = min(max(offset.y, -inset.top), maxOffset)
+        scrollView.setContentOffset(offset, animated: true)
+    }
+
+    /// 가장 가까운 세로 스크롤 뷰 (Form·List의 컬렉션 뷰, ScrollView)
+    private func enclosingScrollView(of view: UIView) -> UIScrollView? {
+        var current = view.superview
+        while let v = current {
+            if let scroll = v as? UIScrollView, scroll.isScrollEnabled, !(scroll is UITextView) {
+                return scroll
+            }
+            current = v.superview
+        }
+        return nil
     }
 }
 
@@ -202,6 +337,54 @@ struct StatChip: View {
     }
 }
 
+/// 결과 칩 한 줄 — 칸이 넉넉하면 같은 폭 열로, 모자라면 긴 칩만 제 폭을 받고 나머지가 남은 칸을 나눈다.
+/// 그래도 넘치면 모든 칩을 같은 비율로 줄인다. 같은 폭 HStack은 가장 긴 값(총 반죽) 하나만 70%로 줄였다
+struct StatChipLine: Layout {
+    var spacing: CGFloat = 12
+
+    private func widths(_ subviews: Subviews, in width: CGFloat?) -> [CGFloat] {
+        let ideals = subviews.map { $0.sizeThatFits(.unspecified).width }
+        guard let width, width.isFinite, !ideals.isEmpty else { return ideals }
+        let room = max(0, width - spacing * CGFloat(ideals.count - 1))
+        let total = ideals.reduce(0, +)
+        guard total <= room else {
+            let scale = total > 0 ? room / total : 0
+            return ideals.map { $0 * scale }
+        }
+        // 넓은 칩부터 제 폭으로 떼어 내고, 남은 칩은 남은 칸을 똑같이 나눈다
+        var share = room / CGFloat(ideals.count)
+        var rest = room
+        var count = ideals.count
+        for ideal in ideals.sorted(by: >) where ideal > share && count > 1 {
+            rest -= ideal
+            count -= 1
+            share = rest / CGFloat(count)
+        }
+        return ideals.map { max($0, share) }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let ws = widths(subviews, in: proposal.width)
+        let height =
+            zip(subviews, ws)
+            .map { $0.sizeThatFits(ProposedViewSize(width: $1, height: nil)).height }
+            .max() ?? 0
+        let natural = ws.reduce(0, +) + spacing * CGFloat(max(0, ws.count - 1))
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? natural
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        for (subview, w) in zip(subviews, widths(subviews, in: bounds.width)) {
+            subview.place(
+                at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                proposal: ProposedViewSize(width: w, height: nil))
+            x += w + spacing
+        }
+    }
+}
+
 /// 배합표 행: 이름 / 그램 / %
 struct TableRow: View {
     let name: String
@@ -210,40 +393,114 @@ struct TableRow: View {
     var bold = false
     /// 윗 행에 딸린 보조 행(르방 속 밀가루 등) — 작고 흐리게
     var secondary = false
+    /// 그램 색을 덮어쓴다 — 불가능한 역산 결과(음수)만 danger로
+    var valueTint: Color? = nil
 
     @ScaledMetric(relativeTo: .footnote) private var pctWidth: CGFloat = 64
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        // 접근성 글자 크기에선 이름을 위, 수치를 아래 줄로 — 한 줄에 두면 이름이 글자 단위로 쪼개진다
-        let layout =
-            typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
-        layout {
-            Text(name)
-                .font(secondary ? .footnote : nil)
-                .fontWeight(bold ? .semibold : .regular)
-                .foregroundStyle(secondary ? Color.secondary : Color.primary)
-            HStack {
-                Spacer(minLength: 8)
-                Text(grams.isEmpty ? "" : grams + " g")
-                    .font(secondary ? .footnote : nil)
-                    .monospacedDigit()
-                    .fontWeight(bold ? .semibold : .regular)
-                    .foregroundStyle(bold ? Color.brass : secondary ? Color.secondary : Color.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(pct ?? "")
-                    .font(.footnote)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(width: pctWidth, alignment: .trailing)
+        Group {
+            if typeSize.isAccessibilitySize {
+                // 접근성 글자 크기에선 이름을 위, 수치를 아래 줄로 — 한 줄에 두면 이름이 글자 단위로 쪼개진다.
+                // 그램은 자르지 않는다("1120....") — 그램과 %가 한 줄에 안 들어가면 %를 그 아랫줄로
+                VStack(alignment: .leading, spacing: 4) {
+                    nameText
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            Spacer(minLength: 8)
+                            gramsText.layoutPriority(1)
+                            if let pct {
+                                pctText(pct).frame(width: pctWidth, alignment: .trailing)
+                            }
+                        }
+                        VStack(alignment: .trailing, spacing: 2) {
+                            gramsText
+                            if let pct { pctText(pct) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+            } else {
+                HStack {
+                    nameText
+                    HStack {
+                        Spacer(minLength: 8)
+                        gramsText
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        pctText(pct ?? "")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(width: pctWidth, alignment: .trailing)
+                    }
+                }
             }
         }
         // VoiceOver가 "강력분, 4000.0 g, 72.7%"를 한 항목으로 읽도록
         .accessibilityElement(children: .combine)
+    }
+
+    private var nameText: some View {
+        Text(name)
+            .font(secondary ? .footnote : nil)
+            .fontWeight(bold ? .semibold : .regular)
+            .foregroundStyle(secondary ? Color.secondary : Color.primary)
+    }
+
+    private var gramsText: some View {
+        Text(grams.isEmpty ? "" : grams + " g")
+            .font(secondary ? .footnote : nil)
+            .monospacedDigit()
+            .fontWeight(bold ? .semibold : .regular)
+            .foregroundStyle(valueTint ?? (bold ? Color.brass : secondary ? Color.secondary : Color.primary))
+    }
+
+    private func pctText(_ pct: String) -> some View {
+        Text(pct)
+            .font(.footnote)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// 날짜·시각 선택 행. iOS 26 미만의 compact DatePicker는 가장 큰 표준 글자 크기(XXXL)부터 라벨을 낱말 중간에서,
+/// 접근성 글자 크기에선 한 글자씩 세로로 쪼갠다 —
+/// 라벨을 윗줄에 따로 두고 피커는 라벨 없이 아랫줄에. 26+는 시스템이 스스로 라벨을 위로 쌓는다
+struct AXDatePicker: View {
+    let label: String
+    @Binding var selection: Date
+    let displayedComponents: DatePickerComponents
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(
+        _ label: String, selection: Binding<Date>,
+        displayedComponents: DatePickerComponents = [.date, .hourAndMinute]
+    ) {
+        self.label = label
+        _selection = selection
+        self.displayedComponents = displayedComponents
+    }
+
+    private var stacksLabel: Bool {
+        guard typeSize >= .xxxLarge else { return false }
+        if #available(iOS 26, *) { return false }
+        return true
+    }
+
+    var body: some View {
+        if stacksLabel {
+            VStack(alignment: .leading, spacing: 4) {
+                // 피커가 라벨을 숨겨도 VoiceOver엔 그 이름을 읽힌다 — 여기선 화면용으로만
+                Text(label)
+                    .accessibilityHidden(true)
+                DatePicker(label, selection: $selection, displayedComponents: displayedComponents)
+                    .labelsHidden()
+            }
+        } else {
+            DatePicker(label, selection: $selection, displayedComponents: displayedComponents)
+        }
     }
 }
 
@@ -255,6 +512,65 @@ extension View {
     /// 키보드가 떠 있는 동안 내비게이션 바 오른쪽에 "완료" — iOS 26+의 떠 있는 키보드 액세서리(.keyboard 툴바)는
     /// 포커스된 행의 오른쪽 정렬 값을 덮는다
     func keyboardDoneButton() -> some View { modifier(KeyboardDoneToolbar()) }
+
+    /// 피커 모양 — 기본은 세그먼트, 접근성 글자 크기에선 이름과 고른 값(value)을 위아래로 그린 메뉴(AXMenuPicker).
+    /// 세그먼트 글자는 Dynamic Type을 따라 커지지 않아 아주 큰 본문 옆에서 13pt 남짓으로 남는다
+    func adaptiveSegmented(_ label: String, value: String) -> some View {
+        modifier(AdaptiveSegmented(label: label, value: value))
+    }
+}
+
+private struct AdaptiveSegmented: ViewModifier {
+    let label: String
+    let value: String
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func body(content: Content) -> some View {
+        if typeSize.isAccessibilitySize {
+            AXMenuPicker(label, value: value) { content }
+        } else {
+            content.pickerStyle(.segmented)
+        }
+    }
+}
+
+/// 접근성 글자 크기의 고르기 행 — 이름과 고른 값을 한 메뉴 단추 안에 위아래로 그린다.
+/// 시스템 메뉴 Picker는 값이 두 줄로 접혀도 행 높이를 한 줄로 잡아 이름에 붙고 둘째 줄이 구분선에 잘린다 (iOS 17·18·27).
+/// iOS 26 전의 메뉴 Picker는 이름과 값을 한 줄에 두어 낱말이 중간에서 끊기기도 한다
+struct AXMenuPicker<P: View>: View {
+    private let label: String
+    private let value: String
+    private let picker: P
+
+    init(_ label: String, value: String, @ViewBuilder picker: () -> P) {
+        self.label = label
+        self.value = value
+        self.picker = picker()
+    }
+
+    var body: some View {
+        Menu {
+            picker
+                .pickerStyle(.inline)
+                .labelsHidden()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .foregroundStyle(Color.primary)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(value)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.footnote.weight(.semibold))
+                }
+            }
+            // 메뉴 라벨은 여러 줄 글자를 가운데로 맞춘다
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
 }
 
 private struct KeyboardDoneToolbar: ViewModifier {

@@ -10,7 +10,7 @@ npm test         # Vitest 유닛 테스트
 npm run build    # tsc --noEmit && vite build
 ```
 
-CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift test`·시뮬레이터 앱 빌드·영어 사전(l10n) 검사를 돌린다 (UI 스모크 테스트 `LevainCalcUITests`는 workflow_dispatch에서만). `deploy.yml`은 ios/만 바뀐 푸시를 건너뛴다.
+CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift test`·시뮬레이터 앱 빌드·영어 사전(l10n) 검사를 돌리고, `oldest-ios`가 iOS 17.5·18.2 시뮬레이터에서 LevainCore 테스트를 돌린다 (러너 이미지엔 iOS 26 런타임뿐이라 내려받는다 — 실패하면 경고 후 설치된 가장 오래된 런타임으로). UI 스모크 테스트 `LevainCalcUITests`는 workflow_dispatch에서만, 가장 새 런타임과 17.5·18.2에서. `deploy.yml`은 ios/만 바뀐 푸시를 건너뛴다.
 영어 사전 검사는 로컬에서도 `python3 ios/scripts/check_l10n.py` (L()/LF() 키의 en 항목 누락).
 
 ## 도메인 용어
@@ -68,7 +68,14 @@ CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift te
 
 ## iOS 네이티브 앱 (ios/)
 
-- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+ (iOS 17 런타임 확인 전까지 잠정), iPhone(세로 고정)·iPad(네 방향) 네이티브.
+- SwiftUI 네이티브 버전 — [ios/README.md](ios/README.md) 참고. iOS 17+, iPhone(세로 고정)·iPad(네 방향) 네이티브. 최소 iOS 17.0은 iOS 17.5·18.2·27 시뮬레이터 점검(2026-10) 뒤 유지 — 18로 올리지 않는다.
+- 옛 OS 대응: iOS 26 미만에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고치고 iOS 26+ 동작은 그대로 둔다. 새 API는 iOS 17.0에서 쓸 수 있거나 가지 안에 있을 것. Foundation(정규식·날짜 파싱 등) 동작은 OS 버전마다 다르므로 코어 규칙을 바꾸면 옛 런타임에서도 테스트한다: `cd ios/LevainCore && xcodebuild test -scheme LevainCore-Package -destination 'platform=iOS Simulator,OS=17.5,name=iPhone 15'` (자동 스킴 `LevainCore`에는 테스트 동작이 없다).
+- iOS UI 규칙 (17·18에서 확인된 차이):
+  - 머리글이 있는 Form/List 섹션은 `Section { … } header: { … }.textCase(nil)` — 17·18은 머리글을 대문자로 바꾼다('(g)' → '(G)', 'iCloud' → 'ICLOUD'). 루트·Form이나 머리글의 맨 Text 하나에 단 `.textCase(nil)`은 17.5에서 듣지 않는다.
+  - 시트 높이는 `.presentationDetents` 대신 `.adaptiveDetents(…)`([DesignSystem.swift](ios/LevainCalc/DesignSystem.swift)) — 넓은 창(iPad)에선 늘 `.large`. 시트 안의 크기 등급은 iPad에서도 compact라, 띄운 창의 폭은 RootView가 넣는 `\.windowIsRegular`로 판단한다.
+  - 날짜·시각 행은 `AXDatePicker`, Form 속 세그먼트 피커는 `.adaptiveSegmented()`([Components.swift](ios/LevainCalc/Components.swift)) — 접근성 글자 크기에서 라벨이 쪼개지거나 13pt로 남지 않게.
+  - 앱 전역 설치(LevainCalcApp.init, 26 미만만): `KeyboardAvoidance`(회전 뒤 포커스 칸을 키보드 위로), 확인창(UIAlertController) 색 bottle.
+  - 하드웨어 키보드: ⌘1–4 탭·⌘F 레시피 검색은 메뉴 명령([LevainCalcApp.swift](ios/LevainCalc/LevainCalcApp.swift)) — 26 미만은 메뉴 명령이 받지 못해(iPhone 전부, iPad의 ⌘F) 같은 단축키를 뷰에도 단다. ⌘N·⌘S처럼 보이는 탭에만 해당하는 단축키는 그 탭의 뷰에 단다.
 - 계산 코어는 [ios/LevainCore/Sources/LevainCore/Dough.swift](ios/LevainCore/Sources/LevainCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
 - 레시피 JSON 스키마는 웹과 완전 호환 (내보내기/가져오기 양방향). 스키마 변경 시 Codec.swift의 검증·마이그레이션도 함께.
 - JSON 가져오기 병합 규칙은 웹 `mergeImported`([storage.ts](src/lib/storage.ts)) ↔ iOS `LibrarySync.importable`이 같다: 없는 id는 추가, 같은 id는 가져온 `updatedAt`이 같거나 새로울 때만 교체(로컬 `createdAt` 유지). 시각 비교는 웹의 ISO 문법·밀리초 기준 — 한쪽을 바꾸면 양쪽 테스트를 함께.

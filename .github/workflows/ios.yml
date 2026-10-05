@@ -1,7 +1,8 @@
 name: iOS
 
-# ios/ 변경마다: LevainCore 테스트(swift test) · 앱 빌드(시뮬레이터) · 영어 사전 누락 검사.
-# UI 스모크 테스트(LevainCalcUITests)는 오래 걸려 수동 실행(workflow_dispatch)에서만 돈다.
+# ios/ 변경마다: LevainCore 테스트(swift test) · 앱 빌드(시뮬레이터) · 영어 사전 누락 검사,
+# 그리고 옛 iOS 런타임(17.5 · 18.2) 시뮬레이터에서 LevainCore 테스트(oldest-ios).
+# UI 스모크 테스트(LevainCalcUITests)는 오래 걸려 수동 실행(workflow_dispatch)에서만 돈다 — 가장 새 런타임과 옛 런타임 모두.
 on:
   push:
     branches: [main]
@@ -100,4 +101,92 @@ jobs:
         with:
           name: LevainCalcUITests.xcresult
           path: ${{ runner.temp }}/LevainCalcUITests.xcresult
+          if-no-files-found: ignore
+
+  # 최소 지원 iOS(17.0) 쪽 런타임에서 LevainCore 테스트 — 정규식 단어 경계·ISO 8601 파싱처럼 Foundation 동작이
+  # OS 버전마다 달라(17.5에서만, 18.2에서만 틀린 적이 있다) 호스트의 swift test로는 잡히지 않는다.
+  # 러너 이미지에는 iOS 26 런타임뿐이라 내려받는다(수 분). 받지 못하면 경고를 남기고 설치된 가장 오래된 런타임으로 돈다
+  oldest-ios:
+    name: oldest-ios (iOS ${{ matrix.ios }})
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        ios: ['17.5', '18.2']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_[0-9]*.app | grep -vi -e beta -e release_candidate | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: iOS ${{ matrix.ios }} runtime
+        run: |
+          if ! xcrun simctl list runtimes -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["runtimes"]
+          sys.exit(0 if any(r["platform"] == "iOS" and r["version"] == sys.argv[1] and r["isAvailable"] for r in runtimes) else 1)
+          ' "${{ matrix.ios }}"; then
+            xcodebuild -downloadPlatform iOS -buildVersion "${{ matrix.ios }}" ||
+              echo "::warning::iOS ${{ matrix.ios }} 런타임을 내려받지 못했다 — 설치된 가장 오래된 iOS 런타임으로 테스트한다"
+          fi
+          xcrun simctl list runtimes
+
+      # 그 런타임(없으면 가장 오래된 런타임)의 iPhone — 내려받은 런타임에는 기기가 없을 수 있어 만든다
+      - name: Simulator
+        id: sim
+        run: |
+          read -r UDID VERSION <<< "$(xcrun simctl list -j | python3 -c '
+          import json, re, subprocess, sys
+          want = sys.argv[1]
+          listing = json.load(sys.stdin)
+          def version(runtime):
+              return [int(n) for n in re.findall(r"\d+", runtime["version"])]
+          runtimes = [r for r in listing["runtimes"] if r["platform"] == "iOS" and r["isAvailable"]]
+          exact = [r for r in runtimes if r["version"] == want]
+          runtime = exact[0] if exact else min(runtimes, key=version)
+          phones = [d["udid"] for d in listing["devices"].get(runtime["identifier"], [])
+                    if d["isAvailable"] and d["name"].startswith("iPhone")]
+          if phones:
+              udid = phones[0]
+          else:
+              types = [t for t in runtime["supportedDeviceTypes"] if t["productFamily"] == "iPhone"]
+              kind = next((t for t in types if t["name"] == "iPhone 15"), types[-1])
+              udid = subprocess.check_output(
+                  ["xcrun", "simctl", "create", "CI " + kind["name"], kind["identifier"], runtime["identifier"]],
+                  text=True).strip()
+          print(udid, runtime["version"])
+          ' "${{ matrix.ios }}")"
+          test -n "$UDID"
+          xcrun simctl list devices | grep "$UDID"
+          if [ "$VERSION" != "${{ matrix.ios }}" ]; then
+            echo "::warning::iOS ${{ matrix.ios }} 대신 iOS $VERSION 런타임으로 테스트한다"
+          fi
+          echo "LevainCore 테스트 런타임: iOS $VERSION (요청 ${{ matrix.ios }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # 패키지 자동 스킴 LevainCore-Package만 테스트 동작이 있다 (라이브러리 스킴 LevainCore에는 없다)
+      - name: LevainCore tests (iOS ${{ steps.sim.outputs.version }})
+        working-directory: ios/LevainCore
+        run: |
+          xcodebuild test -scheme LevainCore-Package -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd-core" -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+
+      - name: UI smoke tests (iOS ${{ steps.sim.outputs.version }})
+        if: ${{ !cancelled() && steps.sim.outcome == 'success' && github.event_name == 'workflow_dispatch' && inputs.ui_tests }}
+        run: |
+          xcodebuild test -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -resultBundlePath "$RUNNER_TEMP/LevainCalcUITests-ios${{ matrix.ios }}.xcresult" \
+            -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO -only-testing:LevainCalcUITests
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.ui_tests }}
+        with:
+          name: LevainCalcUITests-ios${{ matrix.ios }}.xcresult
+          path: ${{ runner.temp }}/LevainCalcUITests-ios${{ matrix.ios }}.xcresult
           if-no-files-found: ignore

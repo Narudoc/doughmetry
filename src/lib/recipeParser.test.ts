@@ -279,6 +279,35 @@ describe('플랫폼 패리티 회귀', () => {
     expect(r.input.water).toBe(350);
   });
 
+  it('아포스트로피 뒤 eau는 물이고, 문자에 붙은 dur·IDY는 낱말이 아니다 (iOS 17 단어 경계)', () => {
+    for (const line of ["350 g d'eau", '350 g d’eau', "l'eau 350g"]) {
+      const r = parseRecipeText(`farine T65 500g\n${line}\nsel 10g`);
+      expect(r.input.water, line).toBe(350);
+      expect(r.input.extras, line).toHaveLength(0);
+      expect(r.matchedLineCount, line).toBe(3);
+    }
+    const dur = parseRecipeText('강력분 500g\n물 350g\n르방dur 200');
+    expect(dur.input.levain.grams).toBe(200);
+    expect(dur.input.levain.hydration).toBe(1.0);
+    expect(dur.levainHydrationExplicit).toBe(false);
+    const idy = parseRecipeText('강력분 500g\n물 350g\n이스트IDY 3g');
+    expect(idy.input.yeast).toEqual({ type: 'fresh', grams: 3 });
+  });
+
+  it('대문자 I 키워드는 기기 지역과 무관하게 읽는다 (터키어 로캘의 I → ı)', () => {
+    const r = parseRecipeText(
+      'BREAD FLOUR 500G\nWATER 350G\nLIQUID LEVAIN 100G\nMILK 50G\nInstant yeast 2G\nSALT 10G',
+    );
+    expect(r.input.flours.map((f) => f.grams)).toEqual([500]);
+    expect(r.input.water).toBe(350);
+    expect(r.input.levain.grams).toBe(100);
+    expect(r.levainHydrationExplicit).toBe(true);
+    expect(r.input.liquids.map((l) => l.waterRatio)).toEqual([0.88]);
+    expect(r.input.yeast).toEqual({ type: 'instant', grams: 2 });
+    expect(r.input.salt).toBe(10);
+    expect(r.input.extras).toHaveLength(0);
+  });
+
   it('U+2028·단독 \\r 개행도 줄로 분리된다', () => {
     const a = parseRecipeText('강력분 500\u2028물 350g\u2028소금 10g');
     expect(a.input.flours[0]?.grams).toBe(500);
@@ -842,6 +871,17 @@ describe('SNS 캡션·앱 배합표 가져오기', () => {
     }
     expect(parseRecipeText('오늘 파네토네 구웠다\n강력분 500g\n물 300g').name).toBeNull();
     expect(parseRecipeText('맛있네\n강력분 500g\n물 300g').name).toBeNull();
+    // 판·servings도 개수다 — 괄호 속 숫자를 그램으로 읽지 않는다
+    const pizza = parseRecipeText('피자 도우 (3판 분량)\n강력분 400g\n물 300g');
+    expect(pizza.name).toBe('피자 도우');
+    expect(pizza.input.extras).toHaveLength(0);
+    expect(pizza.matchedLineCount).toBe(2);
+    expect(parseRecipeText('포카치아 (1판)\n강력분 500g\n물 400g').name).toBe('포카치아');
+    const focaccia = parseRecipeText('Focaccia (2 servings)\n500 g flour\n350 g water');
+    expect(focaccia.name).toBe('Focaccia');
+    expect(focaccia.input.extras).toHaveLength(0);
+    // 가운데의 분량 괄호를 걷어내도 공백이 겹치지 않는다
+    expect(parseRecipeText('치아바타 (2개 분량) 레시피\n강력분 400g\n물 300g').name).toBe('치아바타 레시피');
   });
 
   it('글머리 이모지·기호는 재료 이름에 남지 않는다', () => {
@@ -869,6 +909,9 @@ describe('SNS 캡션·앱 배합표 가져오기', () => {
     expect(parseRecipeText('Hydration: 75%\n강력분 500g\n물 350g').name).toBeNull();
     expect(parseRecipeText('강력분 500g\n물 350g\nPFF 20%').name).toBeNull();
     expect(parseRecipeText('PFF 20%\n강력분 500g\n물 350g').name).toBeNull();
+    // 글자 없이 %만 있는 줄은 재료보다 앞서도 이름이 아니다
+    expect(parseRecipeText('75%\n강력분 500g\n물 350g').name).toBeNull();
+    expect(parseRecipeText('수분율\n75%\n강력분 500g\n물 350g').name).toBeNull();
     // 발효종·재료 머리글의 수분율 표기도 통계 줄이다
     for (const header of [
       '스타터 (수분율 100%)',

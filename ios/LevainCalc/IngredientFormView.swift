@@ -17,6 +17,9 @@ struct IngredientFormSections: View {
     @ScaledMetric(relativeTo: .body) private var gramsColumnWidth: CGFloat = 204
     /// 큰 글자에서 그램 열이 넓어져도 이름 칸이 이만큼은 남는다 (그램 열이 대신 줄어든다)
     @ScaledMetric(relativeTo: .subheadline) private var nameMinWidth: CGFloat = 72
+    /// 액체 행의 "수분 x g" 열 — 값 폭(0.0 g ↔ 176.0 g)에 따라 수분 함량 칸이 옆으로 밀리지 않도록 폭을 고정한다.
+    /// 더 넓은 값은 열을 넓히지 않고 StatValue가 글자를 줄인다
+    @ScaledMetric(relativeTo: .footnote) private var waterColumnWidth: CGFloat = 84
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 접근성 글자 크기에선 입력 옆 보조 수치를 아랫줄로 — 한 줄에 두면 입력 칸이 화면 밖으로 밀린다
@@ -155,6 +158,9 @@ struct IngredientFormSections: View {
                 basisMenu
             }
         }
+        // iOS 17/18은 섹션 머리말을 대문자로 바꾼다 ("FLOUR (ADDED)") — 섹션마다 직접 달아야 듣는다
+        // (Form이나 머리말 Text 하나에 달면 17.5가 무시한다). 아래 섹션들도 같다
+        .textCase(nil)
     }
 
     // MARK: 물·바시나주·소금
@@ -174,6 +180,7 @@ struct IngredientFormSections: View {
                 NumberField(label: L("소금"), value: $input.salt)
             }
         }
+        .textCase(nil)
     }
 
     // MARK: 르방
@@ -200,13 +207,14 @@ struct IngredientFormSections: View {
     }
 
     private var levainPresetPicker: some View {
+        let names = [L("리퀴드 100%"), L("뒤흐 50%"), L("직접")]
         let picker = Picker(L("르방 종류"), selection: $levainPresetSel) {
-            Text(L("리퀴드 100%")).tag(0)
-            Text(L("뒤흐 50%")).tag(1)
-            Text(L("직접")).tag(2)
+            ForEach(names.indices, id: \.self) { i in
+                Text(names[i]).tag(i)
+            }
         }
         return picker
-            .pickerStyle(.segmented)
+            .adaptiveSegmented(L("르방 종류"), value: names[levainPresetSel])
             .onChange(of: levainPresetSel) { _, sel in applyLevainPreset(sel) }
             .onChange(of: input.levain.hydration, initial: true) { _, h in syncLevainPreset(h) }
     }
@@ -269,6 +277,7 @@ struct IngredientFormSections: View {
                 basisMenu
             }
         }
+        .textCase(nil)
     }
 
     // MARK: 액체 재료
@@ -292,11 +301,14 @@ struct IngredientFormSections: View {
                                 set: { liquid.waterRatio = min(1, max(0, $0 / 100)) }),
                             unit: "%", accessibilityName: LF("%@ 수분 함량", liquidName))
                         HStack(spacing: 4) {
-                            Text(L("수분")).font(.caption).foregroundStyle(.secondary)
+                            Text(L("수분")).font(.caption).foregroundStyle(.secondary).fixedSize()
                             StatValue(
                                 value: fmtGrams(liquid.grams * liquid.waterRatio, precision) + " g",
                                 size: 13)
                         }
+                        .frame(
+                            width: typeSize.isAccessibilitySize ? nil : waterColumnWidth,
+                            alignment: .trailing)
                         .accessibilityElement(children: .combine)
                     }
                 }
@@ -319,13 +331,17 @@ struct IngredientFormSections: View {
                     input.liquids.append(Liquid(name: "", grams: 0, waterRatio: 0.8))
                 }
             } label: {
+                // 행 전체가 메뉴를 연다 — 라벨 글자·아이콘만 눌리던 문제 (옆 '추가' 버튼 행들과 같게)
                 Label(L("액체 재료 추가"), systemImage: "plus.circle")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
         } header: {
             Text(L("액체 재료"))
         } footer: {
             Text(L("우유·계란 등 — 수분율만큼 총 물에 반영됩니다 (USDA 기준: 우유 88%, 계란 76%)."))
         }
+        .textCase(nil)
     }
 
     // MARK: 이스트
@@ -349,7 +365,8 @@ struct IngredientFormSections: View {
                 Text(L("생이스트")).tag(YeastType.fresh)
                 Text(L("인스턴트")).tag(YeastType.instant)
             }
-            .pickerStyle(.segmented)
+            .adaptiveSegmented(
+                L("이스트 종류"), value: input.yeast.type == .fresh ? L("생이스트") : L("인스턴트"))
             pctRow(stats.uiPct(grams: input.yeast.grams, basis: basis)) {
                 NumberField(label: L("투입량"), value: $input.yeast.grams)
             }
@@ -371,6 +388,7 @@ struct IngredientFormSections: View {
         } footer: {
             Text(L("인스턴트 = 생이스트 × 0.4. 무게·%에만 반영, 수분율 미반영."))
         }
+        .textCase(nil)
     }
 
     // MARK: 기타 재료
@@ -405,5 +423,6 @@ struct IngredientFormSections: View {
         } footer: {
             Text(L("무게에만 합산되고 수분 계산에서 제외 — 수분이 있는 재료는 액체 재료로."))
         }
+        .textCase(nil)
     }
 }

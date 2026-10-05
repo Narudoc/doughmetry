@@ -45,6 +45,9 @@ struct ResultBar<Content: View>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // iPad 트랙패드 포인터 강조 — 모서리는 카드(14)와 같게
+                .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 14))
+                .hoverEffect(.highlight)
                 .accessibilityHint(expandHint ?? "")
             } else {
                 row
@@ -79,6 +82,12 @@ struct ResultBar<Content: View>: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity)
+        // iOS 17·18의 불투명 탭 바와 카드 사이 틈·양옆 여백으로 밑에 깔린 목록 글자가 비친다 (26+는 유리 탭 바라 그대로)
+        .background {
+            if #unavailable(iOS 26) {
+                Rectangle().fill(.bar)
+            }
+        }
         // 늘 떠 있는 바라 키보드와 함께 폼을 덮지 않도록 AX1에서 멈춘다 — 전체 수치는 배합표 시트에서 끝까지 커진다
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
@@ -123,7 +132,7 @@ struct StatChipRow: View {
                 }
             }
         } else {
-            HStack(spacing: chips.count > 3 ? 8 : 12) {
+            StatChipLine(spacing: chips.count > 3 ? 8 : 12) {
                 ForEach(chips.indices, id: \.self) { chips[$0] }
             }
         }
@@ -193,8 +202,50 @@ struct BakersTableSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large], selection: $detent)
+        .adaptiveDetents([.medium, .large], selection: $detent)
         .modifier(KeepScreenAwake(enabled: keepAwake))
+    }
+}
+
+/// 넓은 가로 창(iPad 가로)의 계산기 오른쪽 열 — 배합표 시트와 같은 내용을 늘 보인다.
+/// 결과 바(시트로 가는 길)를 감추므로 시트의 용어 설명·공유도 여기 둔다. 화면 꺼짐 방지는 걸지 않는다 —
+/// 시트와 달리 닫히는 때가 없어 계산기를 보는 내내 자동 잠금이 꺼진다
+struct FicheColumn: View {
+    let name: String
+    let input: DoughInput
+    let stats: DoughStats
+    let pieces: Double?
+    let precision: Precision
+    let basis: PctBasis
+    /// 용어 설명 열기 — 이 열은 화면을 돌리면 사라지므로 내비게이션 대상은 계산기 화면이 단다
+    let onGlossary: () -> Void
+
+    var body: some View {
+        List {
+            HStack(spacing: 16) {
+                Text(L("배합표"))
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button(action: onGlossary) {
+                    Image(systemName: "info.circle")
+                }
+                .accessibilityLabel(L("용어 설명"))
+                ShareLink(
+                    item: ficheText(
+                        name: name, input: input, stats: stats, pieces: pieces, basis: basis,
+                        precision: precision)
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel(L("공유"))
+            }
+            // 행 안의 버튼 둘을 따로 누르게 — 기본 스타일은 행 전체가 한 버튼이 된다
+            .buttonStyle(.borderless)
+            .listRowBackground(Color.clear)
+            FicheSections(
+                input: input, stats: stats, pieces: pieces, precision: precision, basis: basis)
+        }
     }
 }
 
@@ -347,7 +398,7 @@ struct SaveRecipeSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .adaptiveDetents([.medium, .large])
         .interactiveDismissDisabled(isEdited)
     }
 }

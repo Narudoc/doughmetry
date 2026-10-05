@@ -239,12 +239,8 @@ enum RecipeImporter {
         var bassinageGrams: Double
         @Guide(description: "소금 g")
         var saltGrams: Double
-        @Guide(description: "르방(사워도우 스타터) 무게 g, 없으면 0")
-        var levainGrams: Double
-        @Guide(
-            description: "르방 수분율 % — 리퀴드는 100, 뒤흐는 50, 명시된 값이 있으면 그 값, 르방이 없으면 100",
-            .range(30...150))
-        var levainHydrationPct: Double
+        @Guide(description: "르방(사워도우 스타터)")
+        var levain: AILevain
         @Guide(description: "우유·계란 등 수분을 포함한 액체 재료 — 물·바시나주·르방·풀리시 같은 발효종은 넣지 않는다")
         var liquids: [AILiquid]
         @Guide(description: "이스트 g, 없으면 0")
@@ -253,6 +249,22 @@ enum RecipeImporter {
         var yeastType: AIYeastType
         @Guide(description: "견과·건과일 등 수분 없는 기타 재료")
         var extras: [AIIngredient]
+    }
+
+    /// name은 결과에 쓰지 않지만 무게보다 먼저 받아야 한다 — 무게만 물으면 모델이 '르방 리퀴드'·'Liquid levain'·
+    /// '스타터'·'starter (stiff)' 줄을 르방으로 짚지 못하고 "없으면 0"을 적는다 (르방이 빠진 초안은 무게 검증에서 버려진다).
+    /// 줄 이름을 먼저 옮겨 적게 하면 그 줄의 숫자를 무게로 쓴다
+    @available(iOS 26.0, *)
+    @Generable
+    struct AILevain {
+        @Guide(description: "르방·스타터·발효종 줄에 적힌 이름 그대로 (예: 르방 리퀴드, 스타터, 풀리시, levain, starter), 없으면 빈 문자열")
+        var name: String
+        @Guide(description: "르방 무게 g, 없으면 0")
+        var grams: Double
+        @Guide(
+            description: "르방 수분율 % — 리퀴드는 100, 뒤흐는 50, 명시된 값이 있으면 그 값, 르방이 없으면 100",
+            .range(30...150))
+        var hydrationPct: Double
     }
 
     @available(iOS 26.0, *)
@@ -280,7 +292,7 @@ enum RecipeImporter {
                 사워도우 빵 레시피 텍스트에서 재료를 추출한다. 규칙:
                 - 각 재료의 무게는 그 재료 이름 옆에 적힌 숫자다. 다른 재료의 숫자를 가져오지 않는다.
                 - 한 재료는 한 곳에만 넣는다.
-                - 르방·스타터는 flours가 아니라 levainGrams에 넣는다.
+                - 르방·스타터와 풀리시·비가 같은 발효종은 flours가 아니라 levain에 넣는다.
                 - liquids에는 우유·계란처럼 물이 아닌 액체만 넣는다. 없으면 빈 목록.
                 - 르방 리퀴드(levain liquide)는 수분율 100%, 르방 뒤흐(levain dur)는 50%.
                 - 바시나주(bassinage)는 본반죽 물(waterGrams)과 구분한다.
@@ -296,8 +308,8 @@ enum RecipeImporter {
                 르방 리퀴드 250
                 소금 18
                 예시 출력 1: name="캉파뉴", flours=[T65 800g, 호밀 200g], waterGrams=700,
-                levainGrams=250, levainHydrationPct=100, saltGrams=18, bassinageGrams=0,
-                liquids=[]
+                levain={name="르방 리퀴드", grams=250, hydrationPct=100}, saltGrams=18,
+                bassinageGrams=0, liquids=[]
 
                 예시 입력 2 (숫자가 앞에 오는 SNS 스타일):
                 1kg flour
@@ -305,9 +317,9 @@ enum RecipeImporter {
                 730 water
                 10 yeast fresh
                 20 sea salt
-                예시 출력 2: flours=[flour 1000g], levainGrams=350, levainHydrationPct=50
-                (stiff/dur는 50), waterGrams=730, yeastGrams=10 + yeastType=fresh,
-                saltGrams=20, bassinageGrams=0, liquids=[]
+                예시 출력 2: flours=[flour 1000g], levain={name="ferment ( starter stiff )",
+                grams=350, hydrationPct=50} (stiff/dur는 50), waterGrams=730, yeastGrams=10 +
+                yeastType=fresh, saltGrams=20, bassinageGrams=0, liquids=[]
                 """)
     }
 
@@ -342,7 +354,7 @@ enum RecipeImporter {
         ).content
 
         // 30~150% 밖은 베이커스 %("르방 100g (20%)")를 수분율로 읽은 값 — 규칙 파서와 같이 기본값으로
-        let aiPct = draft.levainHydrationPct
+        let aiPct = draft.levain.hydrationPct
         let hydration = (30...150).contains(aiPct) ? aiPct / 100 : 1.0
         let draftInput = DoughInput(
             flours: draft.flours
@@ -354,7 +366,7 @@ enum RecipeImporter {
             levain: Levain(
                 type: levainTypeFor(hydration: hydration),
                 hydration: hydration,
-                grams: max(0, draft.levainGrams)),
+                grams: max(0, draft.levain.grams)),
             liquids: draft.liquids
                 .filter { $0.grams > 0 }
                 .map {

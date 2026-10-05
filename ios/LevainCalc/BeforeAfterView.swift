@@ -7,7 +7,7 @@ struct BeforeAfterSections: View {
     let result: ConvertSuccess
     let precision: Precision
 
-    /// 재료 섹션의 스크롤 기준점 — 변환기 아래 결과 바를 탭하면 여기로 간다
+    /// 재료 결과 섹션 — List의 scrollTo는 섹션 id로 첫 행을 맨 위에 올린다 (머리글은 건너뛴다)
     static let anchorID = "beforeAfter.ingredients"
 
     @ScaledMetric(relativeTo: .caption) private var deltaWidth: CGFloat = 56
@@ -108,6 +108,7 @@ struct BeforeAfterSections: View {
             }
         }
         .id(Self.anchorID)
+        .textCase(nil)
         Section {
             pctMetricRow(L("총 수분율"), result.before.hydrationPct, result.after.hydrationPct)
             gramsMetricRow(L("총 반죽 무게"), result.before.doughWeight, result.after.doughWeight)
@@ -122,6 +123,7 @@ struct BeforeAfterSections: View {
                 )
             }
         }
+        .textCase(nil)
     }
 
     private func gramsMetricRow(_ name: String, _ before: Double, _ after: Double) -> some View {

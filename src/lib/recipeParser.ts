@@ -68,7 +68,7 @@ const OZ_UNITS = new Set(['oz', 'ounce', 'ounces']);
  * 3: 단위 — 단어 중간("500g을", "gâteau")은 단위가 아니다
  */
 const NUMBER_PATTERN =
-  /(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}\/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u00A0\u202F\u2009][0-9]{3})+(?=[ \t\u00A0\u202F\u2009]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u00A0\u202F\u2009][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u00A0\u202F\u2009]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/giu;
+  /(?:^|[^A-Za-z0-9])(?:((?:[0-9]+[ \t]+)?[0-9]{1,2}\/[0-9]{1,2}(?![0-9]))|([1-9](?:[ \u00A0\u202F\u2009][0-9]{3})+(?=[ \t\u00A0\u202F\u2009]*(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml)(?![\p{L}\p{M}\p{N}_]))|[0-9]{1,3}(?:[\u00A0\u202F\u2009][0-9]{3})+|[0-9]+(?:,[0-9]{3})*(?:[.,][0-9]+)?))(?:[ \t\u00A0\u202F\u2009]*(%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|판|배합|loaf|loaves|servings?|large|medium|small)(?![\p{L}\p{M}\p{N}_])))?/giu;
 
 /**
  * 줄 단위 숫자 토큰.
@@ -356,7 +356,7 @@ function shouldSkip(line: string): boolean {
 /** 숫자·단위를 걷어낸 재료 이름 */
 function ingredientName(line: string): string {
   let s = line.replace(
-    /(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:\/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|배합|loaf|loaves|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?/giu,
+    /(?<![A-Za-z0-9])(?:[0-9]+[ \t]+)?[0-9]+(?:\/[0-9]+|(?:[ \u00A0\u202F\u2009][0-9]{3})*(?:[.,][0-9]+)?)[ \t\u00A0\u202F\u2009]*(?:%|(?:kg|㎏|키로|킬로|g|gr|gram(?:me)?s?|그램|ml|oz|ounces?|lbs?|pounds?|cups?|컵|tsp|tbsp|teaspoons?|tablespoons?|큰술|작은술|티스푼|개|덩어리|덩이|인분|판|배합|loaf|loaves|servings?|large|medium|small)(?![\p{L}\p{M}\p{N}_]))?/giu,
     '',
   );
   s = s.replace(/\([ \t]*\)/g, '');
@@ -398,7 +398,8 @@ const COUNT_PARENTHETICAL = /\([^)]*(?:분량|인분|개|판|덩어리|덩이|lo
  * % 표기만 있는 줄("캉파뉴 75%")은 재료보다 앞설 때만 이름이 된다 — 재료 사이의 "PFF 20%"는 이름이 아니다
  */
 function titleCandidate(line: string, matched: number): string | null {
-  const s = line.replace(matched === 0 ? COUNT_PARENTHETICAL : SERVINGS_PARENTHETICAL, '');
+  const paren = matched === 0 ? COUNT_PARENTHETICAL : SERVINGS_PARENTHETICAL;
+  const s = paren.test(line) ? line.replace(paren, ' ').replace(/[ \t]{2,}/g, ' ') : line;
   const tokens = numberTokens(s);
   if (!(tokens.length === 0 || (matched === 0 && tokens.every((t) => t.kind === 'pct')))) {
     return null;
@@ -410,6 +411,8 @@ function titleCandidate(line: string, matched: number): string | null {
     const rest = ingredientName(t)
       .replace(/(?<!\p{L})(?:liquide|dur|리퀴드|뒤흐)(?!\p{L})/giu, '')
       .trim();
+    // 글자 없이 %만 남은 줄("75%", "(75%)")은 이름이 아니다
+    if (!/\p{L}/u.test(rest)) return null;
     if (
       !/\s/u.test(rest) &&
       (matchesFlour(rest) || matchesLevain(rest) || matchesWater(rest) || matchesSalt(rest))

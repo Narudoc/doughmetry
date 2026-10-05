@@ -72,7 +72,7 @@ struct BakeLogSheet: View {
         self.recipeId = recipeId
         self.existing = existing
         self.onSave = onSave
-        let date = existing.flatMap { parseISO($0.bakedAt) } ?? Date()
+        let date = existing.flatMap { LibrarySync.syncInstant($0.bakedAt) } ?? Date()
         _bakedAt = State(initialValue: date)
         _initialBakedAt = State(initialValue: date)
         _rating = State(initialValue: existing?.rating)
@@ -87,7 +87,7 @@ struct BakeLogSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    DatePicker(L("구운 날짜"), selection: $bakedAt, displayedComponents: [.date])
+                    AXDatePicker(L("구운 날짜"), selection: $bakedAt, displayedComponents: [.date])
                     // 접근성 크기에선 별을 라벨 아래 줄로 — 커진 별 다섯 개가 라벨 옆에 들어가지 않는다
                     let ratingLayout =
                         typeSize.isAccessibilitySize
@@ -104,6 +104,7 @@ struct BakeLogSheet: View {
                         .font(.callout)
                         .accessibilityLabel(L("메모"))
                 }
+                .textCase(nil)
             }
             .navigationTitle(existing == nil ? L("기록 추가") : L("기록 편집"))
             .navigationBarTitleDisplayMode(.inline)
@@ -131,7 +132,7 @@ struct BakeLogSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .adaptiveDetents([.medium, .large])
         .interactiveDismissDisabled(isEdited)
     }
 }
@@ -183,7 +184,7 @@ struct NoteEditSheet: View {
                     }
                 }
         }
-        .presentationDetents([.medium, .large])
+        .adaptiveDetents([.medium, .large])
         .interactiveDismissDisabled(text != initial)
     }
 }
@@ -226,17 +227,21 @@ struct EditableBakeLogRow: View {
     let onEdit: () -> Void
 
     var body: some View {
-        Button(action: onEdit) {
-            BakeLogRow(log: log)
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        // onDelete의 시스템 "삭제"는 앱 언어가 아니라 번들 현지화를 따른다
-        .swipeActions {
-            // 앱 전체 .tint(.bottle)이 destructive 역할의 빨강을 덮는다
-            Button(L("삭제"), role: .destructive) { model.deleteLog(log.id) }
-                .tint(Color.danger)
-        }
+        // 탭 영역은 행 전체 — .plain 버튼 바깥의 contentShape는 글자 밖 탭을 받지 못한다
+        BakeLogRow(log: log)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onEdit)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, onEdit)
+            .accessibilityAction(named: L("편집"), onEdit)
+            // onDelete의 시스템 "삭제"는 앱 언어가 아니라 번들 현지화를 따른다
+            .swipeActions {
+                // 앱 전체 .tint(.bottle)이 destructive 역할의 빨강을 덮는다
+                Button(L("삭제"), role: .destructive) { model.deleteLog(log.id) }
+                    .tint(Color.danger)
+            }
     }
 }
 
@@ -244,52 +249,70 @@ struct EditableBakeLogRow: View {
 struct BakeLogListView: View {
     @Environment(AppModel.self) private var model
     let recipeId: String
-
-    @State private var showNewLog = false
-    @State private var editingLog: BakeLog?
+    @Binding var sheet: RecipeDetailSheet?
 
     var body: some View {
         List {
             Button {
-                showNewLog = true
+                sheet = .newLog(recipeId: recipeId)
             } label: {
                 Label(L("기록 추가"), systemImage: "plus.circle")
             }
             ForEach(model.logs(for: recipeId)) { log in
-                EditableBakeLogRow(log: log) { editingLog = log }
+                EditableBakeLogRow(log: log) { sheet = .editLog(log) }
             }
         }
         .readableFormWidth()
         .navigationTitle(L("베이킹 로그"))
         .navigationBarTitleDisplayMode(.inline)
-        .newBakeLogSheet(isPresented: $showNewLog, recipeId: recipeId)
-        .sheet(item: $editingLog) { log in
-            BakeLogSheet(recipeId: recipeId, existing: log) { model.saveLog($0) }
+    }
+}
+
+/// 레시피 상세·전체 기록 화면의 시트 — 레시피 목록(RecipesView)이 띄운다. iPad 창 폭 등급이 바뀌면 상세가 다시 만들어지므로
+/// 상세에 달면 적던 노트·기록이 시트와 함께 사라진다
+enum RecipeDetailSheet: Identifiable {
+    case note(recipeId: String)
+    case newLog(recipeId: String)
+    case editLog(BakeLog)
+
+    var id: String {
+        switch self {
+        case .note(let recipeId): "note:\(recipeId)"
+        case .newLog(let recipeId): "newLog:\(recipeId)"
+        case .editLog(let log): "editLog:\(log.id)"
         }
     }
 }
 
 extension View {
-    /// 새 베이킹 로그 시트 — 별점 4개 이상으로 저장하면 시트가 닫힌 뒤 앱 평가를 청한다 (앱 버전마다 한 번).
+    /// 레시피 상세의 노트·기록 시트. 새 기록을 별점 4개 이상으로 저장하면 시트가 닫힌 뒤 앱 평가를 청한다 (앱 버전마다 한 번).
     /// 편집 저장·계산기·변환기·앱 실행 중에는 청하지 않는다
-    func newBakeLogSheet(isPresented: Binding<Bool>, recipeId: String) -> some View {
-        modifier(NewBakeLogSheet(isPresented: isPresented, recipeId: recipeId))
+    func recipeDetailSheets(_ sheet: Binding<RecipeDetailSheet?>) -> some View {
+        modifier(RecipeDetailSheets(sheet: sheet))
     }
 }
 
-private struct NewBakeLogSheet: ViewModifier {
+private struct RecipeDetailSheets: ViewModifier {
     @Environment(AppModel.self) private var model
     @Environment(\.requestReview) private var requestReview
     @AppStorage("reviewPromptedVersion") private var promptedVersion = ""
-    @Binding var isPresented: Bool
-    let recipeId: String
+    @Binding var sheet: RecipeDetailSheet?
     @State private var wantsReview = false
 
     func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented, onDismiss: askForReview) {
-            BakeLogSheet(recipeId: recipeId, existing: nil) { log in
-                model.saveLog(log)
-                if (log.rating ?? 0) >= 4 { wantsReview = true }
+        content.sheet(item: $sheet, onDismiss: askForReview) { sheet in
+            switch sheet {
+            case .note(let recipeId):
+                NoteEditSheet(initial: model.recipes.first { $0.id == recipeId }?.note ?? "") { text in
+                    model.updateNote(recipeId: recipeId, note: text)
+                }
+            case .newLog(let recipeId):
+                BakeLogSheet(recipeId: recipeId, existing: nil) { log in
+                    model.saveLog(log)
+                    if (log.rating ?? 0) >= 4 { wantsReview = true }
+                }
+            case .editLog(let log):
+                BakeLogSheet(recipeId: log.recipeId, existing: log) { model.saveLog($0) }
             }
         }
     }

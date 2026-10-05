@@ -101,6 +101,8 @@ final class AppModel {
     /// 변환기로 보낸 배합 (탭 전환 시 적용)
     var converterSource: (name: String, input: DoughInput)?
     var selectedTab: Tab = .calculator
+    /// 레시피 검색 요청 (하드웨어 키보드 ⌘F) — 올릴 때마다 레시피 탭이 검색 칸을 연다
+    var searchRequest = 0
 
     let cloud = CloudSync()
     /// 마지막 library.json 쓰기가 실패했는가 — 다음 쓰기가 성공하면 false로 돌아간다
@@ -134,6 +136,32 @@ final class AppModel {
             ? URL(fileURLWithPath: path, isDirectory: true)
             : FileManager.default.temporaryDirectory.appendingPathComponent(path, isDirectory: true)
     }
+
+    /// UI 테스트 실행은 설정(% 기준·앱 언어·타임라인 계획·@AppStorage)도 빈 상태로 시작한다.
+    /// UserDefaults.standard의 쓰기는 늘 앱 영속 도메인으로 가므로 도메인을 통째로 바꿔 끼운다 — 실제 설정은
+    /// 첫 UI 테스트 실행 때 따로 보관했다가 훅 없이 실행할 때 되돌린다 (테스트가 쓴 설정은 버린다).
+    /// 실행 인자(-uiTestDataDir·-appLanguage)는 인자 도메인이라 지워지지 않는다.
+    /// 설정을 읽는 무엇보다 먼저 불러야 한다 — 앱 언어(Lang)는 AppModel보다 먼저 LevainCalcApp.init에서 만들어진다.
+    /// 여러 번 불러도 결과가 같다.
+    nonisolated static func isolateDefaultsForUITest() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let defaults = UserDefaults.standard
+        let savedName = id + ".uitest-saved"
+        // 지운 도메인도 iOS 버전에 따라 nil이 아니라 빈 사전으로 읽힌다 — 보관 여부는 "domain" 키로 본다
+        let saved = defaults.persistentDomain(forName: savedName)?["domain"] as? [String: Any]
+        if uiTestDataDir != nil {
+            // 보관본이 있으면 지금 도메인은 앞 테스트 실행의 것이다 — 보관본을 덮어쓰지 않는다
+            if saved == nil {
+                defaults.setPersistentDomain(
+                    ["domain": defaults.persistentDomain(forName: id) ?? [:]], forName: savedName)
+                guard defaults.persistentDomain(forName: savedName)?["domain"] != nil else { return }
+            }
+            defaults.removePersistentDomain(forName: id)
+        } else if let saved {
+            defaults.setPersistentDomain(saved, forName: id)
+            defaults.removePersistentDomain(forName: savedName)
+        }
+    }
     #endif
 
     private var store: LibraryStore
@@ -146,6 +174,9 @@ final class AppModel {
     private var isLoading = false
 
     init() {
+        #if DEBUG
+        Self.isolateDefaultsForUITest()
+        #endif
         store = LibraryStore(directory: Self.dir)
         if let raw = UserDefaults.standard.object(forKey: "precision") as? Double,
             let p = Precision(rawValue: raw)
@@ -432,7 +463,7 @@ final class AppModel {
         if bakeSummaryCache == nil {
             var acc: [String: (count: Int, latest: BakeLog, date: Date)] = [:]
             for log in logs {
-                let date = parseISO(log.bakedAt) ?? .distantPast
+                let date = LibrarySync.syncInstant(log.bakedAt) ?? .distantPast
                 if let cur = acc[log.recipeId] {
                     acc[log.recipeId] = (cur.count + 1, date > cur.date ? log : cur.latest, max(date, cur.date))
                 } else {
@@ -446,7 +477,7 @@ final class AppModel {
 
     func logs(for recipeId: String) -> [BakeLog] {
         logs.filter { $0.recipeId == recipeId }
-            .map { ($0, parseISO($0.bakedAt) ?? .distantPast) }
+            .map { ($0, LibrarySync.syncInstant($0.bakedAt) ?? .distantPast) }
             .sorted { $0.1 > $1.1 }
             .map(\.0)
     }
