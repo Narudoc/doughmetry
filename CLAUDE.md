@@ -91,7 +91,7 @@ CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 LevainCore `swift te
 
 - **베이킹 로그** (`BakeLog`, library.json의 `logs`) — 레시피별 날짜·별점·메모
 - **르방 빌드 계산기** — [Tools.swift](ios/LevainCore/Sources/LevainCore/Tools.swift) `solveLevainBuild`: 종 20g + 밀가루 90g + 물 90g → 르방 200g(100%)
-- **물 온도 계산기** — `solveWaterTemperature`: 물 = DDT × N − (밀가루 + 실온 + [르방] + 마찰계수)
+- **물 온도 계산기** — `solveWaterTemperature`: 물 = DDT × N − (밀가루 + 실온 + [르방] + 마찰계수). 마찰계수는 반죽이 실제로 오르는 온도가 아니라 이 ×N 공식에 넣는 값(실제 상승 × N) — 프리셋 손반죽 2·믹서 12 °C(스탠드·버티컬·스파이럴은 출처들이 같은 값으로 다룬다, 2026-10 조사), 옛 '스탠드 믹서 8'은 앱 시작 때 한 번 12로 옮긴다(`ddt.frictionPresets`). '직접'은 `ddt.frictionCustom`으로 기억하고 누르면 입력 칸에 포커스
 - **타임라인 스케줄러** — [Timeline.swift](ios/LevainCore/Sources/LevainCore/Timeline.swift) + 로컬 알림
 - **iCloud 동기화** — library.json 병합 (LibrarySync)
 

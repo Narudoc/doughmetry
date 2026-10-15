@@ -12,6 +12,7 @@ struct LevainCalcApp: App {
         AppModel.isolateDefaultsForUITest()
         #endif
         TimelineNotifier.presentInForeground()
+        WaterTemperatureView.migrateFrictionPresets()
         if #unavailable(iOS 26) {
             // 26 미만의 confirmationDialog는 UIAlertController라 SwiftUI .tint를 따르지 않는다 (삭제 역할은 시스템 빨강 그대로).
             // UIColor(Color.bottle)은 다크 모드에서도 라이트 값으로 풀린다 — 화면 모드마다 SwiftUI로 직접 푼다

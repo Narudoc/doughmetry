@@ -67,7 +67,8 @@ public struct WaterTemperatureSpec: Equatable, Sendable {
     public var roomTemp: Double
     /// 르방(사전반죽)을 쓰면 온도, 아니면 nil
     public var levainTemp: Double?
-    /// 믹싱 중 마찰로 오르는 온도 — 손반죽 ≈ 1~2°C, 스탠드 믹서 ≈ 6~10°C
+    /// 믹싱 마찰 값 — 반죽이 실제로 오르는 온도가 아니라 이 공식(×3·×4)에 넣는 값(실제 상승 × N).
+    /// 손반죽 ≈ 0~5°C, 믹서(스탠드·버티컬·스파이럴) ≈ 10~16°C, 오래·빠른 믹싱은 20°C 안팎
     public var frictionFactor: Double
 
     public init(

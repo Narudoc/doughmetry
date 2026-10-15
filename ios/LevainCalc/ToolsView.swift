@@ -338,6 +338,8 @@ struct WaterTemperatureView: View {
     @AppStorage("ddt.useLevain") private var useLevain = true
     @AppStorage("ddt.levain") private var levainTemp: Double = 24
     @AppStorage("ddt.friction") private var friction: Double = 2
+    /// '직접'을 고른 채인지 — 직접 넣은 값이 프리셋과 같아도 '직접'으로 남는다
+    @AppStorage("ddt.frictionCustom") private var frictionCustom = false
     /// "c" / "f"
     @AppStorage("ddt.unit") private var unit: String = WaterTemperatureView.defaultUnit
 
@@ -347,26 +349,56 @@ struct WaterTemperatureView: View {
 
     /// 마찰계수 프리셋 — '직접'(2)도 실제 선택 가능하도록 @State로 유지하고 값 변경과 동기화한다
     @State private var frictionSel = 0
+    /// '직접'을 누르면 마찰계수 칸으로 입력을 넘긴다 — 값은 그대로라 누른 티가 나지 않았다
+    @State private var frictionFocus = 0
     @State private var keyboardVisible = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var isFahrenheit: Bool { unit == "f" }
     private var unitSymbol: String { isFahrenheit ? "°F" : "°C" }
 
-    private func applyFrictionPreset(_ sel: Int) {
-        if sel == 0 { friction = 2 }
-        if sel == 1 { friction = 8 }
+    /// 마찰계수 프리셋 (°C) — 반죽이 실제로 오르는 온도가 아니라 ×3·×4 공식에 넣는 값(상승 × N).
+    /// 스탠드·버티컬·스파이럴 믹서는 출처들이 같은 값으로 다룬다 — 차이는 기계보다 믹싱 시간·속도에서 난다
+    static let handFriction: Double = 2
+    static let mixerFriction: Double = 12
+
+    /// 옛 '스탠드 믹서 8 °C'(실제 상승 온도를 이 공식 칸에 넣은 값)를 고른 채였으면 믹서 12 °C로 — 한 번만, 앱 시작 때.
+    /// 화면에서 하면 iOS 17은 첫 그리기 중의 저장값 변경을 버려 8이 남고 '직접'으로 굳는다
+    static func migrateFrictionPresets(_ defaults: UserDefaults = .standard) {
+        guard defaults.integer(forKey: "ddt.frictionPresets") < 2 else { return }
+        if !defaults.bool(forKey: "ddt.frictionCustom"), let f = defaults.object(forKey: "ddt.friction") as? Double,
+            abs(f - 8) < 1e-6
+        {
+            defaults.set(mixerFriction, forKey: "ddt.friction")
+        }
+        defaults.set(2, forKey: "ddt.frictionPresets")
+    }
+
+    /// 사용자가 고른 프리셋 — 프로그램이 맞추는 frictionSel(syncFrictionPreset)과 구분한다
+    private var frictionSelection: Binding<Int> {
+        Binding(
+            get: { frictionSel },
+            set: { sel in
+                frictionSel = sel
+                frictionCustom = sel == 2
+                if sel == 0 { friction = Self.handFriction }
+                if sel == 1 { friction = Self.mixerFriction }
+                if sel == 2 { frictionFocus += 1 }
+            })
     }
 
     private func syncFrictionPreset(_ f: Double) {
         // °F로 입력한 값은 °C로 돌아오며 끝자리가 어긋난다(3.6 °F → 1.9999…) — 같음 비교 대신 오차 허용
         let sel: Int
-        if abs(f - 2) < 1e-6 {
+        if frictionCustom {
+            sel = 2
+        } else if abs(f - Self.handFriction) < 1e-6 {
             sel = 0
-        } else if abs(f - 8) < 1e-6 {
+        } else if abs(f - Self.mixerFriction) < 1e-6 {
             sel = 1
         } else {
             sel = 2
+            frictionCustom = true
         }
         frictionSel = sel
     }
@@ -444,22 +476,22 @@ struct WaterTemperatureView: View {
             }
             .textCase(nil)
             Section {
-                let frictionNames = [L("손반죽"), L("스탠드 믹서"), L("직접")]
-                StackingSegmentedPicker(L("마찰계수"), value: frictionNames[frictionSel], selection: $frictionSel) {
+                let frictionNames = [L("손반죽"), L("믹서"), L("직접")]
+                StackingSegmentedPicker(L("마찰계수"), value: frictionNames[frictionSel], selection: frictionSelection) {
                     ForEach(frictionNames.indices, id: \.self) { i in
                         Text(frictionNames[i]).tag(i)
                     }
                 }
-                .onChange(of: frictionSel) { _, sel in applyFrictionPreset(sel) }
                 .onChange(of: friction, initial: true) { _, f in syncFrictionPreset(f) }
                 NumberField(
-                    label: L("마찰계수"), value: temperatureDelta($friction), unit: unitSymbol, fractionDigits: 1)
+                    label: L("마찰계수"), value: temperatureDelta($friction), unit: unitSymbol, fractionDigits: 1,
+                    focusRequest: frictionFocus)
             } footer: {
                 Text(
                     LF(
-                        "믹싱 마찰로 오르는 온도. 손반죽 %d~%d%@, 스탠드 믹서 %d~%d%@ — 본인 환경에 맞게 조정하세요.",
-                        hint(1, delta: true), hint(2, delta: true), unitSymbol,
-                        hint(6, delta: true), hint(10, delta: true), unitSymbol))
+                        "공식에 넣는 마찰 값 — 실제 반죽 상승 온도의 3~4배. 손반죽 %d~%d%@, 믹서(스탠드·버티컬·스파이럴) %d~%d%@. 오래·빠르게 칠수록 높게 잡으세요.",
+                        hint(0, delta: true), hint(5, delta: true), unitSymbol,
+                        hint(10, delta: true), hint(16, delta: true), unitSymbol))
             }
             Section {
                 StackingLabeledContent {

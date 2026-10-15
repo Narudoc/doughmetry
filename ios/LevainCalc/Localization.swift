@@ -526,9 +526,9 @@ private let en: [String: String] = [
     "르방 사용": "Dough includes levain",
     "마찰계수": "Friction factor",
     "손반죽": "By hand",
-    "스탠드 믹서": "Stand mixer",
-    "믹싱 마찰로 오르는 온도. 손반죽 %d~%d%@, 스탠드 믹서 %d~%d%@ — 본인 환경에 맞게 조정하세요.":
-        "Heat added by mixing. Hand ≈ %d–%d %@, stand mixer ≈ %d–%d %@ — tune to your setup.",
+    "믹서": "Mixer",
+    "공식에 넣는 마찰 값 — 실제 반죽 상승 온도의 3~4배. 손반죽 %d~%d%@, 믹서(스탠드·버티컬·스파이럴) %d~%d%@. 오래·빠르게 칠수록 높게 잡으세요.":
+        "The friction value for this formula — 3–4× the dough's actual rise. Hand %d–%d %@, mixer (stand, vertical or spiral) %d–%d %@. Use more for longer or faster mixing.",
     "사용할 물 온도": "Water temperature to use",
     "얼음물이 필요합니다 — 얼음을 넣어 물 온도를 맞추세요.": "You'll need iced water — add ice to hit this temperature.",
     "너무 뜨겁습니다 — %d%@ 이상은 르방 활성을 해칠 수 있습니다.": "Too hot — above %d %@ can harm the levain.",

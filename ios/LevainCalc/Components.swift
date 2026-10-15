@@ -17,6 +17,8 @@ struct NumberField: View {
     var integer = false
     /// VoiceOver·음성 제어용 이름 — 화면 라벨이 비어 있는 행(밀가루·액체·기타 재료 이름 칸 아래)에서 넘긴다
     var accessibilityName: String? = nil
+    /// 이 값이 바뀔 때마다 칸에 포커스를 준다 — 다른 컨트롤에서 입력으로 넘길 때(물 온도 마찰계수 '직접')
+    var focusRequest = 0
 
     @State private var text = ""
     /// 편집 중 자기 자신이 쓴 값 — 외부 변경(레시피 불러오기·이스트 환산 등)과 구분
@@ -84,7 +86,7 @@ struct NumberField: View {
                     .allowsHitTesting(false)
             }
         }
-        .background { FieldTapArea().padding(.vertical, -FieldTapArea.slop) }
+        .background { FieldTapArea(focusRequest: focusRequest).padding(.vertical, -FieldTapArea.slop) }
     }
 
     private var labelText: some View {
@@ -171,13 +173,23 @@ private struct FieldTapArea: UIViewRepresentable {
     /// NumberField 위아래로 늘리는 폭 — 목록 행의 위아래 여백(iOS 17 11pt, 27 15pt)까지.
     /// 셀 밖은 UIKit이 셀 단위로 가려 옆 행을 덮지 않는다
     static let slop: CGFloat = 16
+    /// 바뀔 때마다 이 칸을 응답자로 — 탭과 같은 길(FocusState가 아니라 칸을 직접)
+    var focusRequest = 0
 
-    func makeUIView(context: Context) -> UIView { TapView() }
-    func updateUIView(_ view: UIView, context: Context) {}
+    func makeUIView(context: Context) -> UIView { TapView(focusRequest: focusRequest) }
+    func updateUIView(_ view: UIView, context: Context) {
+        guard let view = view as? TapView, view.focusRequest != focusRequest else { return }
+        view.focusRequest = focusRequest
+        // 이 갱신을 부른 탭(세그먼트 등)이 끝난 뒤에 — 그 컨트롤이 아직 터치를 쥐고 있다
+        DispatchQueue.main.async { view.focusField() }
+    }
 
     private final class TapView: UIView {
-        override init(frame: CGRect) {
-            super.init(frame: frame)
+        var focusRequest: Int
+
+        init(focusRequest: Int) {
+            self.focusRequest = focusRequest
+            super.init(frame: .zero)
             addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
         }
 
@@ -203,6 +215,10 @@ private struct FieldTapArea: UIViewRepresentable {
         }
 
         @objc private func tapped(_ tap: UITapGestureRecognizer) {
+            focusField()
+        }
+
+        func focusField() {
             guard let window else { return }
             let own = convert(bounds.insetBy(dx: 0, dy: FieldTapArea.slop), to: window)
             // 행(셀) 안에서만 찾는다 — 시트 뒤에 깔린 화면의 칸이 같은 자리에 있을 수 있다
