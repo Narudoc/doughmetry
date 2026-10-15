@@ -284,8 +284,11 @@ struct LibrarySyncTests {
             let local = LibrarySync.normalized(doc)
             _ = LibrarySync.merge(local: local, remote: local)
         }
-        // 호출마다 ISO8601DateFormatter를 만들던 때는 수 초 — 메인 스레드에서 돌므로 넉넉히 잡아도 1초 미만이어야 한다
-        #expect(elapsed < .seconds(1))
+        // 호출마다 ISO8601DateFormatter를 만들던 때는 수 초 — 메인 스레드에서 돌므로 넉넉히 잡아도 1초 미만이어야 한다.
+        // CI 러너의 시뮬레이터는 개발 기기보다 수십 배 느려(iOS 17.5에서 3.3초, 2026-10) 거기선 폭주만 잡는다 —
+        // 시뮬레이터 테스트는 CI를 TEST_RUNNER_CI로 받는다(ios.yml)
+        let limit: Duration = ProcessInfo.processInfo.environment["CI"] == nil ? .seconds(1) : .seconds(30)
+        #expect(elapsed < limit)
     }
 
     @Test("지운 레시피를 백업에서 복원하면 다음 병합 뒤에도 살아남는다 (같은 초 · 미래 묘비 포함)")

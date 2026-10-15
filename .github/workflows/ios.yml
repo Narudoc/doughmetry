@@ -78,6 +78,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.ui_tests
     runs-on: macos-26
     timeout-minutes: 30
+    # 시뮬레이터 안의 테스트는 러너 환경 변수를 받지 않는다 — xcodebuild가 TEST_RUNNER_ 접두를 떼어 넘긴다
+    # (CI에선 시간 제한 테스트가 폭주만 잡는다: LibrarySyncTests.mergePerformance)
+    env:
+      TEST_RUNNER_CI: "true"
     steps:
       - uses: actions/checkout@v7
 
@@ -123,6 +127,10 @@ jobs:
     name: oldest-ios (iOS ${{ matrix.ios }})
     runs-on: macos-26
     timeout-minutes: 60
+    # 시뮬레이터 안의 테스트는 러너 환경 변수를 받지 않는다 — xcodebuild가 TEST_RUNNER_ 접두를 떼어 넘긴다
+    # (CI에선 시간 제한 테스트가 폭주만 잡는다: LibrarySyncTests.mergePerformance)
+    env:
+      TEST_RUNNER_CI: "true"
     strategy:
       fail-fast: false
       matrix:
