@@ -77,7 +77,7 @@ enum TimelineNotifier {
         }
     }
 
-    /// 언어 선택은 설정 시트(레시피 탭)에 있어 타임라인 화면이 떠 있지 않아도 따라가야 한다
+    /// 언어 선택은 설정 시트(도구 탭)에 있어 타임라인 화면이 떠 있지 않아도 따라가야 한다
     private static func followLanguage() {
         withObservationTracking {
             _ = Lang.shared.current

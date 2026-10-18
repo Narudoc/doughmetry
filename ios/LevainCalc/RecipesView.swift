@@ -39,7 +39,6 @@ struct RecipesView: View {
     @State private var showImporter = false
     @State private var importError: String?
     @State private var importResult: (added: Int, skipped: Int)?
-    @State private var showSettings = false
     @State private var showImportDialog = false
     /// 빈 화면의 가져오기 버튼에서 연 선택지 — 툴바 버튼과 따로 두어 팝오버가 누른 버튼에서 나오게 한다
     @State private var showEmptyImportDialog = false
@@ -226,9 +225,6 @@ struct RecipesView: View {
                     skipped > 0
                         ? LF("%d개를 가져왔고, %d개는 이미 있는 버전이라 건너뛰었습니다.", added, skipped)
                         : LF("%d개의 레시피를 가져왔습니다.", count: added))
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsSheet()
             }
             .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
             // 고르지 않고 닫으면 미리 데운 모델 세션을 버린다
@@ -479,13 +475,6 @@ struct RecipesView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                showSettings = true
-            } label: {
-                Label(L("설정"), systemImage: "gearshape")
-            }
-        }
         ToolbarItem(placement: actionPlacement) {
             Button {
                 showImportDialog = true
