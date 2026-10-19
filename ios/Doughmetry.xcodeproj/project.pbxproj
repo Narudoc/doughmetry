@@ -1,0 +1,413 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AB10000129AA000100000001 /* DoughmetryCore in Frameworks */ = {isa = PBXBuildFile; productRef = AB10000329AA000100000003 /* DoughmetryCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AB10002629AA000100000026 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AB10000D29AA00010000000D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB10000929AA000100000009;
+			remoteInfo = Doughmetry;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		AB10000829AA000100000008 /* Doughmetry.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Doughmetry.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB10002029AA000100000020 /* DoughmetryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DoughmetryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AB10000429AA000100000004 /* Doughmetry */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Doughmetry;
+			sourceTree = "<group>";
+		};
+		AB10002129AA000100000021 /* DoughmetryUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DoughmetryUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AB10000529AA000100000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB10000129AA000100000001 /* DoughmetryCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB10002229AA000100000022 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AB10000629AA000100000006 = {
+			isa = PBXGroup;
+			children = (
+				AB10000429AA000100000004 /* Doughmetry */,
+				AB10002129AA000100000021 /* DoughmetryUITests */,
+				AB10000729AA000100000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AB10000729AA000100000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AB10000829AA000100000008 /* Doughmetry.app */,
+				AB10002029AA000100000020 /* DoughmetryUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AB10000929AA000100000009 /* Doughmetry */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB10000A29AA00010000000A /* Build configuration list for PBXNativeTarget "Doughmetry" */;
+			buildPhases = (
+				AB10000B29AA00010000000B /* Sources */,
+				AB10000529AA000100000005 /* Frameworks */,
+				AB10000C29AA00010000000C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB10000429AA000100000004 /* Doughmetry */,
+			);
+			name = Doughmetry;
+			packageProductDependencies = (
+				AB10000329AA000100000003 /* DoughmetryCore */,
+			);
+			productName = Doughmetry;
+			productReference = AB10000829AA000100000008 /* Doughmetry.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AB10002329AA000100000023 /* DoughmetryUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB10002A29AA00010000002A /* Build configuration list for PBXNativeTarget "DoughmetryUITests" */;
+			buildPhases = (
+				AB10002429AA000100000024 /* Sources */,
+				AB10002229AA000100000022 /* Frameworks */,
+				AB10002529AA000100000025 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AB10002729AA000100000027 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AB10002129AA000100000021 /* DoughmetryUITests */,
+			);
+			name = DoughmetryUITests;
+			productName = DoughmetryUITests;
+			productReference = AB10002029AA000100000020 /* DoughmetryUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AB10000D29AA00010000000D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					AB10000929AA000100000009 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					AB10002329AA000100000023 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = AB10000929AA000100000009;
+					};
+				};
+			};
+			buildConfigurationList = AB10000E29AA00010000000E /* Build configuration list for PBXProject "Doughmetry" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				ko,
+				en,
+				Base,
+			);
+			mainGroup = AB10000629AA000100000006;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AB10000F29AA00010000000F /* XCLocalSwiftPackageReference "DoughmetryCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AB10000729AA000100000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AB10000929AA000100000009 /* Doughmetry */,
+				AB10002329AA000100000023 /* DoughmetryUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AB10000C29AA00010000000C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB10002529AA000100000025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AB10000B29AA00010000000B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB10002429AA000100000024 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AB10002729AA000100000027 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB10000929AA000100000009 /* Doughmetry */;
+			targetProxy = AB10002629AA000100000026 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AB10001029AA000100000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AB10001129AA000100000011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AB10001229AA000100000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Doughmetry/Doughmetry.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G46DT9WHWV;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Doughmetry-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Doughmetry;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narudoc.doughmetry;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AB10001329AA000100000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Doughmetry/Doughmetry.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G46DT9WHWV;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Doughmetry-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Doughmetry;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narudoc.doughmetry;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AB10002829AA000100000028 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G46DT9WHWV;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narudoc.doughmetry.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Doughmetry;
+			};
+			name = Debug;
+		};
+		AB10002929AA000100000029 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G46DT9WHWV;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narudoc.doughmetry.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Doughmetry;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AB10000A29AA00010000000A /* Build configuration list for PBXNativeTarget "Doughmetry" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB10001229AA000100000012 /* Debug */,
+				AB10001329AA000100000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB10000E29AA00010000000E /* Build configuration list for PBXProject "Doughmetry" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB10001029AA000100000010 /* Debug */,
+				AB10001129AA000100000011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB10002A29AA00010000002A /* Build configuration list for PBXNativeTarget "DoughmetryUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB10002829AA000100000028 /* Debug */,
+				AB10002929AA000100000029 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AB10000F29AA00010000000F /* XCLocalSwiftPackageReference "DoughmetryCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = DoughmetryCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AB10000329AA000100000003 /* DoughmetryCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DoughmetryCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AB10000D29AA00010000000D /* Project object */;
+}

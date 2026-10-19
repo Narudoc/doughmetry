@@ -6,11 +6,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BUILD_NUMBER="${1:-$(date +%Y%m%d%H%M)}"
-ARCHIVE="build/LevainCalc.xcarchive"
+ARCHIVE="build/Doughmetry.xcarchive"
 
 ./AppStore/preflight.sh repo
 
-xcodebuild -project LevainCalc.xcodeproj -scheme LevainCalc -configuration Release \
+xcodebuild -project Doughmetry.xcodeproj -scheme Doughmetry -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" \
   -allowProvisioningUpdates CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive
 

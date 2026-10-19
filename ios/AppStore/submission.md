@@ -1,6 +1,6 @@
 # 도우메트리: 사워도우 계산기 — App Store 첫 출시 가이드 (Xcode 프로젝트 → TestFlight → 심사 제출)
 
-기준: Xcode 27.0 (27A266a) · iOS 27.0 SDK · 2026-10-02 재검토 · 번들 ID `com.narudoc.doughmetry`, iCloud 컨테이너 `iCloud.com.narudoc.doughmetry` · 프로젝트 `ios/LevainCalc.xcodeproj`(타깃·폴더 이름은 호환성 때문에 `LevainCalc` 유지).
+기준: Xcode 27.0 (27A266a) · iOS 27.0 SDK · 2026-10-02 재검토 · 번들 ID `com.narudoc.doughmetry`, iCloud 컨테이너 `iCloud.com.narudoc.doughmetry` · 프로젝트 `ios/Doughmetry.xcodeproj`(타깃·스킴 `Doughmetry`, 코어 패키지 `DoughmetryCore` — 2026-10-19 `LevainCalc`·`LevainCore`에서 개명).
 
 이 문서는 저장소·배포 상태(커밋했는지, 푸시했는지, Pages가 무엇을 내려주는지)를 적어 두지 않는다 — 금방 낡기 때문이다. 그런 상태는 0장 도입부와 3-2의 확인 명령으로 그때그때 본다. 서명·프로비저닝·iCloud 컨테이너 사실은 2026-09-11에 확인한 것이고 본문에 날짜를 붙여 두었다(고정값 표·0-12·1-4·8장·부록 B). 2장의 2026-09-10과 5장 6번의 2026-09-11은 각각 ASC 레코드를 만든 날짜와 번들 ID를 바꾼 날짜다.
 
@@ -29,7 +29,7 @@
 | 개인정보 처리방침 URL | `https://narudoc.github.io/doughmetry/privacy.html` (저장소의 `public/privacy.html` — 3장) |
 | 지원 URL | `https://narudoc.github.io/doughmetry/support.html` (저장소의 `public/support.html`, 한/영). 대안 `https://github.com/Narudoc/doughmetry/issues` |
 | 마케팅 URL (선택) | 한국어 `https://narudoc.github.io/doughmetry/` (한국어 웹 계산기) / 영어 세 현지화는 `https://narudoc.github.io/doughmetry/support.html`(한/영) 또는 비움 — 웹 계산기는 한국어 화면뿐이다 |
-| 공개 문의 이메일 (privacy.html · support.html · 지원 연락처) | 실제로 확인하는 주소 **하나**로 통일. 기본값은 `juvesoul@icloud.com`. 다른 주소(예: `juvesoul@gmail.com`)로 하려면 `cd /Users/narudoc/Claude/Doughmetry && grep -rln 'juvesoul@icloud.com' public ios/AppStore/privacy-policy.md ios/LevainCalc` 로 쓰는 곳을 확인한 뒤 그 파일들만 `sed -i '' 's/juvesoul@icloud.com/새주소/g' <파일들>`로 바꾼다. `submission.md`는 `sed`에 넣지 말 것 — 고정값 표·1장·4~6장의 `juvesoul@icloud.com`은 Apple 계정이라 바뀌면 안 된다. |
+| 공개 문의 이메일 (privacy.html · support.html · 지원 연락처) | 실제로 확인하는 주소 **하나**로 통일. 기본값은 `juvesoul@icloud.com`. 다른 주소(예: `juvesoul@gmail.com`)로 하려면 `cd /Users/narudoc/Claude/Doughmetry && grep -rln 'juvesoul@icloud.com' public ios/AppStore/privacy-policy.md ios/Doughmetry` 로 쓰는 곳을 확인한 뒤 그 파일들만 `sed -i '' 's/juvesoul@icloud.com/새주소/g' <파일들>`로 바꾼다. `submission.md`는 `sed`에 넣지 말 것 — 고정값 표·1장·4~6장의 `juvesoul@icloud.com`은 Apple 계정이라 바뀌면 안 된다. |
 | 심사 연락처 (App Review Information) | 이름(First) `Kiyoung` / 성(Last) `Ha` / 전화 `+82 10-____-____` ← **지금 채워 둘 것.** 국제 형식 필수 — `+`와 국가번호 없이 숫자만 넣으면 저장 거부. 이메일은 위 Apple 계정. |
 | 저작권 (Copyright) | `2026 Kiyoung Ha` — ASC는 권리 보유자 이름을 요구하므로 개발 팀 이름과 맞춘다. 필명도 쓰려면 `2026 Kiyoung Ha (Narudoc)`. © 기호는 자동. |
 | 스크린샷 | iPhone 6.9형 `ios/AppStore/screenshots/{ko,en}/6.9-jpg/01-convert.jpg … 06-fiche.jpg` (1320×2868) + iPad 13형 `ios/AppStore/screenshots/{ko,en}/13-jpg/` 같은 이름 (2064×2752). 0-13의 `capture-screenshots.sh`가 시뮬레이터에서 원본 해상도 JPEG(알파 없음)로 바로 찍는다 — 변환·업스케일 없음. 순서와 화면은 [listing.md](listing.md) 스크린샷 표 |
@@ -62,18 +62,18 @@ cd /Users/narudoc/Claude/Doughmetry
 git status --short                          # 아무것도 없어야 한다 (?? 새 파일 포함)
 git fetch -q && git status -sb | head -1    # '## main...origin/main' 뒤에 [ahead …]/[behind …]가 없어야 한다
 export PATH="$HOME/.local/node/bin:$PATH" && npx vitest run && npx tsc --noEmit
-(cd ios/LevainCore && swift test)               # 코어 테스트 (Xcode 필요)
+(cd ios/DoughmetryCore && swift test)               # 코어 테스트 (Xcode 필요)
 ```
 
 ### 0-1. [적용됨 — 확인만] 앱 안 개인정보 처리방침 링크 (심사 지침 5.1.1(i))
 
-설정 시트 맨 아래 섹션에 개인정보 처리방침·지원 링크와 버전이 있다. URL은 `ios/LevainCalc/AppLinks.swift` 한 곳에 모여 있다(`https://narudoc.github.io/doughmetry/privacy.html`, `…/support.html`). 링크 대상 페이지는 3장에서 배포한다 — 5장 TestFlight에서 링크를 눌러 Safari로 열리는지 본다.
+설정 시트 맨 아래 섹션에 개인정보 처리방침·지원 링크와 버전이 있다. URL은 `ios/Doughmetry/AppLinks.swift` 한 곳에 모여 있다(`https://narudoc.github.io/doughmetry/privacy.html`, `…/support.html`). 링크 대상 페이지는 3장에서 배포한다 — 5장 TestFlight에서 링크를 눌러 Safari로 열리는지 본다.
 
 ### 0-2. [적용됨 — 확인만] PrivacyInfo.xcprivacy
 
-앱이 `UserDefaults`/`@AppStorage`를 쓰므로 Apple의 "required-reason API" 선언이 필요하다(없으면 업로드마다 `ITMS-91053 Missing API declaration`). `ios/LevainCalc/PrivacyInfo.xcprivacy`가 UserDefaults 한 항목(`CA92.1` — 앱 자신만 접근하는 정보를 읽고 쓰기)만 선언한다. 다른 required-reason API(파일 타임스탬프, 부팅 시간, 디스크 용량, 키보드 목록)는 쓰지 않는다. 폴더 동기화 그룹이라 파일만 있으면 .app 루트로 복사된다.
+앱이 `UserDefaults`/`@AppStorage`를 쓰므로 Apple의 "required-reason API" 선언이 필요하다(없으면 업로드마다 `ITMS-91053 Missing API declaration`). `ios/Doughmetry/PrivacyInfo.xcprivacy`가 UserDefaults 한 항목(`CA92.1` — 앱 자신만 접근하는 정보를 읽고 쓰기)만 선언한다. 다른 required-reason API(파일 타임스탬프, 부팅 시간, 디스크 용량, 키보드 목록)는 쓰지 않는다. 폴더 동기화 그룹이라 파일만 있으면 .app 루트로 복사된다.
 
-파일이 없다면: Xcode에서 `LevainCalc` 그룹 선택 → `File > New > File from Template…` → `iOS` → `Resource` → `App Privacy` → `Targets: LevainCalc` → `Privacy Accessed API Types`에 `User Defaults` / `CA92.1` 하나, `Privacy Tracking Enabled` = NO.
+파일이 없다면: Xcode에서 `Doughmetry` 그룹 선택 → `File > New > File from Template…` → `iOS` → `Resource` → `App Privacy` → `Targets: Doughmetry` → `Privacy Accessed API Types`에 `User Defaults` / `CA92.1` 하나, `Privacy Tracking Enabled` = NO.
 
 ### 0-3. [적용됨 — 확인만] ITSAppUsesNonExemptEncryption = NO
 
@@ -83,16 +83,16 @@ export PATH="$HOME/.local/node/bin:$PATH" && npx vitest run && npx tsc --noEmit
 
 ```bash
 cd /Users/narudoc/Claude/Doughmetry/ios
-xcodebuild -project LevainCalc.xcodeproj -scheme LevainCalc -configuration Release \
+xcodebuild -project Doughmetry.xcodeproj -scheme Doughmetry -configuration Release \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/check -quiet build
-APP=build/check/Build/Products/Release-iphonesimulator/LevainCalc.app
+APP=build/check/Build/Products/Release-iphonesimulator/Doughmetry.app
 plutil -p "$APP/Info.plist" | grep -E 'ITSAppUsesNonExemptEncryption|MinimumOSVersion'   # false(또는 0) / "17.0"
 plutil -extract UIDeviceFamily json -o - "$APP/Info.plist"; echo                         # [1,2]
 plutil -extract UISupportedInterfaceOrientations json -o - "$APP/Info.plist"; echo       # 세로 하나
 plutil -extract 'UISupportedInterfaceOrientations~ipad' json -o - "$APP/Info.plist"; echo # 네 방향
 plutil -extract UIApplicationSceneManifest.UIApplicationSupportsMultipleScenes raw "$APP/Info.plist"   # false
 plutil -lint "$APP/PrivacyInfo.xcprivacy"                                                # … OK
-grep -rln 'doughmetry/privacy.html' LevainCalc                                           # 파일 하나 이상
+grep -rln 'doughmetry/privacy.html' Doughmetry                                           # 파일 하나 이상
 ```
 
 빌드 경고는 0건이어야 한다(`-quiet` 출력에 `warning:`이 없을 것 — AppIntents 메타데이터 생략 안내는 무해).
@@ -101,7 +101,7 @@ grep -rln 'doughmetry/privacy.html' LevainCalc                                  
 
 `project.pbxproj`의 `CURRENT_PROJECT_VERSION = 1`과 `ios/AppStore/archive.sh`의 타임스탬프(`date +%Y%m%d%H%M`, 예 `202609061830`) 두 방식이 공존한다. 둘 다 "빌드 번호 자동 관리"가 켜져 있어 충돌은 자동 보정되지만, 첫 출시는 **GUI(Xcode Organizer)만** 쓰기로 정한다. 규칙:
 
-1. 업로드할 때마다 `TARGETS > LevainCalc > General > Identity > Build` 값을 `1`, `2`, `3`… 으로 손으로 올린다 (`Version`은 `1.0` 유지).
+1. 업로드할 때마다 `TARGETS > Doughmetry > General > Identity > Build` 값을 `1`, `2`, `3`… 으로 손으로 올린다 (`Version`은 `1.0` 유지).
 2. Organizer 배포 시 "Manage Version and Build Number"는 절대 끄지 않는다 (기본 흐름에서는 보이지도 않고 자동 적용).
 3. 나중에 CLI(`archive.sh`)를 섞어 쓸 때 안전한 순서는 GUI 먼저 → CLI. CLI(타임스탬프) 뒤에 GUI(빌드 1)를 자동 관리 없이 올리면 `ITMS-90061`로 거부된다.
 
@@ -119,7 +119,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
 ### 0-8. [적용됨] 스킴 공유
 
-`ios/LevainCalc.xcodeproj/xcshareddata/xcschemes/LevainCalc.xcscheme`이 저장소에 있다 — 스킴 `LevainCalc`가 앱과 UI 스모크 테스트(`LevainCalcUITests`)를 함께 담는다. `xcodebuild -list -project ios/LevainCalc.xcodeproj`의 `Schemes:` 아래에 `LevainCalc`가 보이면 정상. `archive.sh`·Xcode GUI·0-9의 `xcodebuild test`가 이 스킴을 쓴다.
+`ios/Doughmetry.xcodeproj/xcshareddata/xcschemes/Doughmetry.xcscheme`이 저장소에 있다 — 스킴 `Doughmetry`가 앱과 UI 스모크 테스트(`DoughmetryUITests`)를 함께 담는다. `xcodebuild -list -project ios/Doughmetry.xcodeproj`의 `Schemes:` 아래에 `Doughmetry`가 보이면 정상. `archive.sh`·Xcode GUI·0-9의 `xcodebuild test`가 이 스킴을 쓴다.
 
 ### 0-9. [필수] iOS 17/18·iPad에서 실행 확인 (첫 업로드 전)
 
@@ -139,8 +139,8 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
    ```bash
    cd /Users/narudoc/Claude/Doughmetry
    for d in "iPhone SE iOS17" "iPhone 15 iOS18" "iPad Air iOS18"; do
-     xcodebuild test -project ios/LevainCalc.xcodeproj -scheme LevainCalc \
-       -destination "platform=iOS Simulator,name=$d" -only-testing:LevainCalcUITests \
+     xcodebuild test -project ios/Doughmetry.xcodeproj -scheme Doughmetry \
+       -destination "platform=iOS Simulator,name=$d" -only-testing:DoughmetryUITests \
        -collect-test-diagnostics never -quiet || echo "실패: $d"
    done
    ```
@@ -149,7 +149,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
    끝에 찍히는 `.xcresult`를 `open`해 첨부 스크린샷(`ko-tab0` …)에서 탭 바·하단 요약 바가 겹치거나 잘리지 않는지 본다.
 4. 손으로 확인 — `iPhone SE iOS17`에서는 전부, `iPhone 15 iOS18`에서는 빠르게: 사진 선택기가 열리고 사진 가져오기가 규칙 파서로 동작해 확인 시트가 뜸 / 숫자 입력 중 키보드 `완료`로 닫힘 / 도구 → 타임라인 알림 권한 요청·예약 / 설정 맨 아래 개인정보 처리방침·지원 링크가 Safari로 열림 / 설정에서 언어 전환.
-5. 결정(2026-10): iOS 17.5·18.2 점검에서 나온 문제는 `#unavailable(iOS 26)`/`#available` 가지로 모두 고칠 수 있어 **17.0을 유지한다**. 앞으로 iOS 17에서 고치는 데 품이 드는 문제가 나오면 고치지 말고 최소 버전을 올린다 — `project.pbxproj`의 프로젝트 수준 `IPHONEOS_DEPLOYMENT_TARGET = 17.0;` 두 곳(Debug·Release — 앱과 UI 테스트 타깃이 함께 따른다)을 `18.0`으로 바꾸고, 고정값 표와 [ios/README.md](../README.md)의 "iOS 17"을 함께 고친다. `LevainCore` 패키지의 `.iOS(.v17)`은 그대로 둬도 된다.
+5. 결정(2026-10): iOS 17.5·18.2 점검에서 나온 문제는 `#unavailable(iOS 26)`/`#available` 가지로 모두 고칠 수 있어 **17.0을 유지한다**. 앞으로 iOS 17에서 고치는 데 품이 드는 문제가 나오면 고치지 말고 최소 버전을 올린다 — `project.pbxproj`의 프로젝트 수준 `IPHONEOS_DEPLOYMENT_TARGET = 17.0;` 두 곳(Debug·Release — 앱과 UI 테스트 타깃이 함께 따른다)을 `18.0`으로 바꾸고, 고정값 표와 [ios/README.md](../README.md)의 "iOS 17"을 함께 고친다. `DoughmetryCore` 패키지의 `.iOS(.v17)`은 그대로 둬도 된다.
 6. iPad (iOS 27 시뮬레이터 `iPad Pro 13-inch (M5)`와 `iPad Air 11-inch (M4)`, 15분) — 심사관이 iPad로 열 수 있다:
    - 세로·가로(`⌘←`/`⌘→`)에서 화면이 똑바로 서고 잘리는 곳이 없음. 넓은 화면에서 폼이 읽기 좋은 폭으로 가운데에 모임.
    - 창 크기 조절(창 모드에서 모서리를 최소 크기까지)과 Split View·Slide Over의 좁은 폭(약 320pt)에서 세그먼트·숫자 행이 깨지지 않음.
@@ -175,7 +175,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 ### 0-12. 조치 불필요로 확인된 항목 (참고)
 
 - **앱 아이콘 알파 채널**: 소스 PNG는 RGBA지만 픽셀 전부 불투명이고, 실제 업로드되는 `Assets.car`는 RGB로 변환해 컴파일해도 바이트 단위로 동일함이 확인됐다. `ITMS-90717`은 발생하지 않는다. 손대지 말 것. (4-2의 Validate App이 최종 확인.)
-- **iCloud App ID/컨테이너 등록 (2026-09-11 재확인)**: 2026-09-06 16:05 프로파일은 옛 번들 ID `com.narudoc.levaincalc`(컨테이너 `iCloud.com.narudoc.levaincalc`) 것이라 개명 후에는 근거가 되지 않는다. 개명 뒤 Xcode가 **2026-09-11 08:28에 새 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`(UUID `963f121d-931f-4fc1-be5b-24d48474e678`)를 발급**했고, 그 엔타이틀먼트의 `icloud-container-identifiers`·`ubiquity-container-identifiers`·`icloud-container-development-container-identifiers` 3종이 모두 `iCloud.com.narudoc.doughmetry`다. 포털에 없는 컨테이너는 프로파일에 담기지 못하므로 이것이 등록 증거다 → **새 App ID·새 컨테이너 모두 포털 등록 완료**, 1-4는 확인만 하면 된다. `LevainCalc.entitlements`는 이미 새 컨테이너로 고쳐져 있으니 값만 확인하고 `icloud-container-environment`나 `aps-environment`를 **추가하지 말 것**.
+- **iCloud App ID/컨테이너 등록 (2026-09-11 재확인)**: 2026-09-06 16:05 프로파일은 옛 번들 ID `com.narudoc.levaincalc`(컨테이너 `iCloud.com.narudoc.levaincalc`) 것이라 개명 후에는 근거가 되지 않는다. 개명 뒤 Xcode가 **2026-09-11 08:28에 새 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`(UUID `963f121d-931f-4fc1-be5b-24d48474e678`)를 발급**했고, 그 엔타이틀먼트의 `icloud-container-identifiers`·`ubiquity-container-identifiers`·`icloud-container-development-container-identifiers` 3종이 모두 `iCloud.com.narudoc.doughmetry`다. 포털에 없는 컨테이너는 프로파일에 담기지 못하므로 이것이 등록 증거다 → **새 App ID·새 컨테이너 모두 포털 등록 완료**, 1-4는 확인만 하면 된다. `Doughmetry.entitlements`는 이미 새 컨테이너로 고쳐져 있으니 값만 확인하고 `icloud-container-environment`나 `aps-environment`를 **추가하지 말 것**.
 - **권한 문구(NSPhotoLibrary/NSCamera)·푸시 엔타이틀먼트**: PhotosPicker(out-of-process)와 로컬 알림만 써서 불필요. 추가하면 오히려 심사 질문거리.
 - **스크린샷 알파 채널**: 0-13의 스크립트가 처음부터 JPEG(알파 없음)로 찍으므로 따로 변환하지 않는다.
 
@@ -229,8 +229,8 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
 ### 1-4. App ID·iCloud — 확인만
 
-1. **확인만 하면 된다 (2026-09-11 등록 완료).** 번들 ID가 `com.narudoc.doughmetry`로 바뀌자(2026-09-11 08:28:16 스크립트가 `LevainCalc.entitlements`·`project.pbxproj`를 디스크에서 수정, 프로젝트는 Xcode에 열려 있던 상태) Xcode 자동 서명(Update Signing)이 한 번의 실행으로 새 iCloud 컨테이너 `iCloud.com.narudoc.doughmetry`(포털 ID `F5PQF9M9GU`)를 만들고 App ID `XC com narudoc doughmetry`에 iCloud capability로 연결한 뒤 08:28:21에 프로파일을 발급했다 — `Containers`의 `+`를 누른 적도, 기기 빌드도 없었다(DerivedData `Logs/Update Signing/80028A71-….xcactivitylog`에 `POST /v1/cloudContainers` → `POST /v1/bundleIds` → `/v1/profiles` 순서로 기록됨). 2026-09-11 08:28 발급 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`에 `application-identifier = G46DT9WHWV.com.narudoc.doughmetry`, `icloud-container-identifiers`·`ubiquity-container-identifiers = iCloud.com.narudoc.doughmetry`가 들어 있다. `https://developer.apple.com/account/resources/identifiers/list` 에서 `com.narudoc.doughmetry` 행(Xcode가 붙인 이름 `XC com narudoc doughmetry`, 포털 ID `VH5G2ZZ8QK`)과 `iCloud Containers` 목록의 `iCloud.com.narudoc.doughmetry`를 눈으로 확인만 한다. 옛 `com.narudoc.levaincalc` App ID와 `iCloud.com.narudoc.levaincalc` 컨테이너는 그대로 두어도 무해하다 — 다만 옛 컨테이너의 데이터는 새 앱으로 넘어오지 않는다. 포털(`developer.apple.com`)에서 새로 만들 필요는 없다 — 이미 등록돼 있고, 포털에서 만든 컨테이너도 Xcode가 새로고침으로 읽어 올 뿐 충돌하지 않는다.
-2. Xcode: 프로젝트 `LevainCalc` → `TARGETS > LevainCalc` → `Signing & Capabilities` 탭 → 필터 `All`(또는 `Release`):
+1. **확인만 하면 된다 (2026-09-11 등록 완료).** 번들 ID가 `com.narudoc.doughmetry`로 바뀌자(2026-09-11 08:28:16 스크립트가 `LevainCalc.entitlements`(지금 `Doughmetry.entitlements`)·`project.pbxproj`를 디스크에서 수정, 프로젝트는 Xcode에 열려 있던 상태) Xcode 자동 서명(Update Signing)이 한 번의 실행으로 새 iCloud 컨테이너 `iCloud.com.narudoc.doughmetry`(포털 ID `F5PQF9M9GU`)를 만들고 App ID `XC com narudoc doughmetry`에 iCloud capability로 연결한 뒤 08:28:21에 프로파일을 발급했다 — `Containers`의 `+`를 누른 적도, 기기 빌드도 없었다(DerivedData `Logs/Update Signing/80028A71-….xcactivitylog`에 `POST /v1/cloudContainers` → `POST /v1/bundleIds` → `/v1/profiles` 순서로 기록됨). 2026-09-11 08:28 발급 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`에 `application-identifier = G46DT9WHWV.com.narudoc.doughmetry`, `icloud-container-identifiers`·`ubiquity-container-identifiers = iCloud.com.narudoc.doughmetry`가 들어 있다. `https://developer.apple.com/account/resources/identifiers/list` 에서 `com.narudoc.doughmetry` 행(Xcode가 붙인 이름 `XC com narudoc doughmetry`, 포털 ID `VH5G2ZZ8QK`)과 `iCloud Containers` 목록의 `iCloud.com.narudoc.doughmetry`를 눈으로 확인만 한다. 옛 `com.narudoc.levaincalc` App ID와 `iCloud.com.narudoc.levaincalc` 컨테이너는 그대로 두어도 무해하다 — 다만 옛 컨테이너의 데이터는 새 앱으로 넘어오지 않는다. 포털(`developer.apple.com`)에서 새로 만들 필요는 없다 — 이미 등록돼 있고, 포털에서 만든 컨테이너도 Xcode가 새로고침으로 읽어 올 뿐 충돌하지 않는다.
+2. Xcode: 프로젝트 `Doughmetry` → `TARGETS > Doughmetry` → `Signing & Capabilities` 탭 → 필터 `All`(또는 `Release`):
    - `Signing`: `Automatically manage signing` 체크, `Team` = `Kiyoung Ha (G46DT9WHWV)`, `Bundle Identifier` = `com.narudoc.doughmetry`, 빨간 오류 없음.
    - `iCloud`: `Services`에 `iCloud Documents`만 체크(CloudKit·Key-value storage는 **끄기**), `Containers`에 `iCloud.com.narudoc.doughmetry` 체크, 빨간 `!` 없음.
 3. 빨간 `!`가 보이면 `Containers` 아래 원형 화살표(새로고침) 클릭 → 그래도 안 되면 `Automatically manage signing`을 껐다가 다시 켠다. 그래도 안 되면 8장의 `서명 오류 … doesn't include the com.apple.developer.icloud-container-identifiers entitlement` 행 참고.
@@ -309,24 +309,24 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 
 ### 4-1. 아카이브
 
-1. `open /Users/narudoc/Claude/Doughmetry/ios/LevainCalc.xcodeproj`.
-2. 툴바 스킴이 `LevainCalc`인지 확인. 실행 대상 드롭다운 → `Any iOS Device (arm64)` 선택 (메뉴 `Product > Destination > Any iOS Device`).
-3. `TARGETS > LevainCalc > General > Identity`: `Version` = `1.0`, `Build` = `1` 확인 (두 번째 업로드부터는 `Build`를 올린다, 0-4).
-4. 저장소·배포 상태 점검 — 저장소와 배포가 출시할 상태인지는 이 스크립트가 기준이다 (작업 트리 깨끗함, HEAD = origin/main, privacy·support 페이지 200, 앱 안 처리방침 링크, PrivacyInfo lint, LevainCore 테스트, 스토어 스크린샷 — 한/영 × iPhone 6.9형·iPad 13형 × 01~06(07은 있으면) 파일·픽셀 크기·알파 없음, 목록에 없는 파일 없음):
+1. `open /Users/narudoc/Claude/Doughmetry/ios/Doughmetry.xcodeproj`.
+2. 툴바 스킴이 `Doughmetry`인지 확인. 실행 대상 드롭다운 → `Any iOS Device (arm64)` 선택 (메뉴 `Product > Destination > Any iOS Device`).
+3. `TARGETS > Doughmetry > General > Identity`: `Version` = `1.0`, `Build` = `1` 확인 (두 번째 업로드부터는 `Build`를 올린다, 0-4).
+4. 저장소·배포 상태 점검 — 저장소와 배포가 출시할 상태인지는 이 스크립트가 기준이다 (작업 트리 깨끗함, HEAD = origin/main, privacy·support 페이지 200, 앱 안 처리방침 링크, PrivacyInfo lint, DoughmetryCore 테스트, 스토어 스크린샷 — 한/영 × iPhone 6.9형·iPad 13형 × 01~06(07은 있으면) 파일·픽셀 크기·알파 없음, 목록에 없는 파일 없음):
 
    ```bash
    cd /Users/narudoc/Claude/Doughmetry && ios/AppStore/preflight.sh repo   # → preflight repo: 통과
    ```
 
 5. 메뉴 `Product > Archive`. Release 구성으로 빌드된다(수 분). 첫 아카이브에서 macOS 키체인/Apple 계정 인증 창이 뜨면 허용.
-6. 끝나면 Organizer가 자동으로 열린다 (안 열리면 `Window > Organizer`, `⌥⇧⌘O`) → 왼쪽 `Archives` → 방금 만든 `LevainCalc 1.0 (1)` 항목이 `iOS Apps` 아래 있는지 확인 (`Other Items` 아래면 스킴 아카이브 설정 문제, 8장).
+6. 끝나면 Organizer가 자동으로 열린다 (안 열리면 `Window > Organizer`, `⌥⇧⌘O`) → 왼쪽 `Archives` → 방금 만든 `Doughmetry 1.0 (1)` 항목이 `iOS Apps` 아래 있는지 확인 (`Other Items` 아래면 스킴 아카이브 설정 문제, 8장).
 7. 아카이브 내용 검증 — Organizer의 가장 최근 아카이브를 본다 (ITSAppUsesNonExemptEncryption false, UIDeviceFamily [1,2], UIApplicationSupportsMultipleScenes false, PrivacyInfo.xcprivacy 포함, MinimumOSVersion = 프로젝트의 IPHONEOS_DEPLOYMENT_TARGET):
 
    ```bash
    ios/AppStore/preflight.sh archive   # → preflight archive: 통과
    ```
 
-   빌드 번호도 눈으로 보려면: `plutil -p "$(ls -td ~/Library/Developer/Xcode/Archives/*/*.xcarchive | head -1)/Products/Applications/LevainCalc.app/Info.plist" | grep -E 'CFBundleVersion|CFBundleShortVersionString'` → `"1"` / `"1.0"`.
+   빌드 번호도 눈으로 보려면: `plutil -p "$(ls -td ~/Library/Developer/Xcode/Archives/*/*.xcarchive | head -1)/Products/Applications/Doughmetry.app/Info.plist" | grep -E 'CFBundleVersion|CFBundleShortVersionString'` → `"1"` / `"1.0"`.
 
 8. (선택) Organizer에서 아카이브 우클릭 → `Generate Privacy Report` → `User Defaults / CA92.1` 항목이 보이면 0-2 정상.
 
@@ -335,7 +335,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 1. Organizer에서 아카이브 선택 → 오른쪽 `Validate App` 클릭.
 2. `TestFlight & App Store` 기본 선택 그대로 → `Validate`.
 3. 처음이면 클라우드 서명 인증서 생성 동의 창이 뜰 수 있다 → 진행. 2FA 코드 요청이 오면 입력.
-4. 몇 분 뒤 `App "LevainCalc" successfully validated`가 나오면 통과. 오류가 나오면 8장에서 코드(ITMS-xxxxx)로 찾는다.
+4. 몇 분 뒤 `App "Doughmetry" successfully validated`가 나오면 통과. 오류가 나오면 8장에서 코드(ITMS-xxxxx)로 찾는다.
 
 ### 4-3. Distribute App (업로드) — GUI 경로 (권장)
 
@@ -354,7 +354,7 @@ GUI 대신 쓸 수 있다. 같은 Apple 계정이 Xcode에 로그인돼 있어�
 1. `cd /Users/narudoc/Claude/Doughmetry/ios && ./AppStore/archive.sh` — 먼저 `preflight.sh repo`로 저장소·배포 상태를 보고(어긋나면 아카이브하지 않는다), 아카이브 뒤 업로드 전에 `preflight.sh archive`로 아카이브 내용을 본다. 빌드 번호를 `date +%Y%m%d%H%M`(예 `202609061830`)으로 넣고 `xcodebuild archive` → `-exportArchive`(`AppStore/ExportOptions.plist`: `method=app-store-connect`, `destination=upload`, `signingStyle=automatic`, `teamID=G46DT9WHWV`, `uploadSymbols=true`, `manageAppVersionAndBuildNumber=true`)까지 실행한다. 빌드 번호를 지정하려면 `./AppStore/archive.sh 2`.
 2. 종료 코드 0이면 ASC가 패키지를 받은 것. 이후 처리 과정은 GUI와 같다.
 3. 참고: `-allowProvisioningUpdates`는 자동 서명 타깃의 프로파일·App ID·인증서를 만들고 갱신한다(Apple 문서). 다만 iCloud 컨테이너까지 만들어 주는지는 확인하지 않았으므로, 1-4처럼 Xcode GUI 서명이 한 번 해결된 상태(지금이 그 상태)에서 쓰는 것이 안전하다.
-4. .ipa만 만들고 Transporter 앱으로 올리려면 `ExportOptions.plist`의 `destination`을 `export`로 바꿔 실행 → `ios/build/export/LevainCalc.ipa` → Mac App Store의 `Transporter`(Apple, 무료) → 같은 Apple 계정 로그인 → `+`로 .ipa 추가 → 초록 체크 → `Deliver`.
+4. .ipa만 만들고 Transporter 앱으로 올리려면 `ExportOptions.plist`의 `destination`을 `export`로 바꿔 실행 → `ios/build/export/Doughmetry.ipa` → Mac App Store의 `Transporter`(Apple, 무료) → 같은 Apple 계정 로그인 → `+`로 .ipa 추가 → 초록 체크 → `Deliver`.
 
 ### 4-4. 수출 규정 (Export Compliance) 답변
 
@@ -540,7 +540,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 1. `앱 > 도우메트리: 사워도우 계산기 > 1.0` 페이지 상단 `이 버전 출시 (Release This Version)` → `출시 (Release)`.
 2. `배포 준비됨`이 되면 아이폰·아이패드 App Store에서 `도우메트리: 사워도우 계산기` 검색 → 페이지·스크린샷(아이패드에서는 13형 세트)·`데이터가 수집되지 않음` 라벨 확인. 영어로는 `Doughmetry` 검색(미국 계정이 없으면 웹 `apps.apple.com/us/…`·`/gb/…`에서 영어 페이지 확인).
 3. TestFlight 빌드는 그대로 90일 유지되지만 스토어 버전을 설치하면 TestFlight 설치본을 대체한다(데이터 유지).
-4. 스토어 링크 연결 (새 빌드·웹 배포 필요): `ios/LevainCalc/AppLinks.swift`의 `appStoreID`에 ASC `Apple ID`(숫자)를 넣으면 설정의 앱 평가·공유 행이 나타난다(다음 업데이트에 포함). 웹은 `public/support.html`의 "출시 예정 (coming soon)"을 App Store 링크로 바꾸고, `src/App.tsx` 푸터에 네 번째 링크(App Store)를 더하고, `index.html`에 `<meta name="apple-itunes-app" content="app-id=…">`를 넣은 뒤 3-2대로 푸시·확인한다.
+4. 스토어 링크 연결 (새 빌드·웹 배포 필요): `ios/Doughmetry/AppLinks.swift`의 `appStoreID`에 ASC `Apple ID`(숫자)를 넣으면 설정의 앱 평가·공유 행이 나타난다(다음 업데이트에 포함). 웹은 `public/support.html`의 "출시 예정 (coming soon)"을 App Store 링크로 바꾸고, `src/App.tsx` 푸터에 네 번째 링크(App Store)를 더하고, `index.html`에 `<meta name="apple-itunes-app" content="app-id=…">`를 넣은 뒤 3-2대로 푸시·확인한다.
 
 ### 7-3. 거절되면
 
@@ -554,7 +554,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 
 ### 7-4. 업데이트(1.0.1 이후) 내는 법
 
-1. 코드 수정 후 Xcode `TARGETS > LevainCalc > General > Identity`: `Version` = `1.0.1` (MARKETING_VERSION), `Build` = 이전보다 큰 수 (예 `2`). 빌드 번호는 항상 증가.
+1. 코드 수정 후 Xcode `TARGETS > Doughmetry > General > Identity`: `Version` = `1.0.1` (MARKETING_VERSION), `Build` = 이전보다 큰 수 (예 `2`). 빌드 번호는 항상 증가.
 2. `Any iOS Device (arm64)` → `Product > Archive` → Organizer `Distribute App > TestFlight & App Store > Distribute` (4-3과 동일).
 3. ASC → `앱 > 도우메트리: 사워도우 계산기` → 사이드바 `iOS 앱` 옆 `+` → `버전 또는 플랫폼 추가` → `iOS` → 버전 `1.0.1` → `생성`.
 4. 새 버전 페이지: `이 버전의 새로운 기능 (What's New)` — **이때부터 필수**, 네 현지화(한국어·영어(미국)·영어(영국)·영어(캐나다)) 모두 입력. 스크린샷·설명은 이전 버전에서 복사되므로 바뀐 것만 수정 — UI가 바뀌었으면 0-13으로 다시 찍는다.
@@ -569,9 +569,9 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| 업로드 후 메일 `ITMS-91053: Missing API declaration … NSPrivacyAccessedAPICategoryUserDefaults` | PrivacyInfo.xcprivacy 없음. 경고 메일로 그치고 빌드가 처리되는 경우가 많지만 Apple 정책상 거부될 수도 있으므로 0-2를 적용해 재아카이브·재업로드한다. 아카이브 후 `.xcarchive/Products/Applications/LevainCalc.app/PrivacyInfo.xcprivacy`가 있는지 확인. |
+| 업로드 후 메일 `ITMS-91053: Missing API declaration … NSPrivacyAccessedAPICategoryUserDefaults` | PrivacyInfo.xcprivacy 없음. 경고 메일로 그치고 빌드가 처리되는 경우가 많지만 Apple 정책상 거부될 수도 있으므로 0-2를 적용해 재아카이브·재업로드한다. 아카이브 후 `.xcarchive/Products/Applications/Doughmetry.app/PrivacyInfo.xcprivacy`가 있는지 확인. |
 | TestFlight 빌드 `규정 준수 누락 (Missing Compliance)` / 빌드 추가 시 수출 규정 창 | `ITSAppUsesNonExemptEncryption` 키 없음. 4-4대로 `예 → 위 알고리즘 해당 없음`으로 답하면 즉시 해제. 근본 해결은 0-3. 키를 넣었는데도 뜨면 값이 Boolean `NO`가 아니라 문자열이거나 다른 타깃에 들어간 것 — `plutil -p … \| grep ITSApp`으로 `=> false` 확인. |
-| `ITMS-90717 Invalid App Store Icon … can't be transparent nor contain an alpha channel` | 이 프로젝트에선 **발생하지 않음이 검증됨**(컴파일된 Assets.car가 RGB 소스와 바이트 동일, Opaque=true). 그래도 뜨면: `Preview`로 `ios/LevainCalc/Assets.xcassets/AppIcon.appiconset/AppIcon.png` 열기 → `File > Export…` → `Format: PNG`, `Alpha` 체크 해제 → 같은 경로에 덮어쓰기 → `sips -g hasAlpha AppIcon.png`가 `no` → `Product > Clean Build Folder (⇧⌘K)` → 재아카이브. (ImageMagick은 이 Mac에 없음.) |
+| `ITMS-90717 Invalid App Store Icon … can't be transparent nor contain an alpha channel` | 이 프로젝트에선 **발생하지 않음이 검증됨**(컴파일된 Assets.car가 RGB 소스와 바이트 동일, Opaque=true). 그래도 뜨면: `Preview`로 `ios/Doughmetry/Assets.xcassets/AppIcon.appiconset/AppIcon.png` 열기 → `File > Export…` → `Format: PNG`, `Alpha` 체크 해제 → 같은 경로에 덮어쓰기 → `sips -g hasAlpha AppIcon.png`가 `no` → `Product > Clean Build Folder (⇧⌘K)` → 재아카이브. (ImageMagick은 이 Mac에 없음.) |
 | 스크린샷 업로드 거부 (빨간 `!`, `IMAGE_TOOL_FAILURE`, "alpha channel", 크기 오류) | 옛 PNG(알파 채널 있음, 6.3형·업스케일)를 올린 것이다. 0-13의 JPEG(`{ko,en}/6.9-jpg/` 1320×2868, `{ko,en}/13-jpg/` 2064×2752, 알파 없음)를 올린다. 가로로 찍힌 사진은 크기가 뒤바뀌어 거부된다 — 스크립트가 찍을 때 검사한다. |
 | 제출 시 `iPad 13형 디스플레이 스크린샷이 필요합니다` (13-inch iPad screenshots required) | iPad 지원 앱은 13형 iPad 스크린샷이 필수다. 0-13의 `{ko,en}/13-jpg/`를 네 현지화의 iPad 탭에 올린다(6-5 2·3번). |
 | Xcode 업로드 오류 `No suitable application records were found. Verify your bundle identifier "com.narudoc.doughmetry"…` | 2장 앱 레코드가 없거나 번들 ID가 다르거나 Xcode 계정이 그 앱에 접근권이 없음. 2장을 먼저 끝낸다. 계속되면 `Xcode > Settings > Accounts`에서 로그아웃/로그인(캐시). |
@@ -598,7 +598,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 ## 부록 A. 처음부터 끝까지 체크리스트
 
 - [ ] 고정값 표: 심사 연락처 전화번호를 `+82 10-____-____` 자리에 국제 형식으로 채우기 (6-7에서 그대로 옮겨 적는다) · 공개 문의 이메일 결정 — 기본 `juvesoul@icloud.com`, 바꾸려면 표의 `grep`·`sed`
-- [ ] 0장 도입부: 작업 트리 깨끗함 · origin과 같음 · Vitest·tsc·LevainCore 테스트 통과
+- [ ] 0장 도입부: 작업 트리 깨끗함 · origin과 같음 · Vitest·tsc·DoughmetryCore 테스트 통과
 - [ ] 0장 "한 번에 확인": 0-1 앱 안 개인정보·지원 링크 · 0-2 PrivacyInfo.xcprivacy · 0-3 암호화 키 · UIDeviceFamily `[1,2]` · iPad 네 방향 · 경고 0건
 - [ ] 0-9 iOS 17/18 UI 스모크 테스트 통과 (iPhone SE iOS17 · iPhone 15 iOS18 · iPad Air iOS18) + 손 확인 — 통과 못 하면 최소 버전 18.0으로 (0-9 5번)
 - [ ] 0-9 6번 iPad 시뮬레이터 세로·가로·최소 창·Split View 확인
@@ -621,8 +621,8 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 
 - 2026-10-02: Xcode 27.0 (27A266a), iOS 27.0 SDK. HEAD 82df6d6 기준 시뮬레이터 Release 빌드 경고 0건(2026-10-01 점검). 그 뒤 변경분은 0장 "한 번에 확인"으로 다시 본다. 시뮬레이터 런타임은 iOS 17.5·18.2·26.5·27.0(2026-10-02) — iOS 17/18 실행 확인은 0-9.
 - 바이너리: arm64, minOS 17.0, 네트워킹·암호화 프레임워크 링크 없음, FoundationModels는 weak link. 생성 Info.plist에 `INFOPLIST_KEY_*` 빌드 설정이 그대로 들어간다(`ITSAppUsesNonExemptEncryption => false`, `UIDeviceFamily [1,2]`, `UISupportedInterfaceOrientations~ipad` 네 방향 — 2026-10-02 Debug 시뮬레이터 빌드로 확인).
-- `ios/LevainCalc/`는 폴더 동기화 그룹 — `PrivacyInfo.xcprivacy`를 두기만 하면 .app 루트에 복사된다.
-- 0-13 스크립트(2026-10-02, `prepare`·`shot`으로): iPhone 17 Pro Max(en)는 1320×2868, iPad Pro 13-inch (M5)(ko)는 2064×2752로, 둘 다 RGB·hasAlpha no로 찍히고 상태 바 9:41·앱 언어·시스템 언어가 적용됨을 확인. 한글 가져오기 예시도 시뮬레이터 클립보드에 그대로 들어간다. 예시 library.json(ko·en)은 LevainCore `LibraryStore`로 버려지는 항목 없이 읽힌다(레시피 3·로그 4).
+- `ios/Doughmetry/`는 폴더 동기화 그룹 — `PrivacyInfo.xcprivacy`를 두기만 하면 .app 루트에 복사된다.
+- 0-13 스크립트(2026-10-02, `prepare`·`shot`으로): iPhone 17 Pro Max(en)는 1320×2868, iPad Pro 13-inch (M5)(ko)는 2064×2752로, 둘 다 RGB·hasAlpha no로 찍히고 상태 바 9:41·앱 언어·시스템 언어가 적용됨을 확인. 한글 가져오기 예시도 시뮬레이터 클립보드에 그대로 들어간다. 예시 library.json(ko·en)은 DoughmetryCore `LibraryStore`로 버려지는 항목 없이 읽힌다(레시피 3·로그 4).
 - Xcode 관리 프로파일 2종 확인(2026-09-11): 2026-09-06 16:05 = `com.narudoc.levaincalc`(개명으로 무효), 2026-09-11 08:28 = `com.narudoc.doughmetry` + `iCloud.com.narudoc.doughmetry` 엔타이틀먼트 3종 → 새 App ID·새 컨테이너 포털 등록 완료.
 - 앱 아이콘: RGBA 소스와 RGB 소스로 각각 컴파일한 `Assets.car`가 SHA-256까지 동일 → 알파 문제 없음.
 - 키체인에 Apple Distribution 인증서 없음 → 자동 서명이 클라우드 인증서를 만들도록 둔다.

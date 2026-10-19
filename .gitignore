@@ -5,7 +5,7 @@ dist/
 .claude/
 
 # iOS
-ios/LevainCore/.build/
+ios/DoughmetryCore/.build/
 ios/**/xcuserdata/
 ios/**/*.xcworkspace/xcuserdata/
 ios/build/

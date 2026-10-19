@@ -54,7 +54,7 @@ export default defineConfig({
 
 `base`가 어긋나면 배포된 페이지에서 JS/CSS 로딩이 404로 실패합니다.
 
-[index.html](index.html)의 `og:url`·`og:image`·`canonical`과 iOS [AppLinks.swift](ios/LevainCalc/AppLinks.swift)도
+[index.html](index.html)의 `og:url`·`og:image`·`canonical`과 iOS [AppLinks.swift](ios/Doughmetry/AppLinks.swift)도
 `https://narudoc.github.io/doughmetry/`를 그대로 적고 있으니 `base`와 함께 바꾸세요.
 
 ## 기술 스택

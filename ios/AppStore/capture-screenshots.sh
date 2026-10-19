@@ -325,10 +325,10 @@ build_app() {
   else
     local dd=${DERIVED_DATA:-build/screenshots-dd}
     print -u2 -r -- "Debug 빌드 중 ($dd)…"
-    xcodebuild -project LevainCalc.xcodeproj -scheme LevainCalc -configuration Debug \
+    xcodebuild -project Doughmetry.xcodeproj -scheme Doughmetry -configuration Debug \
       -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
       -derivedDataPath "$dd" -quiet build >&2
-    APP="$dd/Build/Products/Debug-iphonesimulator/LevainCalc.app"
+    APP="$dd/Build/Products/Debug-iphonesimulator/Doughmetry.app"
   fi
   [[ -d $APP ]] || { print -u2 "앱이 없습니다: $APP"; exit 1; }
   if (( ${KINDS[(Ie)ipad]} )) && ! plutil -extract UIDeviceFamily json -o - "$APP/Info.plist" | grep -q 2; then

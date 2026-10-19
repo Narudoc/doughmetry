@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """L("…")/LF("…")의 한국어 키마다 Localization.swift의 영어 사전(en)에 항목이 있는지 본다.
-LevainCore가 localize 클로저(앱의 L)로 번역받는 문자열(예시 레시피·LiquidPreset 이름)도 본다.
+DoughmetryCore가 localize 클로저(앱의 L)로 번역받는 문자열(예시 레시피·LiquidPreset 이름)도 본다.
 
 CI(.github/workflows/ios.yml)와 같은 검사 — 푸시 전에 `python3 ios/scripts/check_l10n.py`로 돌린다.
 출력의 ::error/::notice 줄은 GitHub Actions 주석 형식이라 경로는 저장소 루트 기준이다.
@@ -10,7 +10,7 @@ import re
 import sys
 
 root = pathlib.Path(__file__).resolve().parents[2]
-src = root / "ios" / "LevainCalc"
+src = root / "ios" / "Doughmetry"
 loc_path = src / "Localization.swift"
 loc = loc_path.read_text()
 lit = r'"((?:[^"\\\n]|\\.)*)"'
@@ -44,9 +44,9 @@ for path in sorted(src.rglob("*.swift")):
             skipped += 1
             print(f"::notice file={rel(path)},line={line}::{m.group(1)}() argument is not a literal - not checked")
 
-# LevainCore엔 앱 사전이 없어 앱의 L을 localize 클로저로 받는다 (SampleRecipes) — 그 키도 en에 있어야 한다.
+# DoughmetryCore엔 앱 사전이 없어 앱의 L을 localize 클로저로 받는다 (SampleRecipes) — 그 키도 en에 있어야 한다.
 # 클로저로 넘기는 이름(예시 레시피 이름, LiquidPreset.name)은 정의한 자리의 리터럴을 읽는다
-core = root / "ios" / "LevainCore" / "Sources" / "LevainCore"
+core = root / "ios" / "DoughmetryCore" / "Sources" / "DoughmetryCore"
 
 
 def core_key(path, text, pos, key):

@@ -5,7 +5,7 @@ import { newId } from './id';
 
 /**
  * 레시피 텍스트 → 배합 규칙 기반 파서.
- * iOS(LevainCore/RecipeTextParser.swift)의 이식본 — 규칙이 바뀌면 두 곳을 함께 고칠 것.
+ * iOS(DoughmetryCore/RecipeTextParser.swift)의 이식본 — 규칙이 바뀌면 두 곳을 함께 고칠 것.
  * 키워드는 한국어·영어·프랑스어 제빵 용어를 커버한다.
  *
  * 처리 순서: 머리 기호 제거 → SNS 토큰·키캡 번호 제거 → 온도·시간·차수 표기 제거 → 구분자 분할

@@ -41,22 +41,22 @@ repo)
   for page in privacy support; do
     curl -sfo /dev/null "https://narudoc.github.io/doughmetry/$page.html" || fail "$page.html이 아직 배포되지 않았다 (3장)"
   done
-  grep -rq 'doughmetry/privacy.html' ios/LevainCalc || fail "앱 안 개인정보 처리방침 링크가 없다"
-  plutil -lint -s ios/LevainCalc/PrivacyInfo.xcprivacy || fail "PrivacyInfo.xcprivacy"
-  (cd ios/LevainCore && swift test -q) || fail "LevainCore 테스트 실패"
+  grep -rq 'doughmetry/privacy.html' ios/Doughmetry || fail "앱 안 개인정보 처리방침 링크가 없다"
+  plutil -lint -s ios/Doughmetry/PrivacyInfo.xcprivacy || fail "PrivacyInfo.xcprivacy"
+  (cd ios/DoughmetryCore && swift test -q) || fail "DoughmetryCore 테스트 실패"
   check_shots
   ;;
 shots) check_shots ;;
 archive)
   [[ -n "$ARCHIVE" ]] || ARCHIVE="$(ls -td ~/Library/Developer/Xcode/Archives/*/*.xcarchive(N) | head -1)"
-  APP="$ARCHIVE/Products/Applications/LevainCalc.app"
+  APP="$ARCHIVE/Products/Applications/Doughmetry.app"
   [[ -d "$APP" ]] || fail "앱이 없다: $APP"
   [[ "$(plutil -extract ITSAppUsesNonExemptEncryption raw "$APP/Info.plist" 2>/dev/null)" == false ]] || fail "ITSAppUsesNonExemptEncryption이 false가 아니다"
   [[ "$(plutil -extract UIDeviceFamily json -o - "$APP/Info.plist")" == '[1,2]' ]] || fail "UIDeviceFamily가 [1,2]가 아니다"
   [[ "$(plutil -extract UIApplicationSceneManifest.UIApplicationSupportsMultipleScenes raw "$APP/Info.plist" 2>/dev/null)" == false ]] ||
-    fail "UIApplicationSupportsMultipleScenes가 false가 아니다 (LevainCalc-Info.plist)"
+    fail "UIApplicationSupportsMultipleScenes가 false가 아니다 (Doughmetry-Info.plist)"
   [[ -f "$APP/PrivacyInfo.xcprivacy" ]] || fail "PrivacyInfo.xcprivacy가 번들에 없다"
-  want="$(grep -m1 -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' ios/LevainCalc.xcodeproj/project.pbxproj | awk '{print $3}')"
+  want="$(grep -m1 -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' ios/Doughmetry.xcodeproj/project.pbxproj | awk '{print $3}')"
   min="$(plutil -extract MinimumOSVersion raw "$APP/Info.plist")"
   [[ "$min" == "$want" ]] || fail "MinimumOSVersion $min (프로젝트 $want)"
   ;;
