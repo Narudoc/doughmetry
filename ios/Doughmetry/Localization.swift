@@ -35,7 +35,7 @@ enum AppLanguage: String, CaseIterable {
 
 @Observable
 final class Lang {
-    // 읽기·쓰기는 전부 메인 스레드다 — 뷰 body, @MainActor인 TimelineNotifier, 설정 시트의 Picker.
+    // 읽기·쓰기는 전부 메인 스레드다 — 뷰 body, @MainActor인 TimelineNotifier, 설정 화면의 Picker.
     // TimelineNotifier.followLanguage의 onChange 클로저는 Lang을 읽지 않고 메인 액터 Task로 넘긴다.
     // Lang을 @MainActor로 바꾸지 말 것 — L()/LF()를 부르는 비격리 함수(stageName, flourLabel, fmtTime,
     // CodecError.localizedMessage, CalcState.name 기본값 등)가 컴파일되지 않는다

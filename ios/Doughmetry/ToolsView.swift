@@ -4,7 +4,6 @@ import UIKit
 
 /// 도구 탭 — 르방 빌드 계산기 · 물 온도(DDT) 계산기 · 타임라인 (+ 설정 바로가기)
 struct ToolsView: View {
-    @State private var showSettings = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -34,15 +33,12 @@ struct ToolsView: View {
                     }
                 }
                 Section {
-                    Button {
-                        showSettings = true
+                    NavigationLink {
+                        SettingsView()
                     } label: {
                         ToolRow(
                             title: L("설정"), subtitle: L("언어 · % 표기 · 표시 자릿수 · iCloud"),
-                            systemImage: "gearshape"
-                        )
-                        // .primary(계층 스타일)는 버튼 안에서 틴트가 된다 — 위 도구 행과 같은 색으로
-                        .foregroundStyle(Color.primary)
+                            systemImage: "gearshape")
                     }
                 }
             }
@@ -50,9 +46,6 @@ struct ToolsView: View {
             .navigationTitle(L("도구"))
             // 넓은 창에선 다른 탭처럼 작은 제목 — 큰 제목은 가운데로 모은 목록에서 떨어져 왼쪽 끝에 붙는다
             .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .automatic)
-            .sheet(isPresented: $showSettings) {
-                SettingsSheet()
-            }
         }
     }
 }

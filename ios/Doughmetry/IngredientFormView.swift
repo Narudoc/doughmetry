@@ -9,7 +9,7 @@ struct IngredientFormSections: View {
     let precision: Precision
     let basis: PctBasis
 
-    /// footer의 % 기준 메뉴가 바꾸는 앱 설정 (설정 시트의 "% 표기"와 같은 값)
+    /// footer의 % 기준 메뉴가 바꾸는 앱 설정 (설정 화면의 "% 표기"와 같은 값)
     @Environment(AppModel.self) private var model
     /// 입력 옆 % 열 — StatValue(14pt)와 같은 비율로 넓혀야 큰 글자에서 숫자가 끊기지 않는다
     @ScaledMetric(relativeTo: .subheadline) private var pctWidth: CGFloat = 60

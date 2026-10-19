@@ -67,7 +67,7 @@ export PATH="$HOME/.local/node/bin:$PATH" && npx vitest run && npx tsc --noEmit
 
 ### 0-1. [적용됨 — 확인만] 앱 안 개인정보 처리방침 링크 (심사 지침 5.1.1(i))
 
-설정 시트 맨 아래 섹션에 개인정보 처리방침·지원 링크와 버전이 있다. URL은 `ios/Doughmetry/AppLinks.swift` 한 곳에 모여 있다(`https://narudoc.github.io/doughmetry/privacy.html`, `…/support.html`). 링크 대상 페이지는 3장에서 배포한다 — 5장 TestFlight에서 링크를 눌러 Safari로 열리는지 본다.
+설정 화면(도구 탭 → 설정) 맨 아래 섹션에 개인정보 처리방침·지원 링크와 버전이 있다. URL은 `ios/Doughmetry/AppLinks.swift` 한 곳에 모여 있다(`https://narudoc.github.io/doughmetry/privacy.html`, `…/support.html`). 링크 대상 페이지는 3장에서 배포한다 — 5장 TestFlight에서 링크를 눌러 Safari로 열리는지 본다.
 
 ### 0-2. [적용됨 — 확인만] PrivacyInfo.xcprivacy
 
@@ -271,7 +271,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 
 ## 3. 개인정보 처리방침·지원 URL 공개
 
-**이 장을 끝내지 않으면 심사에서 5.1.1로 거절된다** (개인정보 처리방침 URL은 필수 입력이고, ASC는 URL 형식만 검사하지만 심사관이 실제로 열어 본다 — 404면 메타데이터 거절). 앱 설정 시트의 링크(0-1)도 같은 주소를 연다.
+**이 장을 끝내지 않으면 심사에서 5.1.1로 거절된다** (개인정보 처리방침 URL은 필수 입력이고, ASC는 URL 형식만 검사하지만 심사관이 실제로 열어 본다 — 404면 메타데이터 거절). 앱 설정 화면의 링크(0-1)도 같은 주소를 연다.
 
 페이지는 저장소의 `public/privacy.html`·`public/support.html`(한/영)이다. Vite가 `public/`을 그대로 `dist/`로 복사하므로(`base` 무관) main에 푸시하면 GitHub Actions(`deploy.yml`)가 배포한다 → `https://narudoc.github.io/doughmetry/privacy.html`. 배포가 끝났는지는 상태 코드 하나로 판단하지 말고 3-2 5번의 네 줄로 본다.
 
