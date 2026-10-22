@@ -8,7 +8,7 @@
  *   다른 출처(jsDelivr의 인식 엔진·언어 데이터)는 건드리지 않는다.
  * 동작을 바꾸면 캐시 이름의 버전을 올릴 것.
  */
-const SHELL_CACHE = 'doughmetry-shell-v2';
+const SHELL_CACHE = 'doughmetry-shell-v3';
 const FONT_CACHE = 'doughmetry-fonts-v2';
 const FONT_LIMIT = 150;
 
