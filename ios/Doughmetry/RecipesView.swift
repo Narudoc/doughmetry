@@ -951,13 +951,14 @@ struct RecipeDetailView: View {
             .textCase(nil)
         }
         .readableFormWidth()
+        .keepsScreenAwake(while: model.selectedTab == .recipes)
         .navigationDestination(for: BakeLogListRoute.self) { BakeLogListView(recipeId: $0.recipeId, sheet: $sheet) }
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    model.sendToConverter(name: recipe.name, input: input)
+                    model.sendToConverter(ConverterSource(recipe))
                 } label: {
                     Label(L("변환기로 보내기"), systemImage: "arrow.left.arrow.right")
                 }

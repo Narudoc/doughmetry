@@ -255,6 +255,8 @@ interface SaveRecipeDialogProps {
   allowOverwrite?: boolean;
   /** 불러온 레시피의 저장된 이름 — 이름이 이와 다르면 덮어쓰기를 끈 채로 시작한다 */
   loadedName?: string;
+  /** 입력 칸 위에 보이는, 함께 저장되는 내용 (변환 결과의 분할 등) */
+  preview?: ReactNode;
   onSave: (data: SaveRecipeData) => void;
 }
 
@@ -267,6 +269,7 @@ export function SaveRecipeDialog({
   initialNote = '',
   allowOverwrite = false,
   loadedName,
+  preview,
   onSave,
 }: SaveRecipeDialogProps) {
   // 계산기 이름 칸에서 이미 바꾼 이름도 걸러내도록 페이지 이름이 아니라 저장된 이름과 비교한다
@@ -320,6 +323,7 @@ export function SaveRecipeDialog({
       }
     >
       <div className="space-y-3">
+        {preview}
         <TextField
           label="이름"
           value={name}

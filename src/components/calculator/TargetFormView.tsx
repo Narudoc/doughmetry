@@ -102,6 +102,9 @@ export function TargetFormView({ target, onChange, precision }: Props) {
             </div>
           </div>
         </div>
+        <p className="text-xs text-ink/70">
+          밀가루·물·소금·르방만 역산합니다. 바시나주·액체·이스트는 재료 입력 모드에서.
+        </p>
       </section>
     </div>
   );

@@ -76,6 +76,7 @@ CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 DoughmetryCore `swif
   - 머리글이 있는 Form/List 섹션은 `Section { … } header: { … }.textCase(nil)` — 17·18은 머리글을 대문자로 바꾼다('(g)' → '(G)', 'iCloud' → 'ICLOUD'). 루트·Form이나 머리글의 맨 Text 하나에 단 `.textCase(nil)`은 17.5에서 듣지 않는다.
   - 시트 높이는 `.presentationDetents` 대신 `.adaptiveDetents(…)`([DesignSystem.swift](ios/Doughmetry/DesignSystem.swift)) — 넓은 창(iPad)에선 늘 `.large`. 시트 안의 크기 등급은 iPad에서도 compact라, 띄운 창의 폭은 RootView가 넣는 `\.windowIsRegular`로 판단한다. 긴 내용 시트(가져오기 확인·배합표)는 iPad에서 작은 폼 시트에 갇히지 않게 `.pageSizedSheet()`(18+ `.presentationSizing(.page)`, 17은 `.large` 폼 시트) + `.readableSheetWidth()`(700pt) — iPhone 시트는 그대로. Form/List 시트에 `.presentationSizing(.form.fitted…)`는 쓰지 않는다 (목록은 이상적 높이가 없어 내비게이션 바만 남은 띠가 된다, iOS 27 확인).
   - 날짜·시각 행은 `AXDatePicker`, Form 속 세그먼트 피커는 `.adaptiveSegmented()`([Components.swift](ios/Doughmetry/Components.swift)) — 접근성 글자 크기에서 라벨이 쪼개지거나 13pt로 남지 않게.
+  - 화면 켜두기는 `.keepsScreenAwake(while:)`([ResultViews.swift](ios/Doughmetry/ResultViews.swift))로만 — 설정 `keepScreenAwake`·화면에 보임·장면 활성일 때만 켜고, 화면마다 소유권을 세어 한 화면이 다른 화면의 잠금 해제를 끄지 않는다. `isIdleTimerDisabled`를 직접 만지지 말 것(앱 전체 설정). 웹은 `useWakeLock`(계산기 탭에서만, 같은 설정).
   - 앱 전역 설치(DoughmetryApp.init, 26 미만만): `KeyboardAvoidance`(회전 뒤 포커스 칸을 키보드 위로), 확인창(UIAlertController) 색 bottle.
   - 하드웨어 키보드: ⌘1–4 탭·⌘F 레시피 검색은 메뉴 명령([DoughmetryApp.swift](ios/Doughmetry/DoughmetryApp.swift)) — 26 미만은 메뉴 명령이 받지 못해(iPhone 전부, iPad의 ⌘F) 같은 단축키를 뷰에도 단다. ⌘N·⌘S처럼 보이는 탭에만 해당하는 단축키는 그 탭의 뷰에 단다. UI 테스트에서 실행 뒤 첫 ⌘F는 앱에 오지 않는다 — XCUITest의 가상 키보드가 키마다 붙었다 떨어지고 앱은 키보드가 붙을 때 단축키를 등록하므로, 첫 키는 ⌘F를 등록해 둔 SpringBoard가 가져간다(실제 키보드에선 생기지 않음). ⌘F를 검사하는 테스트는 Esc 같은 키를 먼저 보낸다.
 - 계산 코어는 [ios/DoughmetryCore/Sources/DoughmetryCore/Dough.swift](ios/DoughmetryCore/Sources/DoughmetryCore/Dough.swift) — dough.ts의 이식본. **웹 계산 규칙이 바뀌면 두 곳을 함께 고치고 양쪽 테스트를 통과시킬 것.**
@@ -93,7 +94,7 @@ CI: `.github/workflows/ios.yml`이 ios/ 변경 푸시마다 DoughmetryCore `swif
 - **베이킹 로그** (`BakeLog`, library.json의 `logs`) — 레시피별 날짜·별점·메모
 - **르방 빌드 계산기** — [Tools.swift](ios/DoughmetryCore/Sources/DoughmetryCore/Tools.swift) `solveLevainBuild`: 종 20g + 밀가루 90g + 물 90g → 르방 200g(100%)
 - **물 온도 계산기** — `solveWaterTemperature`: 물 = DDT × N − (밀가루 + 실온 + [르방] + 마찰계수). 마찰계수는 반죽이 실제로 오르는 온도가 아니라 이 ×N 공식에 넣는 값(실제 상승 × N) — 프리셋 손반죽 2·믹서 12 °C(스탠드·버티컬·스파이럴은 출처들이 같은 값으로 다룬다, 2026-10 조사), 옛 '스탠드 믹서 8'은 앱 시작 때 한 번 12로 옮긴다(`ddt.frictionPresets`). '직접'은 `ddt.frictionCustom`으로 기억하고 누르면 입력 칸에 포커스
-- **타임라인 스케줄러** — [Timeline.swift](ios/DoughmetryCore/Sources/DoughmetryCore/Timeline.swift) + 로컬 알림
+- **타임라인 스케줄러** — [Timeline.swift](ios/DoughmetryCore/Sources/DoughmetryCore/Timeline.swift) + 로컬 알림. '단계 추가'는 `TimelinePlan.addStage`로 자연 순서(르방 빌드 < 오토리즈 < 믹싱 < 벌크 < 분할 < 벤치 < 성형 < 냉장 발효 < 최종 발효 < 굽기, 사용자 단계는 첫 굽기 바로 앞)에 끼운다 — 있던 단계는 옮기지 않고 굽기 뒤에는 넣지 않는다
 - **iCloud 동기화** — library.json 병합 (LibrarySync)
 
 ## 나중에 붙일 기능

@@ -67,4 +67,6 @@ export interface Settings {
   pctBasis: PctBasis;
   /** 마지막 전체 내보내기(백업) 시각 (ISO) — 백업 안내(storage.backupNudge)에 쓴다 */
   lastExportAt?: string;
+  /** 계산기 탭을 보는 동안 화면이 꺼지지 않게 (Screen Wake Lock) — iOS 설정 "keepScreenAwake"와 같다. 저장된 값이 없으면 켬 */
+  keepScreenAwake: boolean;
 }

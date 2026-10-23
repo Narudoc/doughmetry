@@ -69,6 +69,22 @@ struct CalcState: Codable, Equatable {
 
 private func defaultDoughInput() -> DoughInput { CalcState.defaultDoughInput() }
 
+/// 변환기로 보낸 원본 — 분할 개수·태그는 변환에 쓰지 않고, 변환 결과를 새 레시피로 저장할 때 잇는다
+struct ConverterSource {
+    var name: String
+    var input: DoughInput
+    var pieces: Double?
+    var tags: [String]
+}
+
+extension ConverterSource {
+    init(_ recipe: Recipe) {
+        self.init(
+            name: recipe.name, input: recipe.doughInput,
+            pieces: recipe.pieces.flatMap { $0 > 0 ? $0 : nil }, tags: recipe.tags ?? [])
+    }
+}
+
 @Observable @MainActor
 final class AppModel {
     var calc = CalcState() {
@@ -99,7 +115,7 @@ final class AppModel {
         didSet { UserDefaults.standard.set(pctBasis.rawValue, forKey: "pctBasis") }
     }
     /// 변환기로 보낸 배합 (탭 전환 시 적용)
-    var converterSource: (name: String, input: DoughInput)?
+    var converterSource: ConverterSource?
     var selectedTab: Tab = .calculator
     /// 레시피 검색 요청 (하드웨어 키보드 ⌘F) — 올릴 때마다 레시피 탭이 검색 칸을 연다
     var searchRequest = 0
@@ -569,8 +585,17 @@ final class AppModel {
         calcBaseline = calc
     }
 
-    func sendToConverter(name: String, input: DoughInput) {
-        converterSource = (name, input)
+    func sendToConverter(_ source: ConverterSource) {
+        converterSource = source
         selectedTab = .converter
+    }
+
+    /// 계산기 배합 — 분할 개수와, 저장된 레시피에서 불러왔으면 그 태그도 함께 (저장 시트의 태그와 같은 출처)
+    func sendCalcToConverter() {
+        let linked = calc.recipeId.flatMap { id in recipes.first { $0.id == id } }
+        sendToConverter(
+            ConverterSource(
+                name: calc.name, input: calc.currentDough, pieces: calc.currentPieces,
+                tags: linked?.tags ?? []))
     }
 }

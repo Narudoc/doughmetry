@@ -99,6 +99,126 @@ struct TimelineTests {
         #expect(existing == before)
     }
 
+    /// 기본 일정(오토리즈 … 최종 발효 · 굽기)에 넣을 때의 자리
+    static let defaultPlanSlots: [(StageKind, Int)] = [
+        (.levainBuild, 0), (.autolyse, 1), (.mix, 2), (.bulk, 3), (.divide, 4), (.bench, 5),
+        (.shape, 6), (.coldRetard, 6), (.proof, 7), (.bake, 8), (.custom, 7),
+    ]
+
+    @Test(
+        "단계 추가는 기본 일정의 제자리에 — 냉장 발효는 성형 뒤, 사용자 단계는 굽기 바로 앞, 굽기는 맨 끝",
+        arguments: defaultPlanSlots)
+    func addStageToDefaultPlan(kind: StageKind, index: Int) {
+        var plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        let before = plan.stages
+        let stage = TimelineStage(kind: kind, minutes: TimelineStage.defaultMinutes(for: kind))
+        #expect(TimelinePlan.insertionIndex(for: kind, in: before) == index)
+        plan.addStage(stage)
+        #expect(plan.stages.count == 9)
+        #expect(plan.stages[index] == stage)
+        // 원래 단계는 움직이지 않는다
+        #expect(plan.stages.filter { $0.id != stage.id } == before)
+    }
+
+    @Test("냉장 발효는 성형과 최종 발효 사이 — 완성 시각 기준이면 굽기는 그대로 그 시각에 끝나고 시작만 12시간 당겨진다")
+    func addColdRetardKeepsFinish() throws {
+        var plan = TimelinePlan.defaultPlan(startingAt: "x")
+        plan.anchor = .finish("2026-09-06T18:00:00Z")
+        plan.addStage(TimelineStage(kind: .coldRetard, minutes: TimelineStage.defaultMinutes(for: .coldRetard)))
+        #expect(
+            plan.stages.map(\.kind) == [
+                .autolyse, .mix, .bulk, .divide, .bench, .shape, .coldRetard, .proof, .bake,
+            ])
+        let s = scheduleTimeline(plan)
+        let bake = try #require(s.last)
+        #expect(bake.stage.kind == .bake)
+        #expect(bake.start == parseISO("2026-09-06T17:15:00Z"))
+        #expect(bake.end == parseISO("2026-09-06T18:00:00Z"))
+        #expect(s[7].start == parseISO("2026-09-06T15:45:00Z"))  // 최종 발효
+        #expect(s[6].start == parseISO("2026-09-06T03:45:00Z"))  // 냉장 발효 12시간
+        #expect(s.first?.start == parseISO("2026-09-05T22:20:00Z"))  // 10:20 − 12h
+        for i in 1..<s.count { #expect(s[i].start == s[i - 1].end) }
+    }
+
+    @Test("사용자가 바꿔 둔 순서는 다시 정렬하지 않는다")
+    func addStageKeepsUserOrder() {
+        // 벌크를 믹싱 앞으로 옮긴 계획
+        var plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        plan.stages.insert(plan.stages.remove(at: 2), at: 1)
+        #expect(plan.stages.map(\.kind) == [.autolyse, .bulk, .mix, .divide, .bench, .shape, .proof, .bake])
+        let before = plan.stages
+
+        #expect(TimelinePlan.insertionIndex(for: .bulk, in: before) == 3)  // 순위가 같거나 앞선 마지막(믹싱) 뒤
+        #expect(TimelinePlan.insertionIndex(for: .mix, in: before) == 3)
+        #expect(TimelinePlan.insertionIndex(for: .levainBuild, in: before) == 0)
+        plan.addStage(TimelineStage(kind: .coldRetard, minutes: 720))
+        #expect(
+            plan.stages.map(\.kind) == [
+                .autolyse, .bulk, .mix, .divide, .bench, .shape, .coldRetard, .proof, .bake,
+            ])
+        #expect(plan.stages.filter { $0.kind != .coldRetard } == before)
+
+        // 맨 위로 옮겨 둔 사용자 단계는 그대로 맨 위 — 르방 빌드는 그 다음, 순위가 뒤인 첫 단계 앞
+        var custom = TimelinePlan(
+            stages: [
+                TimelineStage(kind: .custom, customName: "스타터 꺼내기", minutes: 30),
+                TimelineStage(kind: .mix, minutes: 15),
+                TimelineStage(kind: .bake, minutes: 45),
+            ], anchor: .start("2026-09-06T08:00:00Z"))
+        custom.addStage(TimelineStage(kind: .levainBuild, minutes: 360))
+        #expect(custom.stages.map(\.kind) == [.custom, .levainBuild, .mix, .bake])
+
+        // 굽기 뒤로는 넣지 않는다 — 굽기를 성형 앞으로 옮겨 둔 계획에서도 첫 굽기 바로 앞
+        let early = [
+            TimelineStage(kind: .mix, minutes: 15), TimelineStage(kind: .bake, minutes: 45),
+            TimelineStage(kind: .shape, minutes: 10),
+        ]
+        #expect(TimelinePlan.insertionIndex(for: .proof, in: early) == 1)
+        #expect(TimelinePlan.insertionIndex(for: .custom, in: early) == 1)
+        #expect(TimelinePlan.insertionIndex(for: .bake, in: early) == 3)
+
+        // 굽기가 둘이면 사용자 단계는 첫 굽기 앞, 새 굽기는 맨 끝
+        var twoBakes = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        twoBakes.stages.append(TimelineStage(kind: .bake, minutes: 45))
+        #expect(TimelinePlan.insertionIndex(for: .custom, in: twoBakes.stages) == 7)
+        #expect(TimelinePlan.insertionIndex(for: .bake, in: twoBakes.stages) == 9)
+    }
+
+    @Test("굽기가 없는 계획 — 사용자 단계·굽기는 맨 끝, 나머지는 제자리")
+    func addStageWithoutBake() {
+        let stages = [
+            TimelineStage(kind: .autolyse, minutes: 30), TimelineStage(kind: .mix, minutes: 15),
+            TimelineStage(kind: .bulk, minutes: 240), TimelineStage(kind: .shape, minutes: 10),
+            TimelineStage(kind: .proof, minutes: 90),
+        ]
+        #expect(TimelinePlan.insertionIndex(for: .coldRetard, in: stages) == 4)
+        #expect(TimelinePlan.insertionIndex(for: .proof, in: stages) == 5)
+        #expect(TimelinePlan.insertionIndex(for: .custom, in: stages) == 5)
+        #expect(TimelinePlan.insertionIndex(for: .bake, in: stages) == 5)
+        #expect(TimelinePlan.insertionIndex(for: .levainBuild, in: stages) == 0)
+        #expect(TimelinePlan.insertionIndex(for: .divide, in: stages) == 3)
+
+        // 사용자 단계만 있으면 순서를 가늠할 단계가 없어 맨 앞 (사용자 단계·굽기는 맨 끝)
+        let customs = [
+            TimelineStage(kind: .custom, customName: "폴딩", minutes: 30),
+            TimelineStage(kind: .custom, customName: "예열", minutes: 45),
+        ]
+        #expect(TimelinePlan.insertionIndex(for: .mix, in: customs) == 0)
+        #expect(TimelinePlan.insertionIndex(for: .custom, in: customs) == 2)
+        #expect(TimelinePlan.insertionIndex(for: .bake, in: customs) == 2)
+    }
+
+    @Test("빈 계획에는 어떤 단계든 첫 단계로")
+    func addStageToEmptyPlan() {
+        for kind in StageKind.allCases {
+            #expect(TimelinePlan.insertionIndex(for: kind, in: []) == 0, "\(kind)")
+            var plan = TimelinePlan(stages: [], anchor: .start("2026-09-06T08:00:00Z"))
+            let stage = TimelineStage(kind: kind, minutes: TimelineStage.defaultMinutes(for: kind))
+            plan.addStage(stage)
+            #expect(plan.stages == [stage], "\(kind)")
+        }
+    }
+
     @Test("0분·음수 단계는 길이 0으로 취급되고 순서는 유지된다")
     func zeroStage() {
         let plan = TimelinePlan(

@@ -117,6 +117,12 @@ export function sanitizeCalcState(loaded: unknown): CalcState | null {
   return { ...defaultCalcState(), ...s, input };
 }
 
+export const defaultSettings = (): Settings => ({
+  precision: 0.1,
+  pctBasis: 'total',
+  keepScreenAwake: true,
+});
+
 export function sanitizeSettings(loaded: unknown): Settings | null {
   if (typeof loaded !== 'object' || loaded === null) return null;
   const s = loaded as Settings;
@@ -128,6 +134,7 @@ export function sanitizeSettings(loaded: unknown): Settings | null {
       typeof s.lastExportAt === 'string' && !Number.isNaN(Date.parse(s.lastExportAt))
         ? s.lastExportAt
         : undefined,
+    keepScreenAwake: s.keepScreenAwake !== false,
   };
 }
 
@@ -174,6 +181,58 @@ export function calcStateFromRecipe(r: Recipe): CalcState {
     pieces: r.pieces ?? 0,
   };
   return { ...state, savedSnapshot: calcSnapshot(state) };
+}
+
+/**
+ * 변환기로 넘기는 배합 — 분할 개수와 태그도 함께 넘겨 변환 결과를 저장할 때 잃지 않는다 (iOS sendToConverter와 같다).
+ * 메모는 넘기지 않는다 — 만드는 법이 새 르방에 맞지 않을 수 있다
+ */
+export interface ConverterDough {
+  name: string;
+  input: DoughInput;
+  pieces?: number;
+  tags?: string[];
+}
+
+export function converterDoughFromRecipe(r: Recipe): ConverterDough {
+  return {
+    name: r.name,
+    input: doughInputFromRecipe(r),
+    pieces: r.pieces !== undefined && r.pieces > 0 ? r.pieces : undefined,
+    tags: r.tags && r.tags.length > 0 ? [...r.tags] : undefined,
+  };
+}
+
+/** 계산기 배합 — 태그는 계산기가 이어진 레시피의 것 (계산기 저장 다이얼로그가 미리 채우는 태그와 같다) */
+export function converterDoughFromCalc(state: CalcState, recipes: Recipe[]): ConverterDough {
+  const linked = state.recipeId ? recipes.find((r) => r.id === state.recipeId) : undefined;
+  return {
+    name: state.name,
+    input: structuredClone(currentDoughInput(state)),
+    pieces: currentPieces(state),
+    tags: linked?.tags && linked.tags.length > 0 ? [...linked.tags] : undefined,
+  };
+}
+
+/** 변환 결과로 만드는 새 레시피 — 원본의 분할 개수를 이어받는다 (개당 무게는 변환된 총 반죽에서 다시 나뉜다) */
+export function recipeFromConversion(
+  output: DoughInput,
+  data: { name: string; tags: string[]; note?: string },
+  pieces: number | undefined,
+  id: string,
+  now: string,
+): Recipe {
+  return {
+    id,
+    schemaVersion: 2,
+    name: data.name,
+    note: data.note,
+    tags: data.tags.length > 0 ? data.tags : undefined,
+    createdAt: now,
+    updatedAt: now,
+    ...structuredClone(output),
+    pieces: pieces !== undefined && pieces > 0 ? pieces : undefined,
+  };
 }
 
 /** 재료 행 id를 뺀 배합 — 불러올 때마다·역산할 때마다 새로 붙는 id는 내용이 아니다 */

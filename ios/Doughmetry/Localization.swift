@@ -602,7 +602,7 @@ private let en: [String: String] = [
     "표시 자릿수": "Display precision",
     "내부 계산은 항상 full precision — 반올림은 표시에만 적용됩니다.":
         "Internal math is always full precision — rounding applies to display only.",
-    "배합표를 보는 동안 화면 켜두기": "Keep screen on while viewing the formula",
+    "배합표·레시피를 보는 동안 화면 켜두기": "Keep screen on while viewing a formula or recipe",
     "정보": "About",
     "버전": "Version",
     "개인정보 처리방침": "Privacy Policy",

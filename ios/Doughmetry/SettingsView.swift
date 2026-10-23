@@ -4,7 +4,7 @@ import SwiftUI
 /// 설정 — 도구 탭에서 다른 도구처럼 밀어 넣는 페이지 (언어 · % 표기 · 표시 자릿수 · iCloud · 정보)
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    /// BakersTableSheet가 읽는 키 — 없으면 켬
+    /// keepsScreenAwake()(배합표 시트·iPad 옆 배합표·레시피 상세)가 읽는 키 — 없으면 켬
     @AppStorage("keepScreenAwake") private var keepAwake = true
 
     private var cloudStatusText: String {
@@ -88,7 +88,7 @@ struct SettingsView: View {
                         Text(p.label).tag(p)
                     }
                 }
-                Toggle(L("배합표를 보는 동안 화면 켜두기"), isOn: $keepAwake)
+                Toggle(L("배합표·레시피를 보는 동안 화면 켜두기"), isOn: $keepAwake)
             } footer: {
                 Text(L("내부 계산은 항상 full precision — 반올림은 표시에만 적용됩니다."))
             }

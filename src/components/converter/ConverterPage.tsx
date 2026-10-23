@@ -12,7 +12,8 @@ import {
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct } from '../../lib/format';
 import { newId } from '../../lib/id';
-import { defaultCalcState, doughInputFromRecipe } from '../../state';
+import type { ConverterDough } from '../../state';
+import { converterDoughFromRecipe, defaultCalcState, recipeFromConversion } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { IngredientForm } from '../calculator/IngredientForm';
 import { RecipePickerDialog } from '../recipes/RecipePickerDialog';
@@ -27,8 +28,7 @@ type ConvMode = 'fixed-mass' | 'fixed-pff';
 interface Props {
   source: ConverterSource | null;
   api: RecipesApi;
-  calcName: string;
-  getCalcDough: () => DoughInput;
+  getCalcDough: () => ConverterDough;
   settings: Settings;
   toast: (message: string) => void;
 }
@@ -40,10 +40,13 @@ const MODE_DESC: Record<ConvMode, string> = {
     '발효종 밀가루 양(PFF)을 유지합니다 — 필요한 르방 무게가 달라지고, 첨가 물이 그만큼 조정됩니다.',
 };
 
-export function ConverterPage({ source, api, calcName, getCalcDough, settings, toast }: Props) {
+export function ConverterPage({ source, api, getCalcDough, settings, toast }: Props) {
   const precision = settings.precision;
   const [name, setName] = useState('캉파뉴');
   const [input, setInput] = useState<DoughInput>(() => defaultCalcState().input);
+  // 원본의 분할 개수·태그 — 변환 결과를 저장할 때 이어받는다 (화면에서 고치지 않는다)
+  const [pieces, setPieces] = useState<number | undefined>(undefined);
+  const [tags, setTags] = useState<string[]>([]);
   const [targetHydrationPct, setTargetHydrationPct] = useState(50);
   const [convMode, setConvMode] = useState<ConvMode>('fixed-mass');
   const [distFlourId, setDistFlourId] = useState('');
@@ -55,30 +58,32 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
   const suggestTarget = (d: DoughInput) =>
     setTargetHydrationPct(levainTypeFor(d.levain.hydration) === 'liquide' ? 50 : 100);
 
-  const adoptInput = (n: string, d: DoughInput) => {
-    setName(n);
-    setInput(d);
-    suggestTarget(d);
+  const adoptInput = (d: ConverterDough) => {
+    setName(d.name);
+    setInput(d.input);
+    setPieces(d.pieces);
+    setTags(d.tags ?? []);
+    suggestTarget(d.input);
     setDistFlourId('');
   };
   const loadRecipe = (r: Recipe) => {
-    adoptInput(r.name, doughInputFromRecipe(r));
+    adoptInput(converterDoughFromRecipe(r));
     setLoadOpen(false);
   };
 
   // 모드 B의 불가능한 목표 조합(음수 밀가루·물)은 변환기에 들이지 않는다 — 불러오기 창은 열어 둬 레시피를 고를 수 있게
   const adoptCalcDough = () => {
     const d = getCalcDough();
-    if (d.water < -1e-9 || d.flours.some((f) => f.grams < -1e-9)) {
+    if (d.input.water < -1e-9 || d.input.flours.some((f) => f.grams < -1e-9)) {
       toast('목표 조합이 불가능합니다 — 계산기에서 PFF를 낮추세요');
       return;
     }
-    adoptInput(calcName, d);
+    adoptInput(d);
     setLoadOpen(false);
   };
 
   useEffect(() => {
-    if (source) adoptInput(source.name, structuredClone(source.input));
+    if (source) adoptInput(structuredClone(source));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source?.seq]);
 
@@ -105,17 +110,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
 
   const handleSave = (data: { name: string; tags: string[]; note?: string }) => {
     if (!result.ok) return;
-    const now = new Date().toISOString();
-    const recipe: Recipe = {
-      id: newId(),
-      schemaVersion: 2,
-      name: data.name,
-      note: data.note,
-      tags: data.tags.length > 0 ? data.tags : undefined,
-      createdAt: now,
-      updatedAt: now,
-      ...structuredClone(result.output),
-    };
+    const recipe = recipeFromConversion(result.output, data, pieces, newId(), new Date().toISOString());
     if (api.save(recipe)) toast('변환 결과를 새 레시피로 저장했습니다');
   };
 
@@ -232,6 +227,17 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
         onClose={() => setSaveOpen(false)}
         title="변환 결과 저장"
         initialName={`${name} (르방 ${targetHydrationPct}%)`}
+        initialTags={tags}
+        preview={
+          result.ok && pieces !== undefined && pieces > 0 ? (
+            <p className="text-sm tabular-nums text-ink/80">
+              분할 {pieces}개 — 개당{' '}
+              <span className="font-semibold text-brass">
+                {fmtGrams(result.after.doughWeight / pieces, precision)} g
+              </span>
+            </p>
+          ) : undefined
+        }
         onSave={(d) => handleSave(d)}
       />
 

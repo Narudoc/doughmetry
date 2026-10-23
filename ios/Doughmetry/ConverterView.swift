@@ -33,6 +33,9 @@ struct ConverterView: View {
     @State private var input = CalcState.defaultDoughInput()
     /// 아직 기본 예시 배합인가 — 계산기·레시피에서 배합을 받으면 false
     @State private var showsExample = true
+    /// 원본의 분할 개수·태그 — 변환 결과를 저장할 때 새 레시피로 잇는다
+    @State private var sourcePieces: Double?
+    @State private var sourceTags: [String] = []
     @State private var targetHydrationPct: Double = 50
     /// 목표 프리셋 선택 — '직접'(2)도 실제 선택 가능
     @State private var targetPresetSel = 1
@@ -116,6 +119,7 @@ struct ConverterView: View {
                     Button(L("저장")) { showSave = true }
                         // 르방 수분율 0 이하는 코덱 검증에서 탈락해 저장해도 다음 실행 때 사라진다
                         .disabled(!isSuccess(result) || newHydration <= 0)
+                        .accessibilityIdentifier("converter.save")
                 }
             }
             // ⌘S는 보이는 탭에서만 — 계산기 CalculatorView의 같은 단축키 참고
@@ -146,16 +150,17 @@ struct ConverterView: View {
                 loadSheet
             }
             .sheet(isPresented: $showSave) {
+                // 노트는 잇지 않는다 — 원본의 만드는 법이 바뀐 르방에 맞지 않을 수 있다
                 SaveRecipeSheet(
-                    initialName: suggestedSaveName, initialTags: [], initialNote: "",
-                    allowOverwrite: false
+                    initialName: suggestedSaveName, initialTags: sourceTags, initialNote: "",
+                    allowOverwrite: false, division: savedDivision(result)
                 ) { saveName, tags, note, _ in
                     if case .success(let r) = result {
                         let now = isoNow()
                         model.save(
                             Recipe(
                                 name: saveName, note: note, tags: tags.isEmpty ? nil : tags,
-                                createdAt: now, updatedAt: now, input: r.output))
+                                createdAt: now, updatedAt: now, input: r.output, pieces: sourcePieces))
                         savedFeedback.toggle()
                         toastMessage = L("변환 결과를 새 레시피로 저장했습니다")
                     }
@@ -174,7 +179,7 @@ struct ConverterView: View {
     }
 
     private var loadSheet: some View {
-        RecipePickerSheet(onPick: { adopt(name: $0.name, input: $0.doughInput) }) {
+        RecipePickerSheet(onPick: { adopt(ConverterSource($0)) }) {
             CalcDoughSection(calcError: calcError, onPickCalc: pickCalcDough)
         }
     }
@@ -191,19 +196,28 @@ struct ConverterView: View {
         return false
     }
 
-    private func adopt(name newName: String, input newInput: DoughInput) {
-        name = newName
-        input = newInput
+    /// 저장 시트의 분할 미리보기 — 개당 무게는 변환 결과의 총 반죽으로
+    private func savedDivision(_ result: ConvertResult) -> SaveRecipeSheet.Division? {
+        guard let pieces = sourcePieces, case .success(let r) = result else { return nil }
+        return SaveRecipeSheet.Division(
+            pieces: pieces, doughWeight: r.after.doughWeight, precision: model.precision)
+    }
+
+    private func adopt(_ source: ConverterSource) {
+        name = source.name
+        input = source.input
+        sourcePieces = source.pieces
+        sourceTags = source.tags
         // 반대 방향 프리셋: 현재 르방이 리퀴드 계열이면 뒤흐(50%)로, 아니면 리퀴드(100%)로
         targetHydrationPct =
-            levainTypeFor(hydration: newInput.levain.hydration) == .liquide ? 50 : 100
+            levainTypeFor(hydration: source.input.levain.hydration) == .liquide ? 50 : 100
         distFlourId = ""
         showsExample = false
     }
 
     private func consumeSource() {
         guard let source = model.converterSource else { return }
-        adopt(name: source.name, input: source.input)
+        adopt(source)
         model.converterSource = nil
     }
 
@@ -215,7 +229,7 @@ struct ConverterView: View {
     }
 
     private func pickCalcDough() {
-        model.sendToConverter(name: model.calc.name, input: model.calc.currentDough)
+        model.sendCalcToConverter()
     }
 
     private func pickCalcDoughFromFooter() {

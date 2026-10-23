@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RecipesApi } from '../../hooks/useRecipes';
-import type { DoughInput } from '../../lib/dough';
 import { computeStats, scaleDough } from '../../lib/dough';
 import { ficheText } from '../../lib/fiche';
 import { fmtGrams } from '../../lib/format';
 import { newId } from '../../lib/id';
-import type { CalcState } from '../../state';
+import type { CalcState, ConverterDough } from '../../state';
 import {
   LOAD_OVER_DIRTY_PROMPT,
   NEW_CALC_PROMPT,
   calcStateAfterSave,
   calcStateFromRecipe,
+  converterDoughFromCalc,
   currentDoughInput,
   currentPieces,
   isCalcDirty,
@@ -37,7 +37,7 @@ interface Props {
   onChange: (s: CalcState) => void;
   settings: Settings;
   api: RecipesApi;
-  onSendToConverter: (name: string, input: DoughInput) => void;
+  onSendToConverter: (dough: ConverterDough) => void;
   toast: (message: string) => void;
 }
 
@@ -213,7 +213,13 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
           className="no-print space-y-4 focus:outline-none lg:sticky lg:top-4 lg:self-start"
         >
           <div ref={summaryRef}>
-            <ResultSummary stats={stats} pieces={pieces} precision={precision} basis={basis} />
+            <ResultSummary
+              stats={stats}
+              pieces={pieces}
+              precision={precision}
+              basis={basis}
+              solved={state.mode === 'B' ? dough : undefined}
+            />
           </div>
           {(negativeWater || negativeFlour) && (
             <div className="rounded border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
@@ -236,7 +242,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
             </Button>
             <Button
               disabled={negativeWater || negativeFlour}
-              onClick={() => onSendToConverter(state.name, structuredClone(dough))}
+              onClick={() => onSendToConverter(converterDoughFromCalc(state, api.recipes))}
             >
               변환기로 보내기
             </Button>
@@ -316,6 +322,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
           stats={stats}
           pieces={pieces}
           precision={precision}
+          solved={state.mode === 'B' ? dough : undefined}
           infeasible={negativeWater || negativeFlour}
           onExpand={showResults}
         />

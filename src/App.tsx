@@ -7,18 +7,20 @@ import { ToastStack, useToasts } from './components/ui/Toast';
 import { useHashTab, type TabId } from './hooks/useHashTab';
 import { usePersistedState } from './hooks/usePersistedState';
 import { useRecipes } from './hooks/useRecipes';
-import type { DoughInput } from './lib/dough';
+import { useWakeLock, wakeLockSupported } from './hooks/useWakeLock';
 import { DRAFT_KEY, SETTINGS_KEY } from './lib/storage';
 import {
   LOAD_OVER_DIRTY_PROMPT,
   calcStateFromRecipe,
-  currentDoughInput,
+  converterDoughFromCalc,
+  converterDoughFromRecipe,
   defaultCalcState,
-  doughInputFromRecipe,
+  defaultSettings,
   isCalcDirty,
   sanitizeCalcState,
   sanitizeSettings,
   type CalcState,
+  type ConverterDough,
 } from './state';
 import type { Recipe, Settings } from './types';
 
@@ -28,12 +30,13 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'recipes', label: '저장된 레시피' },
 ];
 
+/** iOS 설정의 화면 켜두기 토글과 같은 문구 — 웹은 배합표가 있는 계산기 탭에서 켜 둔다 */
+const KEEP_AWAKE_LABEL = '배합표·레시피를 보는 동안 화면 켜두기';
+
 const FOOTER_LINK =
   'inline-flex min-h-[36px] items-center underline underline-offset-2 hover:text-bottle';
 
-export interface ConverterSource {
-  name: string;
-  input: DoughInput;
+export interface ConverterSource extends ConverterDough {
   seq: number;
 }
 
@@ -43,7 +46,7 @@ export default function App() {
   const api = useRecipes();
   const [settings, setSettings] = usePersistedState<Settings>(
     SETTINGS_KEY,
-    () => ({ precision: 0.1, pctBasis: 'total' }),
+    defaultSettings,
     sanitizeSettings,
     { syncTabs: true },
   );
@@ -54,6 +57,9 @@ export default function App() {
   );
   const [convSource, setConvSource] = useState<ConverterSource | null>(null);
   const convSeq = useRef(0);
+  // 지원하지 않는 브라우저에는 지키지 못할 설정을 보이지 않는다
+  const [canKeepAwake] = useState(() => wakeLockSupported());
+  useWakeLock(tab === 'calc' && settings.keepScreenAwake);
 
   const panelRefs = {
     calc: useRef<HTMLDivElement>(null),
@@ -93,11 +99,11 @@ export default function App() {
   );
 
   const sendToConverter = useCallback(
-    (name: string, input: DoughInput) => {
+    (dough: ConverterDough) => {
       convSeq.current += 1;
-      setConvSource({ name, input, seq: convSeq.current });
+      setConvSource({ ...dough, seq: convSeq.current });
       handOff('convert');
-      show(`'${name || '이름 없는 배합'}' 배합을 변환기로 불러왔습니다`);
+      show(`'${dough.name || '이름 없는 배합'}' 배합을 변환기로 불러왔습니다`);
     },
     [handOff, show],
   );
@@ -177,6 +183,37 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              {canKeepAwake && (
+                <div className="inline-flex rounded border border-paper/30 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={settings.keepScreenAwake}
+                    aria-label={KEEP_AWAKE_LABEL}
+                    title={KEEP_AWAKE_LABEL}
+                    onClick={() =>
+                      setSettings({ ...settings, keepScreenAwake: !settings.keepScreenAwake })
+                    }
+                    className={`inline-flex min-h-[36px] items-center gap-2 whitespace-nowrap rounded px-2.5 font-medium transition-colors motion-reduce:transition-none ${
+                      settings.keepScreenAwake ? 'text-paper' : 'text-paper/70 hover:text-paper'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors motion-reduce:transition-none ${
+                        settings.keepScreenAwake ? 'bg-paper' : 'bg-paper/30'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-3 w-3 rounded-full transition-[left] motion-reduce:transition-none ${
+                          settings.keepScreenAwake ? 'left-3.5 bg-bottle' : 'left-0.5 bg-paper'
+                        }`}
+                      />
+                    </span>
+                    화면 켜두기
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <nav className="mt-4 flex gap-1 overflow-x-auto" aria-label="주요 탭">
@@ -226,8 +263,7 @@ export default function App() {
           <ConverterPage
             source={convSource}
             api={api}
-            calcName={calc.name}
-            getCalcDough={() => structuredClone(currentDoughInput(calc))}
+            getCalcDough={() => converterDoughFromCalc(calc, api.recipes)}
             settings={settings}
             toast={show}
           />
@@ -245,7 +281,7 @@ export default function App() {
             settings={settings}
             onExportedAll={markExported}
             onOpenInCalculator={openInCalculator}
-            onSendToConverter={(r) => sendToConverter(r.name, doughInputFromRecipe(r))}
+            onSendToConverter={(r) => sendToConverter(converterDoughFromRecipe(r))}
             toast={show}
           />
         </div>

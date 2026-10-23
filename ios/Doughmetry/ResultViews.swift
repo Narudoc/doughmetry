@@ -167,8 +167,6 @@ struct BakersTableSheet: View {
     @Environment(\.dismiss) private var dismiss
     /// 처음부터 크게 — 중간 높이에선 합계가 접힌 아래에 있다
     @State private var detent: PresentationDetent = .large
-    /// 배합표를 보며 계량하는 동안 화면이 꺼지지 않게 (설정 키 "keepScreenAwake", 기본 켬)
-    @AppStorage("keepScreenAwake") private var keepAwake = true
 
     var body: some View {
         NavigationStack {
@@ -206,13 +204,13 @@ struct BakersTableSheet: View {
         .adaptiveDetents([.medium, .large], selection: $detent)
         // iPad: 한 장짜리 배합표답게 재료와 합계(총 수분율·총 반죽 무게)가 한 화면에 — 작은 폼 시트에선 합계가 잘린다
         .pageSizedSheet()
-        .modifier(KeepScreenAwake(enabled: keepAwake))
+        .keepsScreenAwake()
     }
 }
 
 /// 넓은 가로 창(iPad 가로)의 계산기 오른쪽 열 — 배합표 시트와 같은 내용을 늘 보인다.
-/// 결과 바(시트로 가는 길)를 감추므로 시트의 용어 설명·공유도 여기 둔다. 화면 꺼짐 방지는 걸지 않는다 —
-/// 시트와 달리 닫히는 때가 없어 계산기를 보는 내내 자동 잠금이 꺼진다
+/// 결과 바(시트로 가는 길)를 감추므로 시트의 용어 설명·공유도 여기 둔다. 화면 꺼짐 방지는 계산기 탭인지 아는
+/// 계산기 화면이 단다
 struct FicheColumn: View {
     let name: String
     let input: DoughInput
@@ -252,21 +250,44 @@ struct FicheColumn: View {
     }
 }
 
-/// 켜 있는 동안 자동 잠금을 막는다 — 닫히거나 앱이 뒤로 가면 풀린다 (isIdleTimerDisabled는 앱 전체 설정)
+extension View {
+    /// 배합표를 보며 계량하는 동안 화면이 꺼지지 않게 — 설정(키 "keepScreenAwake", 기본 켬)이 켜 있으면
+    /// 이 화면이 보이고 active가 참이고 앱이 활성인 동안 자동 잠금을 막는다.
+    /// 탭 안의 화면은 active에 '그 탭이 선택됨'을 넘긴다 — TabView는 떠난 탭의 뷰를 살려 둔다
+    func keepsScreenAwake(while active: Bool = true) -> some View {
+        modifier(KeepScreenAwake(active: active))
+    }
+}
+
+/// isIdleTimerDisabled는 앱 전체 설정이다 — 화면마다 켜고 끄면 늦게 사라진 화면이 아직 보이는 화면의 것까지 끈다
+/// (상세를 바꿔 끼울 때 새 상세가 뜨는 것과 옛 상세가 지는 것의 순서는 정해져 있지 않다). 원하는 화면을 세어 하나라도 있으면 켠다
+@MainActor
+private enum ScreenAwakeOwners {
+    private static var owners = Set<UUID>()
+
+    static func set(_ owner: UUID, awake: Bool) {
+        if awake { owners.insert(owner) } else { owners.remove(owner) }
+        UIApplication.shared.isIdleTimerDisabled = !owners.isEmpty
+    }
+}
+
 private struct KeepScreenAwake: ViewModifier {
-    let enabled: Bool
+    let active: Bool
+    @AppStorage("keepScreenAwake") private var enabled = true
     @Environment(\.scenePhase) private var scenePhase
+    @State private var owner = UUID()
+    @State private var onScreen = false
 
     func body(content: Content) -> some View {
+        let awake = onScreen && active && enabled && scenePhase == .active
         content
-            .onAppear { apply(enabled) }
-            .onDisappear { apply(false) }
-            .onChange(of: scenePhase) { _, phase in apply(enabled && phase == .active) }
-            .onChange(of: enabled) { _, on in apply(on && scenePhase == .active) }
-    }
-
-    private func apply(_ on: Bool) {
-        UIApplication.shared.isIdleTimerDisabled = on
+            .onAppear { onScreen = true }
+            // 화면에서 빠진 뷰엔 onChange가 오지 않는다 — 여기서 바로 푼다
+            .onDisappear {
+                onScreen = false
+                ScreenAwakeOwners.set(owner, awake: false)
+            }
+            .onChange(of: awake) { _, on in ScreenAwakeOwners.set(owner, awake: on) }
     }
 }
 
@@ -315,7 +336,15 @@ struct SaveRecipeSheet: View {
     let allowOverwrite: Bool
     /// 불러온 레시피의 저장된 이름 — 이름이 이와 다르면 덮어쓰기를 끈 채로 시작한다
     var loadedName: String? = nil
+    /// 분할 개수를 함께 저장할 때 — 저장될 배합표의 '분할 N개 — 개당' 행을 미리 보인다
+    var division: Division? = nil
     let onSave: (_ name: String, _ tags: [String], _ note: String?, _ overwrite: Bool) -> Void
+
+    struct Division {
+        let pieces: Double
+        let doughWeight: Double
+        let precision: Precision
+    }
 
     @State private var name: String
     @State private var tagsText: String
@@ -327,7 +356,7 @@ struct SaveRecipeSheet: View {
     // 상태를 init에서 채운다 — onAppear에서 채우면 첫 프레임에 isEdited가 참이 된다
     init(
         initialName: String, initialTags: [String], initialNote: String, allowOverwrite: Bool,
-        loadedName: String? = nil,
+        loadedName: String? = nil, division: Division? = nil,
         onSave: @escaping (_ name: String, _ tags: [String], _ note: String?, _ overwrite: Bool) -> Void
     ) {
         self.initialName = initialName
@@ -335,6 +364,7 @@ struct SaveRecipeSheet: View {
         self.initialNote = initialNote
         self.allowOverwrite = allowOverwrite
         self.loadedName = loadedName
+        self.division = division
         self.onSave = onSave
         _name = State(initialValue: initialName)
         _tagsText = State(initialValue: initialTags.joined(separator: ", "))
@@ -361,6 +391,7 @@ struct SaveRecipeSheet: View {
                     .accessibilityLabel(L("레시피 이름"))
                 TextField(L("태그 (쉼표로 구분)"), text: $tagsText)
                     .accessibilityLabel(L("태그 (쉼표로 구분)"))
+                    .accessibilityIdentifier("saveRecipe.tags")
                 TextField(L("노트"), text: $note, axis: .vertical)
                     .lineLimit(2...5)
                     .accessibilityLabel(L("노트"))
@@ -368,6 +399,15 @@ struct SaveRecipeSheet: View {
                     Toggle(
                         loadedName.map { LF("'%@'에 덮어쓰기", $0) } ?? L("불러온 레시피에 덮어쓰기"),
                         isOn: $overwrite)
+                }
+                if let division {
+                    Section {
+                        let name = LF("분할 %@개 — 개당", fmtCount(division.pieces))
+                        let grams = fmtGrams(division.doughWeight / division.pieces, division.precision)
+                        TableRow(name: name, grams: grams, pct: nil, bold: true)
+                            .ficheRowAccessibility(name: name, grams: grams, pct: nil)
+                            .accessibilityIdentifier("saveRecipe.division")
+                    }
                 }
             }
             .navigationTitle(L("레시피 저장"))

@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { CalcState } from './state';
-import { computeStats } from './lib/dough';
+import { computeStats, convertFixedMass, convertFixedPff } from './lib/dough';
 import {
   calcStateAfterSave,
   calcStateFromRecipe,
+  converterDoughFromCalc,
+  converterDoughFromRecipe,
   currentDoughInput,
   defaultCalcState,
+  defaultSettings,
   isCalcDirty,
   overwriteTarget,
+  recipeFromConversion,
   resetCalcState,
   sanitizeSettings,
 } from './state';
@@ -221,6 +225,88 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ precision: 1, pctBasis: 'total', lastExportAt: at })?.lastExportAt).toBe(at);
     expect(sanitizeSettings({ precision: 1, pctBasis: 'total', lastExportAt: 'nope' })?.lastExportAt).toBeUndefined();
     expect(sanitizeSettings({ precision: 0.1, pctBasis: 'added', lastExportAt: 42 })?.lastExportAt).toBeUndefined();
-    expect(sanitizeSettings({ precision: 0.1 })).toEqual({ precision: 0.1, pctBasis: 'total', lastExportAt: undefined });
+    expect(sanitizeSettings({ precision: 0.1 })).toEqual({
+      precision: 0.1,
+      pctBasis: 'total',
+      lastExportAt: undefined,
+      keepScreenAwake: true,
+    });
+  });
+
+  it('화면 켜두기는 기본 켬 — 이 설정이 없던 예전 저장값도 켬, 끈 것만 끈다', () => {
+    expect(defaultSettings().keepScreenAwake).toBe(true);
+    expect(sanitizeSettings({ precision: 1, pctBasis: 'total' })?.keepScreenAwake).toBe(true);
+    expect(sanitizeSettings({ precision: 1, keepScreenAwake: false })?.keepScreenAwake).toBe(false);
+    expect(sanitizeSettings({ precision: 1, keepScreenAwake: true })?.keepScreenAwake).toBe(true);
+    expect(sanitizeSettings({ precision: 1, keepScreenAwake: 'off' })?.keepScreenAwake).toBe(true);
+    // 저장했다 다시 읽어도 그대로
+    const off = sanitizeSettings(JSON.parse(JSON.stringify({ ...defaultSettings(), keepScreenAwake: false })));
+    expect(off).toEqual({ ...defaultSettings(), keepScreenAwake: false });
+  });
+});
+
+describe('변환기 원본 — 분할 개수·태그를 이어받는다 (iOS sendToConverter와 같다)', () => {
+  it('저장된 레시피에서: 분할 개수·태그를 넘기고 메모는 넘기지 않는다', () => {
+    const d = converterDoughFromRecipe(recipe());
+    expect(d.name).toBe('바게트');
+    expect(d.pieces).toBe(4);
+    expect(d.tags).toEqual(['바게트']);
+    expect(d).not.toHaveProperty('note');
+    expect(d.input.water).toBe(680);
+    // 레시피의 태그 배열과 따로 논다
+    d.tags?.push('x');
+    expect(recipe().tags).toEqual(['바게트']);
+  });
+
+  it('분할·태그가 없는 레시피는 없음으로 넘긴다', () => {
+    const d = converterDoughFromRecipe({ ...recipe(), pieces: 0, tags: undefined });
+    expect(d.pieces).toBeUndefined();
+    expect(d.tags).toBeUndefined();
+  });
+
+  it('계산기에서: 분할 개수와 이어진 레시피의 태그 — 이어진 레시피가 없으면 태그 없음', () => {
+    const linked = calcStateFromRecipe(recipe());
+    const d = converterDoughFromCalc({ ...linked, pieces: 3 }, [recipe()]);
+    expect(d.pieces).toBe(3);
+    expect(d.tags).toEqual(['바게트']);
+    expect(converterDoughFromCalc(linked, []).tags).toBeUndefined();
+    const fresh = defaultCalcState();
+    expect(converterDoughFromCalc(fresh, [recipe()])).toMatchObject({ name: '캉파뉴', pieces: undefined, tags: undefined });
+  });
+
+  it('계산기 모드 B: 역산 배합과 개수 × 개당의 개수', () => {
+    const s: CalcState = {
+      ...defaultCalcState(),
+      mode: 'B',
+      target: { ...defaultCalcState().target, byPieces: true, pieces: 2, pieceWeight: 870 },
+    };
+    const d = converterDoughFromCalc(s, []);
+    expect(d.pieces).toBe(2);
+    expect(computeStats(d.input).doughWeight).toBeCloseTo(1740, 9);
+  });
+
+  it('변환 결과 레시피는 분할 개수를 이어받는다 — 두 변환 모두 총 반죽이 보존돼 개당 무게도 같다', () => {
+    const src = converterDoughFromRecipe(recipe());
+    const before = computeStats(src.input).doughWeight / 4;
+    const mass = convertFixedMass(src.input, 0.5, { mode: 'pro-rata' });
+    const pff = convertFixedPff(src.input, 0.5);
+    if (!mass.ok || !pff.ok) throw new Error('변환 실패');
+    const now = '2026-10-23T00:00:00.000Z';
+    const saved = recipeFromConversion(mass.output, { name: '바게트 (르방 50%)', tags: src.tags ?? [] }, src.pieces, 'n1', now);
+    expect(saved).toMatchObject({ id: 'n1', pieces: 4, tags: ['바게트'], createdAt: now, updatedAt: now });
+    expect(saved.note).toBeUndefined();
+    expect(computeStats(saved).doughWeight / saved.pieces!).toBeCloseTo(before, 9);
+    const savedPff = recipeFromConversion(pff.output, { name: 'p', tags: [] }, src.pieces, 'n2', now);
+    expect(savedPff.pieces).toBe(4);
+    expect(savedPff.tags).toBeUndefined();
+    expect(savedPff.levain.grams).not.toBeCloseTo(src.input.levain.grams, 3);
+    expect(computeStats(savedPff).doughWeight / 4).toBeCloseTo(before, 9);
+  });
+
+  it('분할하지 않는 원본은 분할 없이 저장한다', () => {
+    const r = recipeFromConversion(recipe(), { name: 'x', tags: [], note: '메모' }, undefined, 'n', '2026-10-23T00:00:00.000Z');
+    expect(r.pieces).toBeUndefined();
+    expect(r.note).toBe('메모');
+    expect(recipeFromConversion(recipe(), { name: 'x', tags: [] }, 0, 'n', 'now').pieces).toBeUndefined();
   });
 });

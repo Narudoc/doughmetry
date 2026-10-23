@@ -392,12 +392,7 @@ struct TimelineView: View {
                     ForEach(StageKind.allCases, id: \.self) { kind in
                         Button(stageName(TimelineStage(kind: kind, minutes: 0))) {
                             let stage = TimelineStage(kind: kind, minutes: TimelineStage.defaultMinutes(for: kind))
-                            // 르방은 늘 맨 먼저 만든다
-                            if kind == .levainBuild {
-                                store.plan.stages.insert(stage, at: 0)
-                            } else {
-                                store.plan.stages.append(stage)
-                            }
+                            store.plan.addStage(stage)
                             if kind == .custom { focusedName = stage.id }
                         }
                     }

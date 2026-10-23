@@ -14,6 +14,23 @@ public enum StageKind: String, Codable, CaseIterable, Sendable {
     case coldRetard
     case bake
     case custom
+
+    /// 보통 하는 순서 — 새 단계를 넣을 자리를 정할 때만 쓴다 (사용자 단계는 순서를 알 수 없어 nil)
+    var naturalRank: Int? {
+        switch self {
+        case .levainBuild: return 0
+        case .autolyse: return 1
+        case .mix: return 2
+        case .bulk: return 3
+        case .divide: return 4
+        case .bench: return 5
+        case .shape: return 6
+        case .coldRetard: return 7
+        case .proof: return 8
+        case .bake: return 9
+        case .custom: return nil
+        }
+    }
 }
 
 public struct TimelineStage: Codable, Equatable, Identifiable, Sendable {
@@ -77,6 +94,25 @@ public struct TimelinePlan: Codable, Equatable, Sendable {
         stages.insert(
             TimelineStage(kind: .levainBuild, minutes: TimelineStage.defaultMinutes(for: .levainBuild)), at: 0)
         return true
+    }
+
+    /// 새 단계를 넣을 자리 — 보통 하는 순서의 제자리(냉장 발효는 성형 뒤, 굽기 앞).
+    /// 사용자가 바꿔 둔 순서는 다시 정렬하지 않는다: 순위가 같거나 앞선 마지막 단계 바로 뒤, 없으면 순위가 뒤인 첫 단계 앞.
+    /// 굽기 뒤로는 넣지 않는다 — 사용자 단계는 첫 굽기 바로 앞(굽기가 없으면 맨 끝), 굽기를 하나 더 넣으면 맨 끝
+    public static func insertionIndex(for kind: StageKind, in stages: [TimelineStage]) -> Int {
+        if kind == .bake { return stages.count }
+        let firstBake = stages.firstIndex { $0.kind == .bake } ?? stages.count
+        guard let rank = kind.naturalRank else { return firstBake }
+        if let last = stages.lastIndex(where: { ($0.kind.naturalRank ?? .max) <= rank }) {
+            return min(last + 1, firstBake)
+        }
+        return stages.firstIndex { ($0.kind.naturalRank ?? -1) > rank } ?? 0
+    }
+
+    /// 단계를 제자리(`insertionIndex`)에 넣는다. 다른 단계는 움직이지 않는다 —
+    /// 완성 시각 기준이면 완성 시각은 그대로고 앞 단계들의 시작이 그만큼 당겨진다
+    public mutating func addStage(_ stage: TimelineStage) {
+        stages.insert(stage, at: Self.insertionIndex(for: stage.kind, in: stages))
     }
 
     /// 기본 사워도우 일정 — 오토리즈 → 믹싱 → 벌크 → 분할 → 벤치 → 성형 → 최종발효 → 굽기

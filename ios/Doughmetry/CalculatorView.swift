@@ -54,6 +54,7 @@ struct CalculatorView: View {
                             NumberField(
                                 label: L("분할 개수"), value: $model.calc.pieces,
                                 unit: L("개"), maxValue: 1000, integer: true)
+                            .accessibilityIdentifier("calc.pieces")
                             ScaleRecipeButton(doughWeight: stats.doughWeight)
                         } header: {
                             Text(L("분할"))
@@ -68,11 +69,12 @@ struct CalculatorView: View {
                     }
                     Section {
                         Button {
-                            model.sendToConverter(name: model.calc.name, input: dough)
+                            model.sendCalcToConverter()
                         } label: {
                             Label(L("이 배합으로 르방 변환"), systemImage: "arrow.left.arrow.right")
                         }
                         .disabled(infeasible || dough.levain.hydration <= 0)
+                        .accessibilityIdentifier("calc.sendToConverter")
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
@@ -101,6 +103,7 @@ struct CalculatorView: View {
                         onGlossary: { showGlossary = true })
                     .frame(width: 460)
                     .accessibilityIdentifier("calc.sideFiche")
+                    .keepsScreenAwake(while: model.selectedTab == .calculator)
                 }
             }
             .onGeometryChange(for: Bool.self) { $0.size.width >= 1100 } action: {
