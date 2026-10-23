@@ -9,11 +9,18 @@ import {
   levainTypeFor,
   withLevainMass,
 } from '../../lib/dough';
+import { ficheText } from '../../lib/fiche';
 import type { Precision } from '../../lib/format';
 import { fmtGrams, fmtPct } from '../../lib/format';
 import { newId } from '../../lib/id';
+import { canShareText, shareOrCopy } from '../../lib/share';
 import type { ConverterDough } from '../../state';
-import { converterDoughFromRecipe, defaultCalcState, recipeFromConversion } from '../../state';
+import {
+  convertedDoughName,
+  converterDoughFromRecipe,
+  defaultCalcState,
+  recipeFromConversion,
+} from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { IngredientForm } from '../calculator/IngredientForm';
 import { RecipePickerDialog } from '../recipes/RecipePickerDialog';
@@ -29,6 +36,8 @@ interface Props {
   source: ConverterSource | null;
   api: RecipesApi;
   getCalcDough: () => ConverterDough;
+  /** 변환한 배합을 계산기로 — 계산기에 저장하지 않은 입력이 있으면 먼저 묻는다 */
+  onSendToCalculator: (dough: ConverterDough) => void;
   settings: Settings;
   toast: (message: string) => void;
 }
@@ -40,7 +49,14 @@ const MODE_DESC: Record<ConvMode, string> = {
     '발효종 밀가루 양(PFF)을 유지합니다 — 필요한 르방 무게가 달라지고, 첨가 물이 그만큼 조정됩니다.',
 };
 
-export function ConverterPage({ source, api, getCalcDough, settings, toast }: Props) {
+export function ConverterPage({
+  source,
+  api,
+  getCalcDough,
+  onSendToCalculator,
+  settings,
+  toast,
+}: Props) {
   const precision = settings.precision;
   const [name, setName] = useState('캉파뉴');
   const [input, setInput] = useState<DoughInput>(() => defaultCalcState().input);
@@ -112,6 +128,25 @@ export function ConverterPage({ source, api, getCalcDough, settings, toast }: Pr
     if (!result.ok) return;
     const recipe = recipeFromConversion(result.output, data, pieces, newId(), new Date().toISOString());
     if (api.save(recipe)) toast('변환 결과를 새 레시피로 저장했습니다');
+  };
+
+  const convertedName = convertedDoughName(name, targetHydrationPct);
+  const canShare = canShareText();
+  const shareConverted = () => {
+    if (!result.ok) return;
+    void shareOrCopy(
+      convertedName,
+      ficheText(convertedName, result.output, result.after, {
+        pieces,
+        precision,
+        basis: settings.pctBasis,
+      }),
+      toast,
+    );
+  };
+  const sendConverted = () => {
+    if (!result.ok) return;
+    onSendToCalculator({ name: convertedName, input: structuredClone(result.output), pieces });
   };
 
   return (
@@ -209,9 +244,13 @@ export function ConverterPage({ source, api, getCalcDough, settings, toast }: Pr
           <BeforeAfter result={result} inputBefore={input} precision={precision} />
           <InvariantChecklist result={result} precision={precision} />
           <AdviceNotes result={result} mode={convMode} precision={precision} />
-          <Button variant="primary" onClick={() => setSaveOpen(true)}>
-            변환 결과를 새 레시피로 저장
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => setSaveOpen(true)}>
+              변환 결과를 새 레시피로 저장
+            </Button>
+            <Button onClick={sendConverted}>계산기로 보내기</Button>
+            <Button onClick={shareConverted}>{canShare ? '배합표 공유' : '배합표 복사'}</Button>
+          </div>
         </>
       ) : (
         <ErrorPanel
@@ -226,7 +265,7 @@ export function ConverterPage({ source, api, getCalcDough, settings, toast }: Pr
         open={saveOpen}
         onClose={() => setSaveOpen(false)}
         title="변환 결과 저장"
-        initialName={`${name} (르방 ${targetHydrationPct}%)`}
+        initialName={convertedName}
         initialTags={tags}
         preview={
           result.ok && pieces !== undefined && pieces > 0 ? (

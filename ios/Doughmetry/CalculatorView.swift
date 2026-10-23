@@ -10,6 +10,8 @@ struct CalculatorView: View {
     @State private var showResetDialog = false
     @State private var keyboardVisible = false
     @State private var toastMessage: String?
+    /// 탭이 보이는가 — TabView는 떠난 탭의 뷰를 살려 둔다
+    @State private var onScreen = false
     /// VoiceOver 결과 안내 — 입력이 멈춘 뒤 한 번만 읽도록 미룬다
     @State private var announceTask: Task<Void, Never>?
     @State private var wideEnoughForFiche = false
@@ -44,6 +46,8 @@ struct CalculatorView: View {
                         TextField(L("레시피 이름"), text: $model.calc.name)
                             .accessibilityLabel(L("레시피 이름"))
                             .accessibilityIdentifier("calc.name")
+                    } footer: {
+                        CalcStatusLine(status: model.calcStatus)
                     }
 
                     if model.calc.mode == .a {
@@ -180,6 +184,14 @@ struct CalculatorView: View {
                 }
             }
             .onChange(of: spokenResult) { _, text in scheduleAnnouncement(text) }
+            .onAppear {
+                onScreen = true
+                takeCalcNotice()
+            }
+            .onDisappear { onScreen = false }
+            .onChange(of: model.calcNotice) {
+                if onScreen { takeCalcNotice() }
+            }
             .onReceive(
                 NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
             ) { _ in keyboardVisible = true }
@@ -228,6 +240,14 @@ struct CalculatorView: View {
             }
             .sensoryFeedback(.success, trigger: savedFeedback)
         }
+    }
+
+    /// 화면에 있을 때만 받고, 띄우는 건 한 차례 미룬다 — 다른 탭에서 보내면 onChange가 이 탭의 onAppear보다 먼저 오고,
+    /// 탭이 나타나는 업데이트 안에서 띄운 알림은 알림 작업이 곧바로 취소돼 보이지 않고 사라진다 (iOS 17.5·27에서 확인)
+    private func takeCalcNotice() {
+        guard let notice = model.calcNotice else { return }
+        model.calcNotice = nil
+        Task { toastMessage = notice }
     }
 
     /// 모드 B 결과 바 — 역산한 그램. 불가능한 조합이면 음수가 된 칩을 danger로
@@ -320,6 +340,38 @@ private struct LegacyBarBackground: ViewModifier {
 
 private typealias AnnouncementPriority = AttributeScopes.AccessibilityAttributes
     .AnnouncementPriorityAttribute
+
+/// 이름 칸 아래 상태 줄 — 저장된 레시피와 이어졌는지, 저장하지 않은 수정이 있는지.
+/// navigationSubtitle은 26+ 전용이라 17·18에서도 보이는 섹션 꼬리말에 둔다
+private struct CalcStatusLine: View {
+    let status: AppModel.CalcStatus
+
+    var body: some View {
+        // 17은 꼬리말 Label의 아이콘을 따로 읽는다('정보') — 글자만 한 요소로
+        Label(text, systemImage: symbol)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityIdentifier("calc.status")
+    }
+
+    private var text: String {
+        switch status {
+        case .example: L("예시 배합")
+        case .new: L("새 배합 · 저장 안 됨")
+        case .saved: L("저장된 레시피 · 변경 없음")
+        case .edited: L("수정됨 — 저장 안 됨")
+        }
+    }
+
+    private var symbol: String {
+        switch status {
+        case .example: "info.circle"
+        case .new: "doc.badge.plus"
+        case .saved: "checkmark.circle"
+        case .edited: "pencil.circle"
+        }
+    }
+}
 
 /// 저장된 레시피 불러오기 버튼 — 계산기 본문과 따로 그린다. 본문에 두면 키 입력마다 다시 그려진다
 /// (이 뷰는 model.recipes가 바뀔 때만 다시 그려진다 — 저장하지 않은 입력이 있는지는 고르는 순간에 묻는다)

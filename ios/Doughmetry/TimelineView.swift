@@ -22,7 +22,7 @@ func stageName(_ s: TimelineStage) -> String {
     }
 }
 
-/// 타임라인 알림 — 각 단계가 끝나는 시각에 "다음 단계" 알림
+/// 타임라인 알림 — 첫 단계 시작, 각 단계가 끝나는 시각의 "다음 단계", 켜 두면 오븐 예열 (`timelineAlerts`)
 @MainActor
 enum TimelineNotifier {
     nonisolated static let prefix = "timeline."
@@ -91,15 +91,28 @@ enum TimelineNotifier {
         }
     }
 
-    /// 알림 문구는 예약 시점 언어로 굳는다 — 다시 만들 수 있게 단계 종류·이름을 userInfo에 싣는다
-    private static func makeContent(stage: TimelineStage, next: TimelineStage?) -> UNMutableNotificationContent {
+    /// 알림 문구는 예약 시점 언어로 굳는다 — 다시 만들 수 있게 알림 종류·단계 종류·이름·예열 분을 userInfo에 싣는다
+    private static func makeContent(
+        _ alert: TimelineAlert.Kind, stage: TimelineStage, next: TimelineStage?, preheatMinutes: Int
+    ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.title = next.map { LF("다음 단계: %@", stageName($0)) } ?? L("완성! 빵을 꺼낼 시간")
-        content.body = stage.kind == .levainBuild ? L("르방 빌드 끝 — 피크인지 확인하세요") : LF("%@ 끝", stageName(stage))
+        switch alert {
+        case .start:
+            content.title = LF("지금 시작: %@", stageName(stage))
+            content.body = L("타임라인을 시작할 시간입니다")
+        case .end:
+            content.title = next.map { LF("다음 단계: %@", stageName($0)) } ?? L("완성! 빵을 꺼낼 시간")
+            content.body =
+                stage.kind == .levainBuild ? L("르방 빌드 끝 — 피크인지 확인하세요") : LF("%@ 끝", stageName(stage))
+        case .preheat:
+            content.title = LF("오븐 예열 시작 — 굽기 %d분 전", preheatMinutes)
+            content.body = L("더치 오븐을 쓴다면 함께 넣어 데우세요")
+        }
         content.sound = .default
         content.userInfo = [
-            "kind": stage.kind.rawValue, "custom": stage.customName,
+            "alert": alert.rawValue, "kind": stage.kind.rawValue, "custom": stage.customName,
             "nextKind": next?.kind.rawValue ?? "", "nextCustom": next?.customName ?? "",
+            "minutes": preheatMinutes,
         ]
         return content
     }
@@ -116,7 +129,11 @@ enum TimelineNotifier {
         for req in await center.pendingNotificationRequests() where req.identifier.hasPrefix(prefix) {
             let info = req.content.userInfo
             guard let s = stage(from: info, kind: "kind", custom: "custom") else { continue }
-            let content = makeContent(stage: s, next: stage(from: info, kind: "nextKind", custom: "nextCustom"))
+            // "alert"가 없던 판이 예약한 알림은 모두 단계 끝
+            let alert = (info["alert"] as? String).flatMap(TimelineAlert.Kind.init(rawValue:)) ?? .end
+            let content = makeContent(
+                alert, stage: s, next: stage(from: info, kind: "nextKind", custom: "nextCustom"),
+                preheatMinutes: info["minutes"] as? Int ?? 0)
             guard content.title != req.content.title || content.body != req.content.body,
                 (req.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() != nil
             else { continue }
@@ -139,28 +156,30 @@ enum TimelineNotifier {
         var superseded = false
     }
 
-    /// 예약 결과: 성공 건수, 아직 끝나지 않은 단계 수(이미 지난 시각은 건너뜀), 첫 실패.
-    /// 성공 0건이 "모두 지남"인지 예약 실패인지 가려야 안내가 틀리지 않는다
-    static func schedule(_ scheduled: [ScheduledStage]) async -> ScheduleResult {
+    /// 예약 결과: 성공 건수, 아직 오지 않은 알림 수(이미 지난 시각은 건너뜀), 첫 실패.
+    /// 성공 0건이 "모두 지남"인지 예약 실패인지 가려야 안내가 틀리지 않는다 — 단계 끝이 하나라도 남았으면 0이 아니다
+    static func schedule(_ scheduled: [ScheduledStage], preheatMinutes: Int?) async -> ScheduleResult {
         let gen = await cancelAll()
         let center = UNUserNotificationCenter.current()
         var r = ScheduleResult()
         func isCurrent() -> Bool { gen == generation.withLock { $0 } }
         let batch = UUID().uuidString.prefix(8)
-        for (i, s) in scheduled.enumerated() where s.end > Date() {
+        for a in timelineAlerts(scheduled, preheatMinutes: preheatMinutes, now: Date()) {
             if Task.isCancelled || !isCurrent() {
                 r.superseded = true
                 break
             }
             r.future += 1
-            let next = i + 1 < scheduled.count ? scheduled[i + 1].stage : nil
+            let i = a.stageIndex
+            let next = a.kind == .end && i + 1 < scheduled.count ? scheduled[i + 1].stage : nil
             // 식별자에 예약마다 새 토큰을 넣는다 — 늦게 도착한 옛 요청을 지울 때 새 예약의 같은 단계를 지우지 않도록.
             // 세대 번호는 실행할 때마다 0부터라 이전 실행에서 남은 알림과 겹칠 수 있어 식별자에는 쓰지 않는다
-            let id = "\(prefix)\(batch).\(s.stage.id)"
+            let id = "\(prefix)\(batch).\(a.id)"
             let req = UNNotificationRequest(
-                identifier: id, content: makeContent(stage: s.stage, next: next),
+                identifier: id,
+                content: makeContent(a.kind, stage: scheduled[i].stage, next: next, preheatMinutes: preheatMinutes ?? 0),
                 trigger: UNCalendarNotificationTrigger(
-                    dateMatching: absoluteDateComponents(for: s.end), repeats: false))
+                    dateMatching: absoluteDateComponents(for: a.date), repeats: false))
             do {
                 try await center.add(req)
                 // add를 기다리는 사이 취소·재예약이 지나갔으면(그쪽 cancelAll이 먼저 끝남) 방금 넣은 알림이 남는다 —
@@ -201,6 +220,27 @@ final class TimelineStore {
     var scheduledCount: Int = UserDefaults.standard.integer(forKey: "timeline.scheduledCount") {
         didSet { UserDefaults.standard.set(scheduledCount, forKey: "timeline.scheduledCount") }
     }
+    /// 오븐 예열 알림 — 첫 굽기 시작 `preheatMinutes`분 전. 기본은 꺼짐
+    var preheatAlert: Bool = UserDefaults.standard.bool(forKey: "timeline.preheatAlert") {
+        didSet {
+            UserDefaults.standard.set(preheatAlert, forKey: "timeline.preheatAlert")
+            if alertsArmed, preheatAlert != oldValue { rescheduleSoon() }
+        }
+    }
+    static let preheatRange = 5...180
+    var preheatMinutes: Int = TimelineStore.savedPreheatMinutes {
+        didSet {
+            UserDefaults.standard.set(preheatMinutes, forKey: "timeline.preheatMinutes")
+            if alertsArmed, preheatAlert, preheatMinutes != oldValue { rescheduleSoon() }
+        }
+    }
+    private static var savedPreheatMinutes: Int {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "timeline.preheatMinutes") != nil else { return 45 }
+        let v = defaults.integer(forKey: "timeline.preheatMinutes")
+        return min(max(v, preheatRange.lowerBound), preheatRange.upperBound)
+    }
+    private var preheatLead: Int? { preheatAlert ? preheatMinutes : nil }
     /// 사용자가 알림을 켜 둔 상태. scheduledCount와 따로 두는 이유: 편집 도중(날짜만 먼저 바꾸는 등)
     /// 모든 단계가 잠깐 과거가 되어 0개로 떨어져도 이어지는 편집을 계속 따라가 다시 예약해야 한다.
     private(set) var alertsArmed = false
@@ -229,14 +269,14 @@ final class TimelineStore {
         rescheduling = Task {
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled, alertsArmed else { return }
-            let r = await TimelineNotifier.schedule(scheduleTimeline(plan))
+            let r = await TimelineNotifier.schedule(scheduleTimeline(plan), preheatMinutes: preheatLead)
             if !Task.isCancelled, !r.superseded { scheduledCount = r.added }
         }
     }
 
     func scheduleAlerts() async -> TimelineNotifier.ScheduleResult {
         rescheduling?.cancel()
-        let r = await TimelineNotifier.schedule(scheduleTimeline(plan))
+        let r = await TimelineNotifier.schedule(scheduleTimeline(plan), preheatMinutes: preheatLead)
         // 더 새 예약·취소에 밀렸으면 개수·알림 켜짐 상태는 그쪽이 정한다 (두 번 누름, 예약 중 취소)
         guard !r.superseded else { return r }
         scheduledCount = r.added
@@ -411,6 +451,20 @@ struct TimelineView: View {
             .textCase(nil)
 
             Section {
+                Toggle(L("오븐 예열 알림"), isOn: $store.preheatAlert)
+                if store.preheatAlert {
+                    NumberField(
+                        label: L("굽기 전"),
+                        value: Binding(
+                            get: { Double(store.preheatMinutes) },
+                            set: { store.preheatMinutes = Int($0) }),
+                        unit: L("분"), minValue: Double(TimelineStore.preheatRange.lowerBound),
+                        maxValue: Double(TimelineStore.preheatRange.upperBound), integer: true)
+                    if !store.plan.stages.contains(where: { $0.kind == .bake }) {
+                        Text(L("굽기 단계가 없어 예열 알림은 울리지 않습니다."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Button {
                     Task {
                         guard await TimelineNotifier.requestPermission() else {
@@ -444,7 +498,7 @@ struct TimelineView: View {
                     }
                 }
             } footer: {
-                Text(L("각 단계가 끝나는 시각에 다음 단계 알림이 옵니다. 앱을 닫아도 울립니다."))
+                Text(L("첫 단계를 시작할 시각과 각 단계가 끝나는 시각에 알림이 옵니다. 앱을 닫아도 울립니다."))
             }
         }
         .readableFormWidth()

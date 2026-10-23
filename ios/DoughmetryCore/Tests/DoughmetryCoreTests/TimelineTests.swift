@@ -284,6 +284,145 @@ struct TimelineTests {
         #expect(try JSONDecoder().decode(TimelinePlan.self, from: data) == renamed)
     }
 
+    @Test("알림은 첫 단계 시작과 각 단계 끝 — 시각 순, 식별자는 겹치지 않는다")
+    func alertsStartAndEnds() throws {
+        let plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        let s = scheduleTimeline(plan)
+        let alerts = timelineAlerts(s, now: try #require(parseISO("2026-09-06T07:00:00Z")))
+        #expect(alerts.count == 9)
+        let first = try #require(alerts.first)
+        #expect(first.kind == .start)
+        #expect(first.stageIndex == 0)
+        #expect(first.date == parseISO("2026-09-06T08:00:00Z"))
+        #expect(first.id == plan.stages[0].id + ".start")
+        #expect(alerts.dropFirst().map(\.kind) == Array(repeating: .end, count: 8))
+        #expect(alerts.dropFirst().map(\.stageIndex) == Array(0..<8))
+        #expect(alerts.dropFirst().map(\.date) == s.map(\.end))
+        #expect(alerts.dropFirst().map(\.id) == plan.stages.map(\.id))
+        #expect(Set(alerts.map(\.id)).count == alerts.count)
+        for i in 1..<alerts.count { #expect(alerts[i - 1].date <= alerts[i].date) }
+    }
+
+    @Test("완성 시각으로 역산한 일정은 앱이 정한 시작 시각에 첫 알림 — 사용자 단계면 그 단계를 가리킨다")
+    func alertsBackwardCustomFirst() throws {
+        var plan = TimelinePlan(
+            stages: [
+                TimelineStage(kind: .custom, customName: "스타터 꺼내기", minutes: 30),
+                TimelineStage(kind: .levainBuild, minutes: 360),
+                TimelineStage(kind: .mix, minutes: 15),
+                TimelineStage(kind: .bake, minutes: 45),
+            ], anchor: .finish("2026-09-06T18:00:00Z"))
+        plan.stages[0].id = "c"
+        let s = scheduleTimeline(plan)
+        let alerts = timelineAlerts(s, now: try #require(parseISO("2026-09-06T09:00:00Z")))
+        let start = try #require(alerts.first)
+        #expect(start.kind == .start)
+        #expect(start.id == "c.start")
+        #expect(start.date == parseISO("2026-09-06T10:30:00Z"))  // 18:00 − 7h30m
+        #expect(s[start.stageIndex].stage.customName == "스타터 꺼내기")
+        #expect(alerts.last?.date == parseISO("2026-09-06T18:00:00Z"))
+    }
+
+    @Test("이미 지난 시각의 알림은 빠진다 — 시작 시각과 같아도 지난 것으로 본다")
+    func alertsDropPast() throws {
+        let plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        let s = scheduleTimeline(plan)
+
+        let atStart = timelineAlerts(s, now: try #require(parseISO("2026-09-06T08:00:00Z")))
+        #expect(!atStart.contains { $0.kind == .start })
+        #expect(atStart.count == 8)
+
+        // 벌크(08:45–12:45) 중 — 오토리즈·믹싱 끝은 지났다
+        let midBulk = timelineAlerts(s, now: try #require(parseISO("2026-09-06T10:00:00Z")))
+        #expect(midBulk.map(\.stageIndex) == Array(2..<8))
+        #expect(midBulk.allSatisfy { $0.kind == .end })
+
+        let done = timelineAlerts(s, now: try #require(parseISO("2026-09-06T15:40:00Z")))
+        #expect(done.isEmpty)
+        #expect(timelineAlerts([], preheatMinutes: 45, now: .distantPast).isEmpty)
+    }
+
+    @Test("예열 알림은 첫 굽기 시작 N분 전 — 켜야만, 최종 발효 중에 울린다")
+    func alertsPreheat() throws {
+        let plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        let s = scheduleTimeline(plan)
+        let now = try #require(parseISO("2026-09-06T07:00:00Z"))
+        #expect(!timelineAlerts(s, now: now).contains { $0.kind == .preheat })
+
+        let alerts = timelineAlerts(s, preheatMinutes: 45, now: now)
+        #expect(alerts.count == 10)
+        let preheat = try #require(alerts.first { $0.kind == .preheat })
+        let bake = try #require(s.last)
+        #expect(bake.start == parseISO("2026-09-06T14:55:00Z"))
+        #expect(preheat.date == parseISO("2026-09-06T14:10:00Z"))
+        #expect(preheat.date < bake.start)
+        #expect(preheat.stageIndex == 7)
+        #expect(preheat.id == bake.stage.id + ".preheat")
+        // 성형 끝(13:25)과 최종 발효 끝(14:55) 사이
+        #expect(alerts.map(\.kind).suffix(3) == [.preheat, .end, .end])
+        for i in 1..<alerts.count { #expect(alerts[i - 1].date <= alerts[i].date) }
+
+        // 굽기가 둘이면 첫 굽기 기준
+        var twoBakes = plan
+        twoBakes.stages.append(TimelineStage(kind: .bake, minutes: 45))
+        let t = timelineAlerts(scheduleTimeline(twoBakes), preheatMinutes: 60, now: now)
+        #expect(t.filter { $0.kind == .preheat }.map(\.stageIndex) == [7])
+        #expect(t.first { $0.kind == .preheat }?.date == parseISO("2026-09-06T13:55:00Z"))
+    }
+
+    @Test("굽기 단계가 없으면 예열 알림도 없다")
+    func alertsNoBakeNoPreheat() throws {
+        var plan = TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z")
+        plan.stages.removeAll { $0.kind == .bake }
+        let alerts = timelineAlerts(
+            scheduleTimeline(plan), preheatMinutes: 45, now: try #require(parseISO("2026-09-06T07:00:00Z")))
+        #expect(alerts.count == 8)
+        #expect(!alerts.contains { $0.kind == .preheat })
+    }
+
+    @Test("예열 시각이 지났으면 예열만 빠지고 남은 단계 알림은 그대로")
+    func alertsPreheatPast() throws {
+        let s = scheduleTimeline(TimelinePlan.defaultPlan(startingAt: "2026-09-06T08:00:00Z"))
+        let alerts = timelineAlerts(s, preheatMinutes: 45, now: try #require(parseISO("2026-09-06T14:30:00Z")))
+        #expect(alerts.map(\.kind) == [.end, .end])
+        #expect(alerts.map(\.stageIndex) == [6, 7])
+
+        // 예열이 첫 단계보다 앞서도(짧은 일정) 아직 오지 않았으면 울린다
+        let short = scheduleTimeline(
+            TimelinePlan(
+                stages: [TimelineStage(kind: .mix, minutes: 15), TimelineStage(kind: .bake, minutes: 45)],
+                anchor: .start("2026-09-06T08:00:00Z")))
+        let early = timelineAlerts(short, preheatMinutes: 45, now: try #require(parseISO("2026-09-06T07:00:00Z")))
+        #expect(early.map(\.kind) == [.preheat, .start, .end, .end])
+        #expect(early.first?.date == parseISO("2026-09-06T07:30:00Z"))
+    }
+
+    @Test("0분 첫 단계는 시작과 끝이 같은 시각 — 시작 알림이 먼저")
+    func alertsZeroFirstStage() throws {
+        let s = scheduleTimeline(
+            TimelinePlan(
+                stages: [
+                    TimelineStage(kind: .custom, customName: "메모", minutes: 0),
+                    TimelineStage(kind: .mix, minutes: 15),
+                ], anchor: .start("2026-09-06T08:00:00Z")))
+        let alerts = timelineAlerts(s, now: try #require(parseISO("2026-09-06T07:00:00Z")))
+        #expect(alerts.map(\.kind) == [.start, .end, .end])
+        #expect(alerts[0].date == alerts[1].date)
+        #expect(Set(alerts.map(\.id)).count == 3)
+    }
+
+    @Test("대기 알림은 가까운 64개까지 (iOS 한도)")
+    func alertsLimit() throws {
+        let plan = TimelinePlan(
+            stages: (0..<80).map { _ in TimelineStage(kind: .mix, minutes: 10) }, anchor: .start("2026-09-06T08:00:00Z"))
+        let s = scheduleTimeline(plan)
+        let alerts = timelineAlerts(s, preheatMinutes: 45, now: try #require(parseISO("2026-09-06T07:00:00Z")))
+        #expect(alerts.count == timelineAlertLimit)
+        #expect(alerts.first?.kind == .start)
+        #expect(alerts.last?.stageIndex == 62)
+        #expect(alerts.last?.date == s[62].end)
+    }
+
     @Test("서머타임이 끝나는 밤(뉴욕 2026-11-01)에도 알림 성분은 단계 종료 순간을 그대로 가리킨다")
     func dstFallBackNight() throws {
         // 14:30 EDT 시작, 냉장 발효 12시간 → 01:30 EST(06:30Z). 이 밤 01:30은 두 번 온다.

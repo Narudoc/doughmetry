@@ -271,12 +271,15 @@ struct BakeLogListView: View {
 /// 레시피 상세·전체 기록 화면의 시트 — 레시피 목록(RecipesView)이 띄운다. iPad 창 폭 등급이 바뀌면 상세가 다시 만들어지므로
 /// 상세에 달면 적던 노트·기록이 시트와 함께 사라진다
 enum RecipeDetailSheet: Identifiable {
+    /// 이름·태그·노트 — 연 시점의 사본
+    case edit(Recipe)
     case note(recipeId: String)
     case newLog(recipeId: String)
     case editLog(BakeLog)
 
     var id: String {
         switch self {
+        case .edit(let recipe): "edit:\(recipe.id)"
         case .note(let recipeId): "note:\(recipeId)"
         case .newLog(let recipeId): "newLog:\(recipeId)"
         case .editLog(let log): "editLog:\(log.id)"
@@ -285,7 +288,7 @@ enum RecipeDetailSheet: Identifiable {
 }
 
 extension View {
-    /// 레시피 상세의 노트·기록 시트. 새 기록을 별점 4개 이상으로 저장하면 시트가 닫힌 뒤 앱 평가를 청한다 (앱 버전마다 한 번).
+    /// 레시피 상세의 편집·노트·기록 시트. 새 기록을 별점 4개 이상으로 저장하면 시트가 닫힌 뒤 앱 평가를 청한다 (앱 버전마다 한 번).
     /// 편집 저장·계산기·변환기·앱 실행 중에는 청하지 않는다
     func recipeDetailSheets(_ sheet: Binding<RecipeDetailSheet?>) -> some View {
         modifier(RecipeDetailSheets(sheet: sheet))
@@ -302,6 +305,12 @@ private struct RecipeDetailSheets: ViewModifier {
     func body(content: Content) -> some View {
         content.sheet(item: $sheet, onDismiss: askForReview) { sheet in
             switch sheet {
+            case .edit(let recipe):
+                RecipeEditSheet(recipe: recipe) { edit in
+                    // 연 사이 동기화로 지워졌으면 되살리지 않는다 (노트 편집과 같이)
+                    guard let latest = model.recipes.first(where: { $0.id == recipe.id }) else { return }
+                    model.save(edit.applied(to: latest))
+                }
             case .note(let recipeId):
                 NoteEditSheet(initial: model.recipes.first { $0.id == recipeId }?.note ?? "") { text in
                     model.updateNote(recipeId: recipeId, note: text)

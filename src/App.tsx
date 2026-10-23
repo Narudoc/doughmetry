@@ -11,6 +11,8 @@ import { useWakeLock, wakeLockSupported } from './hooks/useWakeLock';
 import { DRAFT_KEY, SETTINGS_KEY } from './lib/storage';
 import {
   LOAD_OVER_DIRTY_PROMPT,
+  SEND_TO_CALC_PROMPT,
+  calcStateFromDough,
   calcStateFromRecipe,
   converterDoughFromCalc,
   converterDoughFromRecipe,
@@ -114,6 +116,16 @@ export default function App() {
       setCalc(calcStateFromRecipe(r));
       handOff('calc');
       show(`'${r.name}' 레시피를 계산기로 열었습니다`);
+    },
+    [calc, api.recipes, setCalc, handOff, show],
+  );
+
+  const sendToCalculator = useCallback(
+    (dough: ConverterDough) => {
+      if (isCalcDirty(calc, api.recipes) && !window.confirm(SEND_TO_CALC_PROMPT)) return;
+      setCalc(calcStateFromDough(dough, calc));
+      handOff('calc');
+      show(`'${dough.name}'을(를) 계산기로 보냈습니다`);
     },
     [calc, api.recipes, setCalc, handOff, show],
   );
@@ -235,6 +247,8 @@ export default function App() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+        {/* 배합표 인쇄는 계산기 탭에만 있다 — 다른 탭에서 ⌘P를 눌러도 빈 종이가 나오지 않게 */}
+        {tab !== 'calc' && <p className="print-only text-sm">배합표는 계산기 탭에서 인쇄하세요.</p>}
         <div
           ref={panelRefs.calc}
           hidden={tab !== 'calc'}
@@ -264,6 +278,7 @@ export default function App() {
             source={convSource}
             api={api}
             getCalcDough={() => converterDoughFromCalc(calc, api.recipes)}
+            onSendToCalculator={sendToCalculator}
             settings={settings}
             toast={show}
           />

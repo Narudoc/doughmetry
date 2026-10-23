@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from './Button';
 import { TextField } from './fields';
 
@@ -251,9 +251,12 @@ interface SaveRecipeDialogProps {
   initialName: string;
   initialTags?: string[];
   initialNote?: string;
-  /** 불러온 레시피가 있어 덮어쓰기가 가능한 경우 */
+  /**
+   * 불러온 레시피가 있어 덮어쓰기가 가능한 경우 — 저장 버튼 대신 '덮어쓰기'·'새 레시피로 저장' 두 버튼.
+   * 덮어쓸지는 누르는 순간 고른다 (미리 켜 둔 체크는 놓치기 쉽다, iOS SaveRecipeSheet와 같다)
+   */
   allowOverwrite?: boolean;
-  /** 불러온 레시피의 저장된 이름 — 이름이 이와 다르면 덮어쓰기를 끈 채로 시작한다 */
+  /** 덮어쓸 레시피의 저장된 이름 — 덮어쓰기 버튼이 어느 레시피를 바꾸는지, 이름도 바뀌는지 밝힌다 */
   loadedName?: string;
   /** 입력 칸 위에 보이는, 함께 저장되는 내용 (변환 결과의 분할 등) */
   preview?: ReactNode;
@@ -272,23 +275,38 @@ export function SaveRecipeDialog({
   preview,
   onSave,
 }: SaveRecipeDialogProps) {
-  // 계산기 이름 칸에서 이미 바꾼 이름도 걸러내도록 페이지 이름이 아니라 저장된 이름과 비교한다
-  const baseName = (loadedName ?? initialName).trim();
-  const initialOverwrite = allowOverwrite && initialName.trim() === baseName;
   const [name, setName] = useState(initialName);
   const [tags, setTags] = useState(initialTags.join(', '));
   const [note, setNote] = useState(initialNote);
-  const [overwrite, setOverwrite] = useState(initialOverwrite);
+  // 계산기 이름 칸에서 이미 바꾼 이름도 밝히도록 페이지 이름이 아니라 저장된 이름과 비교한다
+  const target = (loadedName ?? initialName).trim();
+  const overwriteDetail =
+    name.trim() === '' || name.trim() === target
+      ? `'${target}' 레시피를 바꿉니다`
+      : `'${target}' 레시피를 바꾸고 이름을 '${name.trim()}'(으)로 고칩니다`;
 
   useEffect(() => {
     if (open) {
       setName(initialName);
       setTags(initialTags.join(', '));
       setNote(initialNote);
-      setOverwrite(initialOverwrite);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const submit = (overwrite: boolean) => {
+    onSave({
+      name: name.trim(),
+      tags: tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+      note: note.trim() || undefined,
+      overwrite,
+    });
+    onClose();
+  };
+  const blank = name.trim() === '';
 
   return (
     <Dialog
@@ -301,39 +319,17 @@ export function SaveRecipeDialog({
       footer={
         <>
           <Button onClick={onClose}>취소</Button>
-          <Button
-            variant="primary"
-            disabled={name.trim() === ''}
-            onClick={() => {
-              onSave({
-                name: name.trim(),
-                tags: tags
-                  .split(',')
-                  .map((t) => t.trim())
-                  .filter(Boolean),
-                note: note.trim() || undefined,
-                overwrite,
-              });
-              onClose();
-            }}
-          >
-            저장
-          </Button>
+          {!allowOverwrite && (
+            <Button variant="primary" disabled={blank} onClick={() => submit(false)}>
+              저장
+            </Button>
+          )}
         </>
       }
     >
       <div className="space-y-3">
         {preview}
-        <TextField
-          label="이름"
-          value={name}
-          onChange={(v) => {
-            setName(v);
-            // 이름을 바꾸면 새 레시피로 저장하려는 것으로 보고 덮어쓰기를 해제한다 (다시 켤 수는 있음)
-            if (allowOverwrite && v.trim() !== baseName) setOverwrite(false);
-          }}
-          autoFocus
-        />
+        <TextField label="이름" value={name} onChange={setName} autoFocus />
         <TextField
           label="태그 (쉼표로 구분)"
           value={tags}
@@ -350,19 +346,53 @@ export function SaveRecipeDialog({
           />
         </label>
         {allowOverwrite && (
-          <label className="flex min-h-[44px] items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={overwrite}
-              onChange={(e) => setOverwrite(e.target.checked)}
-              className="h-4 w-4 shrink-0 accent-[#1E4034]"
+          <div className="space-y-2 pt-1">
+            <SaveChoice
+              title="덮어쓰기"
+              detail={overwriteDetail}
+              disabled={blank}
+              onClick={() => submit(true)}
             />
-            <span className="min-w-0 [overflow-wrap:anywhere]">
-              {loadedName ? `'${loadedName}'에 덮어쓰기` : '불러온 레시피에 덮어쓰기'}
-            </span>
-          </label>
+            <SaveChoice
+              title="새 레시피로 저장"
+              detail="원래 레시피는 그대로 둡니다"
+              disabled={blank}
+              onClick={() => submit(false)}
+            />
+          </div>
         )}
       </div>
     </Dialog>
+  );
+}
+
+function SaveChoice({
+  title,
+  detail,
+  disabled,
+  onClick,
+}: {
+  title: string;
+  detail: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const id = useId();
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-labelledby={`${id}-title`}
+      aria-describedby={`${id}-detail`}
+      className="flex min-h-[44px] w-full flex-col items-start gap-0.5 rounded border border-line bg-white px-4 py-2.5 text-left transition-colors hover:border-bottle/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+    >
+      <span id={`${id}-title`} className="font-medium text-bottle">
+        {title}
+      </span>
+      <span id={`${id}-detail`} className="text-xs text-ink/70 [overflow-wrap:anywhere]">
+        {detail}
+      </span>
+    </button>
   );
 }

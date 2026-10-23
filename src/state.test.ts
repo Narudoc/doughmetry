@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { CalcState } from './state';
 import { computeStats, convertFixedMass, convertFixedPff } from './lib/dough';
 import {
+  CALC_STATUS_LABEL,
+  calcSaveStatus,
   calcStateAfterSave,
+  calcStateFromDough,
   calcStateFromRecipe,
+  convertedDoughName,
   converterDoughFromCalc,
   converterDoughFromRecipe,
   currentDoughInput,
@@ -308,5 +312,117 @@ describe('변환기 원본 — 분할 개수·태그를 이어받는다 (iOS sen
     expect(r.pieces).toBeUndefined();
     expect(r.note).toBe('메모');
     expect(recipeFromConversion(recipe(), { name: 'x', tags: [] }, 0, 'n', 'now').pieces).toBeUndefined();
+  });
+});
+
+describe('변환기 → 계산기 (iOS 변환기의 계산기로 보내기와 같다)', () => {
+  it('변환한 배합의 이름은 새 르방 종류와 수분율을 붙인다', () => {
+    expect(convertedDoughName('캉파뉴', 50)).toBe('캉파뉴 (뒤흐 50%)');
+    expect(convertedDoughName('바게트', 100)).toBe('바게트 (리퀴드 100%)');
+    expect(convertedDoughName('  바게트 ', 65.5)).toBe('바게트 (뒤흐 65.5%)');
+    expect(convertedDoughName('', 80)).toBe('이름 없는 배합 (리퀴드 80%)');
+  });
+
+  it('모드 A로, 레시피에 잇지 않고 — 저장해도 원본 레시피를 덮어쓸 수 없다', () => {
+    const r = recipe();
+    const conv = convertFixedMass(converterDoughFromRecipe(r).input, 0.5, { mode: 'pro-rata' });
+    if (!conv.ok) throw new Error('변환 실패');
+    const s = calcStateFromDough({ name: '바게트 (뒤흐 50%)', input: conv.output, pieces: 4 }, calcStateFromRecipe(r));
+    expect(s.mode).toBe('A');
+    expect(s.recipeId).toBeUndefined();
+    expect(s.name).toBe('바게트 (뒤흐 50%)');
+    expect(s.pieces).toBe(4);
+    expect(s.input.levain.hydration).toBe(0.5);
+    expect(overwriteTarget(s, [r])).toBeUndefined();
+    // 넘긴 배합과 따로 논다
+    s.input.flours[0].grams = 1;
+    expect(conv.output.flours[0].grams).not.toBe(1);
+  });
+
+  it('어디에도 저장되지 않은 배합이라 받은 그대로도 저장하지 않은 입력이다 (iOS처럼 기준을 옮기지 않는다)', () => {
+    const r = recipe();
+    const d = { name: '캉파뉴 (뒤흐 50%)', input: defaultCalcState().input };
+    for (const prev of [calcStateFromRecipe(r), resetCalcState(false), resetCalcState(true), defaultCalcState()]) {
+      const s = calcStateFromDough(d, prev);
+      expect(s.pieces).toBe(0);
+      expect(isCalcDirty(s, [r])).toBe(true);
+      // draft로 저장됐다 다시 읽혀도
+      expect(isCalcDirty(JSON.parse(JSON.stringify(s)), [r])).toBe(true);
+    }
+  });
+
+  it('보낸 배합을 모드 B로 저장해도 보낸 모드 A 배합은 저장하지 않은 입력으로 남는다', () => {
+    const r = recipe();
+    const s = calcStateFromDough({ name: '바게트 (뒤흐 50%)', input: defaultCalcState().input }, calcStateFromRecipe(r));
+    const saved = calcStateAfterSave({ ...s, mode: 'B' }, { name: '역산', id: 'rb' }, [r]);
+    expect(isCalcDirty({ ...saved, mode: 'A' }, [r])).toBe(true);
+  });
+
+  it('보낸 배합을 모드 A로 저장하면 그 레시피에 이어지고 깨끗하다', () => {
+    const s = calcStateFromDough({ name: '바게트 (뒤흐 50%)', input: defaultCalcState().input }, resetCalcState(false));
+    const saved = calcStateAfterSave(s, { name: s.name, id: 'rn' }, []);
+    const stored: Recipe = { ...recipe(), id: 'rn', name: s.name, ...saved.input, pieces: 0 };
+    expect(saved.recipeId).toBe('rn');
+    expect(isCalcDirty(saved, [stored])).toBe(false);
+    expect(calcSaveStatus(saved, [stored])).toBe('saved');
+  });
+});
+
+describe('calcSaveStatus (계산기 이름 칸 아래 저장 상태 — iOS 계산기의 상태 줄과 같다)', () => {
+  it('처음 예시 배합 그대로면 예시 배합 — 재료 행 id가 달라도, 새로 시작한 예시도', () => {
+    expect(calcSaveStatus(defaultCalcState(), [])).toBe('example');
+    expect(calcSaveStatus(resetCalcState(false), [recipe()])).toBe('example');
+    expect(calcSaveStatus(JSON.parse(JSON.stringify(resetCalcState(false))), [])).toBe('example');
+  });
+
+  it('예시를 고치거나, 빈 배합·모드 B·변환기에서 받은 배합은 새 배합', () => {
+    const s = defaultCalcState();
+    expect(calcSaveStatus({ ...s, input: { ...s.input, water: 700 } }, [])).toBe('new');
+    expect(calcSaveStatus({ ...s, name: '내 빵' }, [])).toBe('new');
+    expect(calcSaveStatus({ ...s, mode: 'B' }, [])).toBe('new');
+    expect(calcSaveStatus(resetCalcState(true), [])).toBe('new');
+    expect(calcSaveStatus(calcStateFromDough({ name: '캉파뉴 (뒤흐 50%)', input: s.input }, s), [])).toBe('new');
+  });
+
+  it('불러오거나 저장한 레시피 그대로면 저장됨, 고치면 수정됨', () => {
+    const r = recipe();
+    const loaded = calcStateFromRecipe(r);
+    expect(calcSaveStatus(loaded, [r])).toBe('saved');
+    expect(calcSaveStatus({ ...loaded, name: '바게트 2' }, [r])).toBe('edited');
+    expect(calcSaveStatus({ ...loaded, pieces: 5 }, [r])).toBe('edited');
+    expect(calcSaveStatus({ ...loaded, mode: 'B' }, [r])).toBe('edited');
+    const saved = calcStateAfterSave({ ...defaultCalcState(), name: '내 캉파뉴' }, { name: '내 캉파뉴', id: 'ra' }, []);
+    const stored: Recipe = { ...recipe(), id: 'ra', name: '내 캉파뉴', ...saved.input, pieces: 0 };
+    expect(calcSaveStatus(saved, [stored])).toBe('saved');
+  });
+
+  it('이어지지 않는 모드 B 저장은 저장한 그대로면 저장됨, 고치면 새 배합', () => {
+    const s = { ...defaultCalcState(), mode: 'B' as const };
+    const saved = calcStateAfterSave(s, { name: '캉파뉴', id: 'rb' }, []);
+    expect(saved.recipeId).toBeUndefined();
+    expect(isCalcDirty(saved, [])).toBe(false);
+    expect(calcSaveStatus(saved, [])).toBe('saved');
+    expect(calcSaveStatus(JSON.parse(JSON.stringify(saved)), [])).toBe('saved');
+    expect(calcSaveStatus({ ...saved, name: '바게트' }, [])).toBe('new');
+    expect(calcSaveStatus({ ...saved, target: { ...saved.target, hydrationPct: 80 } }, [])).toBe('new');
+    // 숨은 모드 A 입력이 저장되지 않은 채 남으면 (변환기에서 받은 배합) 새 배합
+    const sent = calcStateFromDough({ name: '바게트 (뒤흐 50%)', input: { ...s.input, water: 700 } }, resetCalcState(false));
+    expect(calcSaveStatus(calcStateAfterSave({ ...sent, mode: 'B' }, { name: '역산', id: 'rc' }, []), [])).toBe('new');
+  });
+
+  it('이어진 레시피가 지워졌으면 저장하면 새 레시피가 되므로 새 배합', () => {
+    const loaded = calcStateFromRecipe(recipe());
+    expect(calcSaveStatus(loaded, [])).toBe('new');
+    // 지워진 레시피가 마침 예시 배합과 같아도 예시라고 하지 않는다
+    expect(calcSaveStatus({ ...defaultCalcState(), recipeId: 'gone' }, [])).toBe('new');
+  });
+
+  it('문구는 iOS와 같다', () => {
+    expect(CALC_STATUS_LABEL).toEqual({
+      saved: '저장된 레시피 · 변경 없음',
+      edited: '수정됨 — 저장 안 됨',
+      new: '새 배합 · 저장 안 됨',
+      example: '예시 배합',
+    });
   });
 });

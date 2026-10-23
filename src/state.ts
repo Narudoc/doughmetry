@@ -1,5 +1,5 @@
 import type { DoughInput, TargetSpec } from './lib/dough';
-import { solveFromTarget } from './lib/dough';
+import { levainTypeFor, solveFromTarget } from './lib/dough';
 import { newId } from './lib/id';
 import { stableJson } from './lib/storage';
 import type { Recipe, Settings } from './types';
@@ -214,6 +214,31 @@ export function converterDoughFromCalc(state: CalcState, recipes: Recipe[]): Con
   };
 }
 
+/** 변환한 배합의 이름 — "캉파뉴 (뒤흐 50%)" (iOS ConverterView suggestedSaveName과 같다) */
+export function convertedDoughName(name: string, hydrationPct: number): string {
+  const type = levainTypeFor(hydrationPct / 100) === 'liquide' ? '리퀴드' : '뒤흐';
+  return `${name.trim() || '이름 없는 배합'} (${type} ${hydrationPct}%)`;
+}
+
+/** 저장하지 않은 계산기 입력 위로 변환 결과를 보낼 때 묻는 문구 (iOS와 같다) */
+export const SEND_TO_CALC_PROMPT = '변환 결과를 계산기로 보낼까요? 계산기에 저장하지 않은 입력은 지워집니다.';
+
+/**
+ * 변환기에서 계산기로 보낸 배합 (iOS AppModel.sendToCalculator와 같다) — 모드 A, 레시피에 잇지 않는다: 이으면 다음
+ * 저장이 원본 레시피를 변환한 배합으로 덮어쓴다. 어디에도 저장되지 않은 배합이라 앞 상태의 기준을 그대로 둔다 —
+ * 다른 레시피를 불러오거나 새 배합을 시작할 때 확인을 묻는다
+ */
+export function calcStateFromDough(d: ConverterDough, prev: CalcState): CalcState {
+  return {
+    ...defaultCalcState(),
+    mode: 'A',
+    name: d.name,
+    input: structuredClone(d.input),
+    pieces: d.pieces !== undefined && d.pieces > 0 ? d.pieces : 0,
+    savedSnapshot: prev.savedSnapshot,
+  };
+}
+
 /** 변환 결과로 만드는 새 레시피 — 원본의 분할 개수를 이어받는다 (개당 무게는 변환된 총 반죽에서 다시 나뉜다) */
 export function recipeFromConversion(
   output: DoughInput,
@@ -346,4 +371,30 @@ export function calcStateAfterSave(
 export function overwriteTarget(state: CalcState, recipes: Recipe[]): Recipe | undefined {
   if (state.mode !== 'A' || !state.recipeId) return undefined;
   return recipes.find((r) => r.id === state.recipeId);
+}
+
+/** 계산기 이름 칸 아래 저장 상태 (iOS 계산기의 상태 줄과 같은 판단·문구) */
+export type CalcSaveStatus = 'saved' | 'edited' | 'new' | 'example';
+
+export const CALC_STATUS_LABEL: Record<CalcSaveStatus, string> = {
+  saved: '저장된 레시피 · 변경 없음',
+  edited: '수정됨 — 저장 안 됨',
+  new: '새 배합 · 저장 안 됨',
+  example: '예시 배합',
+};
+
+/**
+ * 이어진 레시피가 있으면 저장하지 않은 입력이 있는지(isCalcDirty), 없으면 처음 예시 배합 그대로인지,
+ * 이어지지 않은 저장(모드 B) 그대로인지. 이어진 레시피가 지워졌으면 저장하면 새 레시피가 되므로 새 배합이다
+ */
+export function calcSaveStatus(state: CalcState, recipes: Recipe[]): CalcSaveStatus {
+  const linked = state.recipeId ? recipes.find((r) => r.id === state.recipeId) : undefined;
+  if (linked) return isCalcDirty(state, recipes) ? 'edited' : 'saved';
+  const snapshot = calcSnapshot(state);
+  if (!state.recipeId && snapshot === calcSnapshot(defaultCalcState())) return 'example';
+  // 모드 B 저장은 레시피와 잇지 않는다 — 저장한 그대로면 저장된 것. 새로 시작한 빈 배합 그대로는 새 배합
+  if (!state.recipeId && snapshot === state.savedSnapshot && snapshot !== calcSnapshot(emptyCalcState())) {
+    return 'saved';
+  }
+  return 'new';
 }

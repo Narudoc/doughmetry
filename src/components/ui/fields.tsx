@@ -128,6 +128,8 @@ interface TextFieldProps {
   className?: string;
   ariaLabel?: string;
   autoFocus?: boolean;
+  /** 칸 아래 보조 설명(저장 상태 등)의 id */
+  describedBy?: string;
 }
 
 export function TextField({
@@ -138,6 +140,7 @@ export function TextField({
   className = '',
   ariaLabel,
   autoFocus = false,
+  describedBy,
 }: TextFieldProps) {
   const input = (
     <input
@@ -145,6 +148,7 @@ export function TextField({
       value={value}
       placeholder={placeholder}
       aria-label={ariaLabel ?? label ?? placeholder}
+      aria-describedby={describedBy}
       autoFocus={autoFocus}
       onChange={(e) => onChange(e.target.value)}
       className={inputBase}

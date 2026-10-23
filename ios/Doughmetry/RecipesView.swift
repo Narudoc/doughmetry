@@ -60,8 +60,10 @@ struct RecipesView: View {
     @State private var pendingReview: ImportedRecipe?
     @State private var textSheetOnScreen = false
     @State private var importSaved = false
-    /// 밀어서 삭제를 누른 레시피 id — 확인 뒤에만 지운다
+    /// 밀어서 삭제·컨텍스트 메뉴에서 삭제를 누른 레시피 id — 확인 뒤에만 지운다
     @State private var pendingDelete: String?
+    /// 컨텍스트 메뉴에서 불러오기를 누른 레시피 id — 계산기에 저장하지 않은 입력이 있어 확인을 기다린다
+    @State private var pendingLoad: String?
 
     private var filtered: [Recipe] {
         let q = search.trimmingCharacters(in: .whitespaces)
@@ -149,13 +151,9 @@ struct RecipesView: View {
                         }
                     }
                     .navigationDestination(for: String.self) { id in
-                        Group {
-                            if let recipe = model.recipes.first(where: { $0.id == id }) {
-                                RecipeDetailView(recipe: recipe, sheet: $detailSheet)
-                            } else {
-                                deletedRecipe
-                            }
-                        }
+                        CompactRecipeDetail(
+                            id: id, sheet: $detailSheet, onDuplicate: duplicate, onDelete: deleteRecipe
+                        )
                         .onAppear { selectedID = id }
                     }
                 }
@@ -377,10 +375,12 @@ struct RecipesView: View {
     private var splitDetail: some View {
         if let id = selectedID {
             if let recipe = model.recipes.first(where: { $0.id == id }) {
-                RecipeDetailView(recipe: recipe, sheet: $detailSheet)
-                    .id(id)
+                RecipeDetailView(
+                    recipe: recipe, sheet: $detailSheet, onDuplicate: duplicate, onDelete: deleteRecipe
+                )
+                .id(id)
             } else {
-                deletedRecipe
+                DeletedRecipeView()
             }
         } else if !model.recipes.isEmpty {
             ContentUnavailableView(
@@ -389,13 +389,6 @@ struct RecipesView: View {
         } else {
             emptyState
         }
-    }
-
-    /// 다른 기기에서 삭제된 레시피가 동기화로 사라진 경우
-    private var deletedRecipe: some View {
-        ContentUnavailableView(
-            L("삭제된 레시피"), systemImage: "trash",
-            description: Text(L("이 레시피는 다른 기기에서 삭제되었습니다.")))
     }
 
     /// 검색어에 맞는 레시피가 없을 때 — 빈 목록만 남기지 않는다. 시스템 .search는 앱 언어가 아니라 번들 현지화를 따른다
@@ -410,7 +403,7 @@ struct RecipesView: View {
     }
 
     private func row(_ recipe: Recipe) -> some View {
-        deletable(
+        rowActions(
             NavigationLink(value: recipe.id) {
                 RecipeRow(recipe: recipe, precision: model.precision)
             }
@@ -420,7 +413,7 @@ struct RecipesView: View {
 
     private func sidebarRow(_ recipe: Recipe) -> some View {
         let selected = selectedID == recipe.id
-        return deletable(
+        return rowActions(
             Button {
                 selectedID = recipe.id
             } label: {
@@ -436,8 +429,8 @@ struct RecipesView: View {
             recipe)
     }
 
-    /// 밀어서 삭제 + 확인 — 한 열과 두 열의 목록 행이 같이 쓴다
-    private func deletable<Row: View>(_ base: Row, _ recipe: Recipe) -> some View {
+    /// 밀어서 삭제·컨텍스트 메뉴 + 확인 — 한 열과 두 열의 목록 행이 같이 쓴다
+    private func rowActions<Row: View>(_ base: Row, _ recipe: Recipe) -> some View {
         base
         // 끝까지 밀어도 바로 지우지 않는다 — 소속 베이킹 로그까지 모든 기기에서 사라진다.
         // role: .destructive는 확인 전에 행을 치우므로 쓰지 않는다
@@ -449,28 +442,83 @@ struct RecipesView: View {
             }
             .tint(Color.danger)
         }
+        // 길게 누르기·오른쪽 클릭(iPad 트랙패드) — 상세를 열지 않고 쓰는 동작
+        .contextMenu {
+            Button {
+                if model.calcIsDirty {
+                    pendingLoad = recipe.id
+                } else {
+                    model.loadIntoCalculator(recipe)
+                }
+            } label: {
+                Label(L("계산기로 불러오기"), systemImage: "scalemass")
+            }
+            Button {
+                model.sendToConverter(ConverterSource(recipe))
+            } label: {
+                Label(L("변환기로 보내기"), systemImage: "arrow.left.arrow.right")
+            }
+            Menu {
+                RecipeShareLinks(recipe: recipe)
+            } label: {
+                Label(L("공유"), systemImage: "square.and.arrow.up")
+            }
+            Section {
+                Button {
+                    duplicate(recipe)
+                } label: {
+                    Label(L("복제"), systemImage: "plus.square.on.square")
+                }
+                Button(role: .destructive) {
+                    pendingDelete = recipe.id
+                } label: {
+                    Label(L("삭제…"), systemImage: "trash")
+                }
+            }
+        }
         // 확인은 그 행에 붙인다 — 목록에 붙이면 iPad·iOS 26 팝오버가 다른 행을 가리킨다
-        .confirmationDialog(
-            LF("'%@' 레시피를 삭제할까요?", recipe.name),
+        .recipeDeleteConfirmation(
+            recipe,
             isPresented: .init(
                 get: { pendingDelete == recipe.id },
-                set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
+                set: { if !$0 { pendingDelete = nil } })
         ) {
-            Button(L("삭제"), role: .destructive) {
-                pendingDelete = nil
-                if selectedID == recipe.id { selectedID = nil }
-                model.delete(recipe.id)
-            }
-            Button(L("취소"), role: .cancel) {}
-        } message: {
-            // 대화상자 내용은 행마다 그릴 때 만들어진다 — 로그 전체를 훑지 않고 캐시된 요약을 쓴다
-            let logCount = model.bakeSummary(for: recipe.id)?.count ?? 0
-            Text(
-                logCount > 0
-                    ? LF("베이킹 기록 %d개도 함께 삭제되며 되돌릴 수 없습니다.", logCount)
-                    : L("되돌릴 수 없습니다."))
+            pendingDelete = nil
+            deleteRecipe(recipe)
         }
+        .recipeLoadConfirmation(
+            isPresented: .init(
+                get: { pendingLoad == recipe.id },
+                set: { if !$0 { pendingLoad = nil } })
+        ) {
+            pendingLoad = nil
+            if let latest = model.recipes.first(where: { $0.id == recipe.id }) { model.loadIntoCalculator(latest) }
+        }
+    }
+
+    /// 복제 — 새 id·지금 시각의 새 레시피. 베이킹 기록은 원본의 것이라 옮기지 않는다.
+    /// 두 열은 사본을 고르고, 한 열은 상세에서 복제했을 때만 사본을 연다 (목록에선 목록에 나타난다)
+    private func duplicate(_ recipe: Recipe) {
+        let now = isoNow()
+        let copy = Recipe(
+            name: LF("%@ 사본", recipe.name), note: recipe.note, tags: recipe.tags,
+            createdAt: now, updatedAt: now, input: recipe.doughInput,
+            targetDoughWeight: recipe.targetDoughWeight, pieces: recipe.pieces)
+        model.save(copy)
+        if windowIsRegular {
+            selectedID = copy.id
+        } else if !compactPath.isEmpty {
+            compactPath.append(copy.id)
+        }
+        importSaved.toggle()
+    }
+
+    /// 지운 레시피가 상세에 열려 있으면 닫는다. 한 열에서 경로가 비어 있지 않으면 맨 위 상세의 ⋯ 메뉴에서 지운 것이다
+    /// (목록 행은 목록이 보일 때만 누를 수 있다)
+    private func deleteRecipe(_ recipe: Recipe) {
+        if selectedID == recipe.id { selectedID = nil }
+        if !windowIsRegular, !compactPath.isEmpty { compactPath.removeLast() }
+        model.delete(recipe.id)
     }
 
     @ToolbarContentBuilder
@@ -860,6 +908,38 @@ struct RecipeRow: View {
     }
 }
 
+/// 다른 기기에서 삭제된 레시피가 동기화로 사라진 경우
+private struct DeletedRecipeView: View {
+    var body: some View {
+        ContentUnavailableView(
+            L("삭제된 레시피"), systemImage: "trash",
+            description: Text(L("이 레시피는 다른 기기에서 삭제되었습니다.")))
+    }
+}
+
+/// 한 열의 레시피 상세. 이 상세의 ⋯ 메뉴로 지운 레시피는 밀려 나가는 동안 그대로 그린다 — 지운 표시는 여기 둔다:
+/// iOS 17은 밀려 나가는 화면을 다시 그릴 때 목록(RecipesView)의 @State를 지우기 전 값으로 읽는다
+private struct CompactRecipeDetail: View {
+    @Environment(AppModel.self) private var model
+    let id: String
+    @Binding var sheet: RecipeDetailSheet?
+    let onDuplicate: (Recipe) -> Void
+    let onDelete: (Recipe) -> Void
+
+    @State private var deletedHere: Recipe?
+
+    var body: some View {
+        if let recipe = model.recipes.first(where: { $0.id == id }) ?? deletedHere {
+            RecipeDetailView(recipe: recipe, sheet: $sheet, onDuplicate: onDuplicate) { deleted in
+                deletedHere = deleted
+                onDelete(deleted)
+            }
+        } else {
+            DeletedRecipeView()
+        }
+    }
+}
+
 /// 화면용 날짜 — 한국어는 웹과 같은 2026.10.01, 영어는 Oct 1, 2026
 func fmtDay(iso: String) -> String {
     guard Lang.shared.current != .ko else { return fmtDate(iso: iso) }
@@ -887,8 +967,12 @@ struct RecipeDetailView: View {
     @Environment(AppModel.self) private var model
     let recipe: Recipe
     @Binding var sheet: RecipeDetailSheet?
+    /// 복제·삭제 뒤의 선택(두 열)과 내비게이션 경로(한 열)는 목록이 고친다
+    let onDuplicate: (Recipe) -> Void
+    let onDelete: (Recipe) -> Void
 
     @State private var confirmLoad = false
+    @State private var confirmDelete = false
 
     /// 상세에 바로 보이는 최근 기록 수 — 기록이 쌓여도 '기록 추가'가 밀려나지 않게 나머지는 전체 목록으로
     private let recentLogCount = 3
@@ -965,20 +1049,38 @@ struct RecipeDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    ShareLink(
-                        item: ficheText(
-                            name: recipe.name, input: input, stats: stats, pieces: recipe.pieces,
-                            basis: model.pctBasis, precision: model.precision)
-                    ) {
-                        Label(L("배합표 텍스트"), systemImage: "doc.plaintext")
-                    }
-                    // 받은 사람이 앱의 JSON 가져오기(웹 포함)로 그대로 들여올 수 있는 파일
-                    ShareLink(item: RecipesExport(recipes: [recipe]), preview: SharePreview(recipe.name)) {
-                        Label(L("레시피 파일"), systemImage: "doc.badge.arrow.up")
-                    }
+                    RecipeShareLinks(recipe: recipe, stats: stats)
                 } label: {
                     Label(L("공유"), systemImage: "square.and.arrow.up")
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        sheet = .edit(recipe)
+                    } label: {
+                        Label(L("편집"), systemImage: "pencil")
+                    }
+                    .accessibilityIdentifier("recipeDetail.edit")
+                    Button {
+                        onDuplicate(recipe)
+                    } label: {
+                        Label(L("복제"), systemImage: "plus.square.on.square")
+                    }
+                    .accessibilityIdentifier("recipeDetail.duplicate")
+                    Section {
+                        Button(role: .destructive) {
+                            confirmDelete = true
+                        } label: {
+                            Label(L("삭제…"), systemImage: "trash")
+                        }
+                        .accessibilityIdentifier("recipeDetail.delete")
+                    }
+                } label: {
+                    Label(L("더 보기"), systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("recipeDetail.more")
+                .recipeDeleteConfirmation(recipe, isPresented: $confirmDelete) { onDelete(current) }
             }
         }
     }
@@ -986,19 +1088,34 @@ struct RecipeDetailView: View {
     /// 이름은 줄바꿈해 끝까지 보인다(인라인 제목은 잘린다). 주 동작은 폭 전체 버튼으로
     private func header(_ recipe: Recipe) -> some View {
         Section {
-            // 이름 줄은 시스템 행 여백을 그대로 써서 아래 재료 이름과 같은 선에 선다 (iPad는 여백이 더 넓다)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(recipe.name)
-                    .font(.title3.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                if let tags = recipe.tags, !tags.isEmpty {
-                    Text(tags.map { "#\($0)" }.joined(separator: " "))
-                        .font(.caption)
+            // 이름 줄은 시스템 행 여백을 그대로 써서 아래 재료 이름과 같은 선에 선다 (iPad는 여백이 더 넓다).
+            // 누르면 이름·태그·노트 편집
+            Button {
+                sheet = .edit(recipe)
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(recipe.name)
+                            .font(.title3.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let tags = recipe.tags, !tags.isEmpty {
+                            Text(tags.map { "#\($0)" }.joined(separator: " "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "pencil")
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityHidden(true)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityHint(L("이름·태그·노트 편집"))
+            .accessibilityIdentifier("recipeDetail.header")
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             Button {
@@ -1017,16 +1134,74 @@ struct RecipeDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("recipeDetail.load")
-            .confirmationDialog(
-                L("레시피를 불러올까요? 저장하지 않은 입력은 지워집니다."),
-                isPresented: $confirmLoad, titleVisibility: .visible
-            ) {
-                Button(L("불러오기"), role: .destructive) { model.loadIntoCalculator(current) }
-                Button(L("취소"), role: .cancel) {}
-            }
+            .recipeLoadConfirmation(isPresented: $confirmLoad) { model.loadIntoCalculator(current) }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+        }
+    }
+}
+
+/// 배합표 텍스트·레시피 파일 공유 — 상세의 공유 메뉴와 목록 행의 컨텍스트 메뉴가 같이 쓴다
+struct RecipeShareLinks: View {
+    @Environment(AppModel.self) private var model
+    let recipe: Recipe
+    var stats: DoughStats? = nil
+
+    var body: some View {
+        ShareLink(
+            item: ficheText(
+                name: recipe.name, input: recipe.doughInput, stats: stats, pieces: recipe.pieces,
+                basis: model.pctBasis, precision: model.precision)
+        ) {
+            Label(L("배합표 텍스트"), systemImage: "doc.plaintext")
+        }
+        // 받은 사람이 앱의 JSON 가져오기(웹 포함)로 그대로 들여올 수 있는 파일
+        ShareLink(item: RecipesExport(recipes: [recipe]), preview: SharePreview(recipe.name)) {
+            Label(L("레시피 파일"), systemImage: "doc.badge.arrow.up")
+        }
+    }
+}
+
+extension View {
+    /// 레시피 삭제 확인 — 소속 베이킹 로그까지 모든 기기에서 사라지므로 늘 묻는다. 목록 행과 상세의 ⋯ 메뉴가 같이 쓴다
+    func recipeDeleteConfirmation(
+        _ recipe: Recipe, isPresented: Binding<Bool>, onDelete: @escaping () -> Void
+    ) -> some View {
+        modifier(RecipeDeleteConfirmation(recipe: recipe, isPresented: isPresented, onDelete: onDelete))
+    }
+
+    /// 계산기에 저장하지 않은 입력이 있을 때의 불러오기 확인 — 상세의 불러오기 버튼과 목록 행의 컨텍스트 메뉴가 같이 쓴다
+    func recipeLoadConfirmation(isPresented: Binding<Bool>, onLoad: @escaping () -> Void) -> some View {
+        confirmationDialog(
+            L("레시피를 불러올까요? 저장하지 않은 입력은 지워집니다."),
+            isPresented: isPresented, titleVisibility: .visible
+        ) {
+            Button(L("불러오기"), role: .destructive, action: onLoad)
+            Button(L("취소"), role: .cancel) {}
+        }
+    }
+}
+
+private struct RecipeDeleteConfirmation: ViewModifier {
+    @Environment(AppModel.self) private var model
+    let recipe: Recipe
+    @Binding var isPresented: Bool
+    let onDelete: () -> Void
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            LF("'%@' 레시피를 삭제할까요?", recipe.name), isPresented: $isPresented, titleVisibility: .visible
+        ) {
+            Button(L("삭제"), role: .destructive, action: onDelete)
+            Button(L("취소"), role: .cancel) {}
+        } message: {
+            // 대화상자 내용은 행마다 그릴 때 만들어진다 — 로그 전체를 훑지 않고 캐시된 요약을 쓴다
+            let logCount = model.bakeSummary(for: recipe.id)?.count ?? 0
+            Text(
+                logCount > 0
+                    ? LF("베이킹 기록 %d개도 함께 삭제되며 되돌릴 수 없습니다.", logCount)
+                    : L("되돌릴 수 없습니다."))
         }
     }
 }

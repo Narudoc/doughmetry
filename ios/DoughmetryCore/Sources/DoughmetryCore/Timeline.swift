@@ -157,6 +157,51 @@ public func scheduleTimeline(_ plan: TimelinePlan) -> [ScheduledStage] {
     }
 }
 
+// MARK: - 타임라인 알림
+
+/// 예약할 알림 하나 — 문구는 앱이 현재 언어로 만든다
+public struct TimelineAlert: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case start  // 첫 단계 시작 — 완성 시각으로 역산하면 앱이 정해 준 시각이라 가장 놓치기 쉽다
+        case end  // 단계 끝 → 다음 단계
+        case preheat  // 첫 굽기 시작 몇 분 전 오븐 예열
+    }
+
+    /// 한 번의 예약 안에서 겹치지 않는 꼬리 (단계 id 기반) — 앱이 접두어·예약 토큰을 앞에 붙인다
+    public var id: String
+    public var date: Date
+    public var kind: Kind
+    /// 알림이 가리키는 단계(`scheduleTimeline` 결과의 인덱스) — 시작은 첫 단계, 끝은 끝나는 단계, 예열은 첫 굽기
+    public var stageIndex: Int
+}
+
+/// iOS는 앱마다 대기 알림을 울릴 시각이 가까운 64개만 남긴다
+public let timelineAlertLimit = 64
+
+/// 예약할 알림 — 첫 단계 시작, 각 단계 끝, `preheatMinutes`가 있으면 첫 굽기 시작 그만큼 전의 예열.
+/// `now`보다 늦은 것만 시각 순으로(같은 시각이면 시작 → 끝 → 예열), 가까운 `timelineAlertLimit`개까지
+public func timelineAlerts(_ scheduled: [ScheduledStage], preheatMinutes: Int? = nil, now: Date) -> [TimelineAlert] {
+    var alerts: [TimelineAlert] = []
+    if let first = scheduled.first {
+        alerts.append(TimelineAlert(id: first.stage.id + ".start", date: first.start, kind: .start, stageIndex: 0))
+    }
+    for (i, s) in scheduled.enumerated() {
+        alerts.append(TimelineAlert(id: s.stage.id, date: s.end, kind: .end, stageIndex: i))
+    }
+    if let minutes = preheatMinutes, let i = scheduled.firstIndex(where: { $0.stage.kind == .bake }) {
+        let bake = scheduled[i]
+        alerts.append(
+            TimelineAlert(
+                id: bake.stage.id + ".preheat", date: bake.start.addingTimeInterval(-Double(max(0, minutes)) * 60),
+                kind: .preheat, stageIndex: i))
+    }
+    return alerts.enumerated()
+        .filter { $0.element.date > now }
+        .sorted { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }
+        .prefix(timelineAlertLimit)
+        .map(\.element)
+}
+
 /// 알림 트리거(UNCalendarNotificationTrigger)용 날짜 성분 — UTC 그레고리력과 시간대를 성분에 함께 싣는다.
 /// 기기 시간대의 벽시계 성분은 서머타임이 끝나는 밤 반복되는 한 시간에서 앞쪽 시각으로 풀리고,
 /// 시간대를 옮기면 그곳 벽시계 기준으로 밀린다.

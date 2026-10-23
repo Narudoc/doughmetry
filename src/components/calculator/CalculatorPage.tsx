@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { RecipesApi } from '../../hooks/useRecipes';
 import { computeStats, scaleDough } from '../../lib/dough';
 import { ficheText } from '../../lib/fiche';
 import { fmtGrams } from '../../lib/format';
 import { newId } from '../../lib/id';
+import { canShareText, shareOrCopy } from '../../lib/share';
 import type { CalcState, ConverterDough } from '../../state';
 import {
+  CALC_STATUS_LABEL,
   LOAD_OVER_DIRTY_PROMPT,
   NEW_CALC_PROMPT,
+  calcSaveStatus,
   calcStateAfterSave,
   calcStateFromRecipe,
   converterDoughFromCalc,
@@ -60,6 +63,8 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     : undefined;
   const replaceable = overwriteTarget(state, api.recipes);
   const newOverDirty = newOpen && isCalcDirty(state, api.recipes);
+  const saveStatus = calcSaveStatus(state, api.recipes);
+  const statusId = useId();
 
   // 결과 요약이 화면에 보이는 동안에는 하단 요약 바가 같은 숫자를 겹쳐 보이지 않게 숨긴다
   useEffect(() => {
@@ -81,24 +86,13 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
     el.focus({ preventScroll: true });
   };
 
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
-  const shareFiche = async () => {
-    const text = ficheText(state.name, dough, stats, { pieces, precision, basis });
-    if (canShare) {
-      try {
-        await navigator.share({ title: state.name.trim() || '배합표', text });
-        return;
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      toast('배합표를 복사했습니다');
-    } catch {
-      toast('복사하지 못했습니다');
-    }
-  };
+  const canShare = canShareText();
+  const shareFiche = () =>
+    shareOrCopy(
+      state.name.trim() || '배합표',
+      ficheText(state.name, dough, stats, { pieces, precision, basis }),
+      toast,
+    );
 
   const startNew = (empty: boolean) => {
     onChange(resetCalcState(empty));
@@ -170,12 +164,26 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
               새 배합
             </Button>
           </div>
-          <TextField
-            label="레시피 이름"
-            value={state.name}
-            onChange={(name) => onChange({ ...state, name })}
-            placeholder="예: 캉파뉴"
-          />
+          <div>
+            <TextField
+              label="레시피 이름"
+              value={state.name}
+              onChange={(name) => onChange({ ...state, name })}
+              placeholder="예: 캉파뉴"
+              describedBy={statusId}
+            />
+            <p
+              id={statusId}
+              className={`mt-1 flex items-center gap-1.5 text-xs ${
+                saveStatus === 'edited' ? 'font-medium text-bottle' : 'text-ink/70'
+              }`}
+            >
+              {saveStatus === 'edited' && (
+                <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-bottle" />
+              )}
+              {CALC_STATUS_LABEL[saveStatus]}
+            </p>
+          </div>
           {state.mode === 'A' ? (
             <>
               <IngredientForm

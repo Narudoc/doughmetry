@@ -328,13 +328,14 @@ struct GlossaryView: View {
     }
 }
 
-/// 레시피 저장 시트
+/// 레시피 저장 시트. 덮어쓸 수 있으면(allowOverwrite) 저장 버튼 대신 '덮어쓰기'·'새 레시피로 저장' 두 버튼 —
+/// 덮어쓸지는 누르는 순간 고른다 (미리 켜 둔 토글은 놓치기 쉽다)
 struct SaveRecipeSheet: View {
     let initialName: String
     let initialTags: [String]
     let initialNote: String
     let allowOverwrite: Bool
-    /// 불러온 레시피의 저장된 이름 — 이름이 이와 다르면 덮어쓰기를 끈 채로 시작한다
+    /// 덮어쓸 레시피의 저장된 이름 — 덮어쓰기 버튼이 어느 레시피를 바꾸는지, 이름도 바뀌는지 밝힌다
     var loadedName: String? = nil
     /// 분할 개수를 함께 저장할 때 — 저장될 배합표의 '분할 N개 — 개당' 행을 미리 보인다
     var division: Division? = nil
@@ -349,7 +350,6 @@ struct SaveRecipeSheet: View {
     @State private var name: String
     @State private var tagsText: String
     @State private var note: String
-    @State private var overwrite: Bool
     @State private var showDiscard = false
     @Environment(\.dismiss) private var dismiss
 
@@ -369,19 +369,20 @@ struct SaveRecipeSheet: View {
         _name = State(initialValue: initialName)
         _tagsText = State(initialValue: initialTags.joined(separator: ", "))
         _note = State(initialValue: initialNote)
-        let base = (loadedName ?? initialName).trimmingCharacters(in: .whitespacesAndNewlines)
-        _overwrite = State(
-            initialValue: allowOverwrite
-                && initialName.trimmingCharacters(in: .whitespacesAndNewlines) == base)
     }
 
-    /// 계산기 이름 칸에서 이미 바꾼 이름도 걸러내도록 화면 이름이 아니라 저장된 이름과 비교한다
-    private var baseName: String {
-        (loadedName ?? initialName).trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var isEdited: Bool {
         name != initialName || tagsText != initialTags.joined(separator: ", ") || note != initialNote
+    }
+
+    /// 계산기 이름 칸에서 이미 바꾼 이름도 밝히도록 화면 이름이 아니라 저장된 이름과 비교한다
+    private var overwriteDetail: String {
+        let target = (loadedName ?? initialName).trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedName.isEmpty || trimmedName == target
+            ? LF("'%@' 레시피를 바꿉니다", target)
+            : LF("'%@' 레시피를 바꾸고 이름을 '%@'(으)로 고칩니다", target, trimmedName)
     }
 
     var body: some View {
@@ -396,9 +397,23 @@ struct SaveRecipeSheet: View {
                     .lineLimit(2...5)
                     .accessibilityLabel(L("노트"))
                 if allowOverwrite {
-                    Toggle(
-                        loadedName.map { LF("'%@'에 덮어쓰기", $0) } ?? L("불러온 레시피에 덮어쓰기"),
-                        isOn: $overwrite)
+                    Section {
+                        Button {
+                            save(overwrite: true)
+                        } label: {
+                            choice(L("덮어쓰기"), detail: overwriteDetail)
+                        }
+                        .accessibilityIdentifier("saveRecipe.overwrite")
+                        Button {
+                            save(overwrite: false)
+                        } label: {
+                            choice(L("새 레시피로 저장"), detail: L("원래 레시피는 그대로 둡니다"))
+                        }
+                        // 식별자는 덮어쓸 레시피가 없을 때의 저장 버튼과 같다 —
+                        // UI 테스트는 어떤 레시피도 바꾸지 않는 저장을 이것으로 누른다
+                        .accessibilityIdentifier("saveRecipe.confirm")
+                    }
+                    .disabled(trimmedName.isEmpty)
                 }
                 if let division {
                     Section {
@@ -419,31 +434,37 @@ struct SaveRecipeSheet: View {
                     }
                     .discardConfirmation(isPresented: $showDiscard) { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(L("저장")) {
-                        let tags = tagsText.split(separator: ",")
-                            .map { $0.trimmingCharacters(in: .whitespaces) }
-                            .filter { !$0.isEmpty }
-                        onSave(
-                            name.trimmingCharacters(in: .whitespacesAndNewlines), tags,
-                            note.isEmpty ? nil : note,
-                            allowOverwrite && overwrite)
-                        dismiss()
+                if !allowOverwrite {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(L("저장")) { save(overwrite: false) }
+                            .disabled(trimmedName.isEmpty)
+                            .accessibilityIdentifier("saveRecipe.confirm")
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("saveRecipe.confirm")
-                }
-            }
-            // 이름을 바꾸면 새 레시피로 저장하려는 것으로 보고 덮어쓰기를 해제한다 (다시 켤 수는 있음)
-            .onChange(of: name) { _, newName in
-                if allowOverwrite,
-                    newName.trimmingCharacters(in: .whitespacesAndNewlines) != baseName
-                {
-                    overwrite = false
                 }
             }
         }
-        .adaptiveDetents([.medium, .large])
+        // 두 버튼이면 처음부터 크게 — 중간 높이에선 큰 글자에서 '새 레시피로 저장'이 접힌 아래로 밀려 덮어쓰기만 보인다
+        .adaptiveDetents(allowOverwrite ? [.large] : [.medium, .large])
         .interactiveDismissDisabled(isEdited)
+    }
+
+    private func choice(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .fontWeight(.semibold)
+            Text(detail)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func save(overwrite: Bool) {
+        let tags = tagsText.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        onSave(trimmedName, tags, note.isEmpty ? nil : note, allowOverwrite && overwrite)
+        dismiss()
     }
 }

@@ -47,6 +47,8 @@ struct ConverterView: View {
     @State private var showSave = false
     @State private var savedFeedback = false
     @State private var appliedFeedback = false
+    /// 계산기에 저장하지 않은 입력이 있어 확인을 기다리는 변환 결과
+    @State private var pendingSend: ConvertSuccess?
     @State private var toastMessage: String?
     @State private var keyboardVisible = false
     /// 예시 안내에서 계산기 배합을 가져오지 못한 이유 — 탭할 때만 따진다 (본문이 계산기 입력을 구독하지 않도록)
@@ -114,6 +116,10 @@ struct ConverterView: View {
                         loadSheet
                             .frame(idealWidth: 420, idealHeight: 560)
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    moreMenu(result)
+                        .disabled(!isSuccess(result) || newHydration <= 0)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("저장")) { showSave = true }
@@ -201,6 +207,52 @@ struct ConverterView: View {
         guard let pieces = sourcePieces, case .success(let r) = result else { return nil }
         return SaveRecipeSheet.Division(
             pieces: pieces, doughWeight: r.after.doughWeight, precision: model.precision)
+    }
+
+    /// 저장 옆 '더 보기' — 변환 결과를 저장하지 않고 계산기로 보내거나 배합표로 공유한다
+    private func moreMenu(_ result: ConvertResult) -> some View {
+        Menu {
+            if case .success(let r) = result {
+                Button {
+                    // 저장하지 않은 입력이 있는지는 누르는 순간에 묻는다 — 본문이 계산기 입력을 구독하지 않도록
+                    if model.calcIsDirty {
+                        pendingSend = r
+                    } else {
+                        sendToCalculator(r)
+                    }
+                } label: {
+                    Label(L("계산기로 보내기"), systemImage: "scalemass")
+                }
+                .accessibilityIdentifier("converter.sendToCalc")
+                ShareLink(
+                    item: ficheText(
+                        name: suggestedSaveName, input: r.output, stats: r.after, pieces: sourcePieces,
+                        basis: model.pctBasis, precision: model.precision)
+                ) {
+                    Label(L("배합표 공유"), systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("converter.share")
+            }
+        } label: {
+            Label(L("더 보기"), systemImage: "ellipsis.circle")
+        }
+        .accessibilityIdentifier("converter.more")
+        // iOS 26+는 확인창을 단 뷰에서 팝오버로 띄운다 — 화면 전체가 아니라 이 버튼에 단다
+        .confirmationDialog(
+            L("변환 결과를 계산기로 보낼까요? 계산기에 저장하지 않은 입력은 지워집니다."),
+            isPresented: Binding(
+                get: { pendingSend != nil }, set: { if !$0 { pendingSend = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingSend
+        ) { r in
+            Button(L("계산기로 보내기"), role: .destructive) { sendToCalculator(r) }
+                .accessibilityIdentifier("converter.confirmSendToCalc")
+            Button(L("취소"), role: .cancel) {}
+        }
+    }
+
+    private func sendToCalculator(_ r: ConvertSuccess) {
+        model.sendToCalculator(name: suggestedSaveName, input: r.output, pieces: sourcePieces)
     }
 
     private func adopt(_ source: ConverterSource) {

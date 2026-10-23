@@ -116,6 +116,8 @@ final class AppModel {
     }
     /// 변환기로 보낸 배합 (탭 전환 시 적용)
     var converterSource: ConverterSource?
+    /// 다른 탭에서 계산기로 보낸 뒤 계산기 화면이 띄울 알림 — 보낸 쪽 화면은 탭이 바뀌어 보이지 않는다
+    var calcNotice: String?
     var selectedTab: Tab = .calculator
     /// 레시피 검색 요청 (하드웨어 키보드 ⌘F) — 올릴 때마다 레시피 탭이 검색 칸을 연다
     var searchRequest = 0
@@ -533,14 +535,39 @@ final class AppModel {
         return !(r.name == calc.name && r.doughInput == calc.input && (r.pieces ?? 0) == calc.pieces)
     }
 
+    /// 계산기 이름 칸 아래 상태 줄
+    enum CalcStatus {
+        case example // 손대지 않은 예시 배합
+        case new // 레시피와 잇지 않음 — 저장하면 새 레시피
+        case saved // 이어진 레시피와 같다
+        case edited // 이어진 레시피에서 고쳤다
+    }
+
+    /// 이어진 레시피가 지워졌으면 잇지 않은 것으로 본다 — 저장 시트도 그 레시피를 덮어쓰기 대상으로 잡지 않는다
+    var calcStatus: CalcStatus {
+        if let id = calc.recipeId, recipes.contains(where: { $0.id == id }) {
+            return calcIsDirty ? .edited : .saved
+        }
+        if Self.isUntouchedExample(calc) { return .example }
+        // 모드 B 저장은 레시피와 잇지 않는다 — 저장한 그대로면 저장된 것.
+        // 지워진 레시피에 이어졌던 배합(recipeId 남음)과 새로 시작한 그대로인 배합은 새 배합
+        if calc.recipeId == nil, !calcIsDirty, !Self.isUntouchedStart(calc) { return .saved }
+        return .new
+    }
+
     /// 새로 시작한 그대로인가 — 레시피 연결 없이 이름·목표 역산 입력·배합이 예시 또는 빈 배합과 같다 (생성 id는 무시).
     /// 앱 언어가 바뀌어 예시 이름이 달라졌으면 고친 것으로 본다 (경고가 나는 쪽이 안전)
     private static func isUntouchedStart(_ state: CalcState) -> Bool {
-        guard state.recipeId == nil, state.mode == .a, state.pieces == 0, state.target == TargetForm()
-        else { return false }
-        let input = withoutIds(state.input)
-        return (state.name == L("캉파뉴") && input == withoutIds(CalcState.defaultDoughInput()))
-            || (state.name.isEmpty && input == withoutIds(CalcState.emptyDoughInput()))
+        isUntouchedExample(state) || isUntouched(state, name: "", input: CalcState.emptyDoughInput())
+    }
+
+    private static func isUntouchedExample(_ state: CalcState) -> Bool {
+        isUntouched(state, name: L("캉파뉴"), input: CalcState.defaultDoughInput())
+    }
+
+    private static func isUntouched(_ state: CalcState, name: String, input: DoughInput) -> Bool {
+        state.recipeId == nil && state.mode == .a && state.pieces == 0 && state.target == TargetForm()
+            && state.name == name && withoutIds(state.input) == withoutIds(input)
     }
 
     private static func withoutIds(_ input: DoughInput) -> DoughInput {
@@ -588,6 +615,14 @@ final class AppModel {
     func sendToConverter(_ source: ConverterSource) {
         converterSource = source
         selectedTab = .converter
+    }
+
+    /// 변환 결과를 계산기로 — 저장된 레시피와 잇지 않는다 (나중 저장이 원본 레시피를 변환본으로 덮어쓰지 않게).
+    /// 어디에도 저장되지 않은 배합이라 기준은 옮기지 않는다 — 다른 레시피를 불러오거나 새 배합을 시작할 때 확인을 묻는다
+    func sendToCalculator(name: String, input: DoughInput, pieces: Double?) {
+        calc = CalcState(mode: .a, name: name, input: input, pieces: pieces ?? 0)
+        calcNotice = LF("'%@'을(를) 계산기로 보냈습니다", name)
+        selectedTab = .calculator
     }
 
     /// 계산기 배합 — 분할 개수와, 저장된 레시피에서 불러왔으면 그 태그도 함께 (저장 시트의 태그와 같은 출처)

@@ -234,6 +234,11 @@ private let en: [String: String] = [
     "총 수분율 %@, 총 반죽 %@그램": "Total hydration %@, total dough %@ grams",
     "밀가루 %@그램, 물 %@그램, 소금 %@그램, 르방 %@그램": "Flour %@ grams, water %@ grams, salt %@ grams, levain %@ grams",
     "'%@' 레시피를 불러왔습니다": "Loaded '%@'",
+    "예시 배합": "Example dough",
+    "새 배합 · 저장 안 됨": "New dough · not saved",
+    "저장된 레시피 · 변경 없음": "Saved recipe · no changes",
+    "수정됨 — 저장 안 됨": "Edited — not saved",
+    "'%@'을(를) 계산기로 보냈습니다": "Sent '%@' to the calculator",
 
     // 레시피 불러오기 (계산기·변환기)
     "레시피 불러오기": "Load recipe",
@@ -295,8 +300,11 @@ private let en: [String: String] = [
     "레시피 저장": "Save recipe",
     "태그 (쉼표로 구분)": "Tags (comma-separated)",
     "노트": "Notes",
-    "불러온 레시피에 덮어쓰기": "Overwrite loaded recipe",
-    "'%@'에 덮어쓰기": "Overwrite '%@'",
+    "덮어쓰기": "Overwrite",
+    "'%@' 레시피를 바꿉니다": "Replaces '%@'",
+    "'%@' 레시피를 바꾸고 이름을 '%@'(으)로 고칩니다": "Replaces '%@' and renames it '%@'",
+    "새 레시피로 저장": "Save as new recipe",
+    "원래 레시피는 그대로 둡니다": "Leaves the original recipe unchanged",
 
     // 변환기
     "르방 변환": "Levain conversion",
@@ -339,6 +347,10 @@ private let en: [String: String] = [
     "예시 배합입니다 — 내 배합을 변환하려면 불러오세요": "This is a sample formula — load your own to convert it",
     "변환 결과로 이동합니다": "Scrolls to the conversion result",
     "변환 결과를 새 레시피로 저장했습니다": "Saved the conversion as a new recipe",
+    "계산기로 보내기": "Send to Calculator",
+    "배합표 공유": "Share formula",
+    "변환 결과를 계산기로 보낼까요? 계산기에 저장하지 않은 입력은 지워집니다.":
+        "Send the conversion to the calculator? Unsaved input in the calculator will be cleared.",
     "%@그램에서 %@그램으로": "%@ grams to %@ grams",
     "변화 없음": "no change",
     "%@에서 %@로": "%@ to %@",
@@ -392,6 +404,11 @@ private let en: [String: String] = [
     "변환기로 보내기": "Send to Converter",
     "배합표 텍스트": "Formula as text",
     "레시피 파일": "Recipe file",
+    "%@ 사본": "%@ copy",
+    "복제": "Duplicate",
+    "삭제…": "Delete…",
+    "레시피 편집": "Edit recipe",
+    "이름·태그·노트 편집": "Edit name, tags and notes",
 
     // 코어 검증 오류
     "레시피가 객체가 아닙니다": "The recipe is not an object",
@@ -558,6 +575,10 @@ private let en: [String: String] = [
     "완성! 빵을 꺼낼 시간": "Done — time to take the bread out",
     "르방 빌드 끝 — 피크인지 확인하세요": "Levain build done — check that it's at peak",
     "%@ 끝": "%@ finished",
+    "지금 시작: %@": "Start now: %@",
+    "타임라인을 시작할 시간입니다": "Time to start your timeline",
+    "오븐 예열 시작 — 굽기 %d분 전": "Preheat the oven — baking in %d min",
+    "더치 오븐을 쓴다면 함께 넣어 데우세요": "Using a Dutch oven? Put it in to heat up too.",
     "기준": "Anchor",
     "시작 시각": "Start time",
     "완성 시각": "Finish time",
@@ -573,8 +594,11 @@ private let en: [String: String] = [
     "예약된 알림": "Scheduled alerts",
     "%d개": "%d",
     "알림 취소": "Cancel alerts",
-    "각 단계가 끝나는 시각에 다음 단계 알림이 옵니다. 앱을 닫아도 울립니다.":
-        "You'll be notified when each stage ends, even with the app closed.",
+    "오븐 예열 알림": "Oven preheat alert",
+    "굽기 전": "Before baking",
+    "굽기 단계가 없어 예열 알림은 울리지 않습니다.": "There's no bake stage, so no preheat alert will go off.",
+    "첫 단계를 시작할 시각과 각 단계가 끝나는 시각에 알림이 옵니다. 앱을 닫아도 울립니다.":
+        "You'll be notified when the first stage should start and when each stage ends, even with the app closed.",
     "알림 권한이 꺼져 있습니다": "Notifications are off",
     "설정 앱 → 알림에서 이 앱의 알림을 허용해 주세요.": "Allow notifications for this app in Settings → Notifications.",
     "모든 단계가 이미 지났습니다": "All stages are already past",
