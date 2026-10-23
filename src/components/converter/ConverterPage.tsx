@@ -15,6 +15,7 @@ import { newId } from '../../lib/id';
 import { defaultCalcState, doughInputFromRecipe } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { IngredientForm } from '../calculator/IngredientForm';
+import { RecipePickerDialog } from '../recipes/RecipePickerDialog';
 import { Button } from '../ui/Button';
 import { SaveRecipeDialog } from '../ui/Dialog';
 import { Segmented } from '../ui/Segmented';
@@ -48,24 +49,24 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
   const [distFlourId, setDistFlourId] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
-  const [selectedRecipeId, setSelectedRecipeId] = useState('');
+  const [loadOpen, setLoadOpen] = useState(false);
 
   // 반대 방향 프리셋: 현재 르방이 리퀴드 계열이면 뒤흐(50%)로, 아니면 리퀴드(100%)로
   const suggestTarget = (d: DoughInput) =>
     setTargetHydrationPct(levainTypeFor(d.levain.hydration) === 'liquide' ? 50 : 100);
 
-  // 드롭다운이 아닌 경로(계산기 배합·변환기로 보내기)는 recipeId 없이 불러 선택 표시를 지운다
-  const adoptInput = (n: string, d: DoughInput, recipeId = '') => {
+  const adoptInput = (n: string, d: DoughInput) => {
     setName(n);
     setInput(d);
     suggestTarget(d);
     setDistFlourId('');
-    setSelectedRecipeId(recipeId);
   };
-  const loadRecipe = (r: Recipe) => adoptInput(r.name, doughInputFromRecipe(r), r.id);
-  const selectedRecipe = api.recipes.find((r) => r.id === selectedRecipeId);
+  const loadRecipe = (r: Recipe) => {
+    adoptInput(r.name, doughInputFromRecipe(r));
+    setLoadOpen(false);
+  };
 
-  // 모드 B의 불가능한 목표 조합(음수 밀가루·물)은 변환기에 들이지 않는다
+  // 모드 B의 불가능한 목표 조합(음수 밀가루·물)은 변환기에 들이지 않는다 — 불러오기 창은 열어 둬 레시피를 고를 수 있게
   const adoptCalcDough = () => {
     const d = getCalcDough();
     if (d.water < -1e-9 || d.flours.some((f) => f.grams < -1e-9)) {
@@ -73,6 +74,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
       return;
     }
     adoptInput(calcName, d);
+    setLoadOpen(false);
   };
 
   useEffect(() => {
@@ -128,38 +130,7 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
             onChange={setName}
             className="min-w-[180px] flex-1"
           />
-          <label className="block min-w-[200px] flex-1">
-            <span className="mb-1 block text-xs font-medium text-ink/70">저장된 레시피 불러오기</span>
-            <select
-              value={selectedRecipe ? selectedRecipeId : ''}
-              onChange={(e) => {
-                const r = api.recipes.find((x) => x.id === e.target.value);
-                if (r) loadRecipe(r);
-                else setSelectedRecipeId('');
-              }}
-              className="min-h-[44px] w-full rounded border border-line bg-white px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
-            >
-              <option value="">선택…</option>
-              {api.recipes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {/* 이미 선택된 항목을 다시 골라도 select는 change를 보내지 않으므로 편집을 버리는 길을 따로 둔다 */}
-          {selectedRecipe && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                loadRecipe(selectedRecipe);
-                toast(`'${selectedRecipe.name}' 레시피를 다시 불러왔습니다`);
-              }}
-            >
-              다시 불러오기
-            </Button>
-          )}
-          <Button onClick={adoptCalcDough}>계산기 배합 가져오기</Button>
+          <Button onClick={() => setLoadOpen(true)}>불러오기</Button>
           <Button onClick={() => setEditOpen((v) => !v)}>
             {editOpen ? '편집 닫기' : '원본 직접 편집'}
           </Button>
@@ -262,6 +233,15 @@ export function ConverterPage({ source, api, calcName, getCalcDough, settings, t
         title="변환 결과 저장"
         initialName={`${name} (르방 ${targetHydrationPct}%)`}
         onSave={(d) => handleSave(d)}
+      />
+
+      <RecipePickerDialog
+        open={loadOpen}
+        onClose={() => setLoadOpen(false)}
+        recipes={api.recipes}
+        precision={precision}
+        onPick={loadRecipe}
+        topAction={{ label: '계산기 배합 가져오기', onSelect: adoptCalcDough }}
       />
     </div>
   );

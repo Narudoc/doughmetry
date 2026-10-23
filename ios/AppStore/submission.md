@@ -134,7 +134,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
    xcrun simctl create "iPad Air iOS18" com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M2 com.apple.CoreSimulator.SimRuntime.iOS-18-2
    ```
 
-3. UI 스모크 테스트(네 개: 두 언어로 네 탭 / 계산기 입력 → 요약 바 / 저장 → 목록 → 불러오기 / 텍스트 가져오기는 확인 시트를 거침)를 기기마다 돌린다. 실행마다 빈 임시 저장 폴더(`-uiTestDataDir`)로 시작하고 iCloud와 합치지 않는다.
+3. UI 스모크 테스트(다섯 개: 두 언어로 네 탭 / 계산기 입력 → 요약 바 / 저장 → 목록 → 불러오기 / 계산기 불러오기 목록에서 검색해 고르기 / 텍스트 가져오기는 확인 시트를 거침)를 기기마다 돌린다. 실행마다 빈 임시 저장 폴더(`-uiTestDataDir`)로 시작하고 iCloud와 합치지 않는다.
 
    ```bash
    cd /Users/narudoc/Claude/Doughmetry

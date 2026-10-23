@@ -186,5 +186,23 @@ var waterDraft = reconcileRules.input
 waterDraft.water += 30
 check("물 +30 g 초안은 기각 (총 무게)", reconcileAIDraft(waterDraft, rules: reconcileRules) == .failure(.weight))
 
+print("레시피 불러오기 목록")
+let pickerRecipes = [
+    ("r1", "캉파뉴", ["T65"], "2026-09-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z"),
+    ("r2", "바게트", [], "2026-09-02T00:00:00.000Z", "2026-10-05T00:00:00.000Z"),
+    ("r3", "Pain de campagne", ["french"], "2026-09-03T00:00:00.000Z", "2026-09-20T00:00:00.000Z"),
+    ("r4", "캉파뉴 10", [], "2026-09-04T00:00:00.000Z", "2026-10-03T00:00:00.000Z"),
+    ("r5", "캉파뉴 2", ["호밀"], "2026-09-05T00:00:00.000Z", "2026-10-03T00:00:00.000Z"),
+    ("r6", "brioche", [], "2026-09-06T00:00:00.000Z", "2026-09-10T00:00:00Z"),
+    ("r7", "Écrasé", [], "2026-09-07T00:00:00.000Z", "2026-09-15T00:00:00.000Z"),
+].map { id, name, tags, created, updated in
+    Recipe(id: id, name: name, tags: tags.isEmpty ? nil : tags, createdAt: created, updatedAt: updated, input: base)
+}
+let pickerIds = { (q: String) in RecipePicker.sections(pickerRecipes, query: q).map { $0.recipes.map(\.id) } }
+check("최근 5개 + 전체 가나다순",
+    pickerIds("") == [["r2", "r5", "r4", "r1", "r3"], ["r2", "r1", "r5", "r4", "r6", "r7", "r3"]])
+check("검색 — 이름·태그, 악센트 무시",
+    pickerIds("캉파") == [["r1", "r5", "r4"]] && pickerIds("ecrase") == [["r7"]] && pickerIds("t65") == [["r1"]])
+
 print(failures == 0 ? "\n전체 통과 ✓" : "\n실패 \(failures)건 ✗")
 exit(failures == 0 ? 0 : 1)

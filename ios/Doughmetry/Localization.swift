@@ -233,7 +233,14 @@ private let en: [String: String] = [
     "전체 배합표를 엽니다": "Opens the full formula",
     "총 수분율 %@, 총 반죽 %@그램": "Total hydration %@, total dough %@ grams",
     "밀가루 %@그램, 물 %@그램, 소금 %@그램, 르방 %@그램": "Flour %@ grams, water %@ grams, salt %@ grams, levain %@ grams",
-    "모두 보기…": "Show all…",
+    "'%@' 레시피를 불러왔습니다": "Loaded '%@'",
+
+    // 레시피 불러오기 (계산기·변환기)
+    "레시피 불러오기": "Load recipe",
+    "이름·태그 검색": "Search name or tag",
+    "최근": "Recent",
+    "전체 (가나다순)": "All (A–Z)",
+    "검색 결과": "Results",
 
     // 모드 B
     "목표": "Target",

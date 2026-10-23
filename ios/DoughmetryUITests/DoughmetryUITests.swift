@@ -159,6 +159,43 @@ final class DoughmetryUITests: XCTestCase {
         if calculatorTab.exists { XCTAssertTrue(calculatorTab.isSelected) }
     }
 
+    // MARK: - (c′) 계산기 불러오기 — 이름으로 검색해 고른다
+
+    @MainActor
+    func testCalculatorLoadPickerSearch() throws {
+        let app = launch(language: "ko")
+        let name = app.textFields["calc.name"].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        for recipeName in ["Alpha Loaf", "Beta Loaf"] {
+            replace(name, with: recipeName)
+            element(app, "calc.save").tap()
+            let confirm = element(app, "saveRecipe.confirm")
+            XCTAssertTrue(waitForSheetToSettle(confirm, timeout: 5))
+            confirm.tap()
+            XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        }
+        // 저장하지 않은 입력이 남게 — 고르면 확인을 거친다
+        replace(name, with: "Draft")
+
+        element(app, "calc.loadRecipe").tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(waitForSheetToSettle(search, timeout: 5))
+        let rows = app.buttons.matching(identifier: "recipePicker.row")
+        XCTAssertEqual(rows.count, 2)
+        search.tap()
+        search.typeText("alpha")
+        expectation(for: NSPredicate(format: "count == 1"), evaluatedWith: rows)
+        waitForExpectations(timeout: 5)
+        rows.firstMatch.tap()
+
+        let confirmLoad = app.buttons["recipePicker.confirmLoad"].firstMatch
+        if confirmLoad.waitForExistence(timeout: 3) { confirmLoad.tap() }
+        XCTAssertTrue(element(app, "recipePicker.list").waitForNonExistence(timeout: 5), "고른 뒤 목록이 닫히지 않았다")
+        let loaded = NSPredicate(format: "value == %@", "Alpha Loaf")
+        expectation(for: loaded, evaluatedWith: name)
+        waitForExpectations(timeout: 5)
+    }
+
     // MARK: - (d) 텍스트 가져오기는 확인 시트를 거친다
 
     @MainActor

@@ -109,7 +109,7 @@ struct ConverterView: View {
                             set: { showLoadSheet = $0 })
                     ) {
                         loadSheet
-                            .frame(idealWidth: 420, idealHeight: 420)
+                            .frame(idealWidth: 420, idealHeight: 560)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -174,10 +174,9 @@ struct ConverterView: View {
     }
 
     private var loadSheet: some View {
-        ConverterLoadSheet(
-            calcError: calcError,
-            onPickCalc: pickCalcDough,
-            onPickRecipe: { adopt(name: $0.name, input: $0.doughInput) })
+        RecipePickerSheet(onPick: { adopt(name: $0.name, input: $0.doughInput) }) {
+            CalcDoughSection(calcError: calcError, onPickCalc: pickCalcDough)
+        }
     }
 
     private var displayName: String { name ?? L("캉파뉴") }
@@ -480,58 +479,28 @@ struct ConverterView: View {
     }
 }
 
-/// 변환기 소스 불러오기 시트 — 계산기 배합 또는 저장된 레시피
-struct ConverterLoadSheet: View {
+/// 변환기 불러오기 목록 맨 위의 '계산기 배합 가져오기' — 저장된 레시피는 그 아래 RecipePickerSheet가 보인다
+private struct CalcDoughSection: View {
     /// 계산기 배합을 가져올 수 없는 이유 — 있으면 버튼을 막고 보여 준다
-    var calcError: String? = nil
+    let calcError: String?
     let onPickCalc: () -> Void
-    let onPickRecipe: (Recipe) -> Void
 
-    @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Button {
-                        onPickCalc()
-                        dismiss()
-                    } label: {
-                        Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
-                    }
-                    .disabled(calcError != nil)
-                } footer: {
-                    if let calcError {
-                        Text(calcError).foregroundStyle(Color.danger)
-                    }
-                }
-                if !model.recipes.isEmpty {
-                    Section(L("저장된 레시피")) {
-                        ForEach(model.recipes) { recipe in
-                            // 탭 영역은 라벨 안에서 넓힌다 — .plain 버튼 바깥의 contentShape는 글자 밖 탭을 받지 못한다
-                            Button {
-                                onPickRecipe(recipe)
-                                dismiss()
-                            } label: {
-                                RecipeRow(recipe: recipe, precision: model.precision)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .textCase(nil)
-                }
+        Section {
+            Button {
+                onPickCalc()
+                dismiss()
+            } label: {
+                Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
             }
-            .navigationTitle(L("불러오기"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(L("취소")) { dismiss() }
-                }
+            .disabled(calcError != nil)
+            .accessibilityIdentifier("converter.pickCalc")
+        } footer: {
+            if let calcError {
+                Text(calcError).foregroundStyle(Color.danger)
             }
         }
-        .adaptiveDetents([.medium, .large])
     }
 }

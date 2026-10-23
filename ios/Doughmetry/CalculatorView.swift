@@ -43,6 +43,7 @@ struct CalculatorView: View {
                             L("입력 모드"), value: model.calc.mode == .a ? L("재료 입력") : L("목표 역산"))
                         TextField(L("레시피 이름"), text: $model.calc.name)
                             .accessibilityLabel(L("레시피 이름"))
+                            .accessibilityIdentifier("calc.name")
                     }
 
                     if model.calc.mode == .a {
@@ -114,7 +115,9 @@ struct CalculatorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    RecipeLoadMenu()
+                    RecipeLoadButton { recipe in
+                        toastMessage = LF("'%@' 레시피를 불러왔습니다", recipe.name)
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     // iOS 26+는 확인창을 단 뷰에서 팝오버로 띄운다 — 화면 전체가 아니라 이 버튼에 단다
@@ -315,46 +318,49 @@ private struct LegacyBarBackground: ViewModifier {
 private typealias AnnouncementPriority = AttributeScopes.AccessibilityAttributes
     .AnnouncementPriorityAttribute
 
-/// 저장된 레시피 불러오기 메뉴 — 계산기 본문과 따로 그린다. 본문에 두면 키 입력마다 레시피 수만큼의
-/// 메뉴 항목을 다시 만든다 (이 뷰는 model.recipes가 바뀔 때만 다시 그려진다)
-private struct RecipeLoadMenu: View {
-    @Environment(AppModel.self) private var model
-    /// 저장하지 않은 입력이 있을 때 고른 레시피 — 확인 뒤에만 불러온다
-    @State private var pendingLoad: Recipe?
+/// 저장된 레시피 불러오기 버튼 — 계산기 본문과 따로 그린다. 본문에 두면 키 입력마다 다시 그려진다
+/// (이 뷰는 model.recipes가 바뀔 때만 다시 그려진다 — 저장하지 않은 입력이 있는지는 고르는 순간에 묻는다)
+private struct RecipeLoadButton: View {
+    let onLoaded: (Recipe) -> Void
 
-    /// 메뉴에 보이는 최근 레시피 수 — 나머지는 레시피 탭(검색)에서
-    private let limit = 10
+    @Environment(AppModel.self) private var model
+    @Environment(\.windowIsRegular) private var windowIsRegular
+    @State private var showPicker = false
+    @State private var asPopover = false
 
     var body: some View {
         if !model.recipes.isEmpty {
-            Menu {
-                ForEach(model.recipes.prefix(limit)) { recipe in
-                    Button(recipe.name) {
-                        if model.calcIsDirty {
-                            pendingLoad = recipe
-                        } else {
-                            model.loadIntoCalculator(recipe)
-                        }
-                    }
-                }
-                if model.recipes.count > limit {
-                    Divider()
-                    Button(L("모두 보기…")) { model.selectedTab = .recipes }
-                }
+            Button {
+                // 키보드를 먼저 내린다 — 저장 버튼과 같은 이유 (닫힐 때 포커스가 이름 칸으로 돌아와 키보드가 다시 뜬다)
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                // 모양은 여는 순간에 정한다 — 변환기 불러오기와 같은 이유 (ConverterView)
+                asPopover = windowIsRegular
+                showPicker = true
             } label: {
                 Label(L("저장된 레시피 불러오기"), systemImage: "book.closed")
             }
-            // 메뉴 항목이 아니라 메뉴에 단다 — 항목은 메뉴가 닫히며 사라져 확인창을 띄우지 못한다
-            .confirmationDialog(
-                L("레시피를 불러올까요? 저장하지 않은 입력은 지워집니다."),
+            .accessibilityIdentifier("calc.loadRecipe")
+            .popover(
                 isPresented: Binding(
-                    get: { pendingLoad != nil }, set: { if !$0 { pendingLoad = nil } }),
-                titleVisibility: .visible,
-                presenting: pendingLoad
-            ) { recipe in
-                Button(L("불러오기"), role: .destructive) { model.loadIntoCalculator(recipe) }
-                Button(L("취소"), role: .cancel) {}
+                    get: { asPopover && showPicker }, set: { showPicker = $0 })
+            ) {
+                picker
+                    .frame(idealWidth: 420, idealHeight: 560)
             }
+            .sheet(
+                isPresented: Binding(
+                    get: { !asPopover && showPicker }, set: { showPicker = $0 })
+            ) {
+                picker
+            }
+        }
+    }
+
+    private var picker: some View {
+        RecipePickerSheet(needsConfirmation: { model.calcIsDirty }) { recipe in
+            model.loadIntoCalculator(recipe)
+            onLoaded(recipe)
         }
     }
 }

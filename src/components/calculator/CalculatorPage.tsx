@@ -19,6 +19,7 @@ import {
   targetSpecFromForm,
 } from '../../state';
 import type { Recipe, Settings } from '../../types';
+import { RecipePickerDialog } from '../recipes/RecipePickerDialog';
 import { Button } from '../ui/Button';
 import { Dialog, SaveRecipeDialog } from '../ui/Dialog';
 import { Segmented } from '../ui/Segmented';
@@ -49,6 +50,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
   const [saveOpen, setSaveOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const [summaryOnScreen, setSummaryOnScreen] = useState(false);
@@ -108,6 +110,13 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
   const confirmLoad = () =>
     !isCalcDirty(state, api.recipes) || window.confirm(LOAD_OVER_DIRTY_PROMPT);
 
+  const loadRecipe = (r: Recipe) => {
+    if (!confirmLoad()) return;
+    onChange(calcStateFromRecipe(r));
+    setPickerOpen(false);
+    toast(`'${r.name}' 레시피를 불러왔습니다`);
+  };
+
   // 모드 B에서 목표 조합이 물리적으로 불가능한 경우 (첨가 물/밀가루 음수)
   const negativeWater = state.mode === 'B' && dough.water < -1e-9;
   const negativeFlour = state.mode === 'B' && dough.flours.some((f) => f.grams < -1e-9);
@@ -155,47 +164,7 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
               ]}
             />
             {api.recipes.length > 0 && (
-              <label className="block min-w-[180px] flex-1 sm:max-w-[240px]">
-                <span className="mb-1 block text-xs font-medium text-ink/70">
-                  저장된 레시피 불러오기
-                </span>
-                <select
-                  value={
-                    state.recipeId && api.recipes.some((r) => r.id === state.recipeId)
-                      ? state.recipeId
-                      : ''
-                  }
-                  onChange={(e) => {
-                    const r = api.recipes.find((x) => x.id === e.target.value);
-                    // 취소하면 상태가 그대로라 제어되는 select가 원래 선택으로 돌아간다
-                    if (r && confirmLoad()) {
-                      onChange(calcStateFromRecipe(r));
-                      toast(`'${r.name}' 레시피를 불러왔습니다`);
-                    }
-                  }}
-                  className="min-h-[44px] w-full rounded border border-line bg-white px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
-                >
-                  <option value="">선택…</option>
-                  {api.recipes.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {/* 이미 선택된 항목을 다시 골라도 select는 change를 보내지 않으므로 편집을 버리는 길을 따로 둔다 */}
-            {loadedRecipe && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (!confirmLoad()) return;
-                  onChange(calcStateFromRecipe(loadedRecipe));
-                  toast(`'${loadedRecipe.name}' 레시피를 다시 불러왔습니다`);
-                }}
-              >
-                다시 불러오기
-              </Button>
+              <Button onClick={() => setPickerOpen(true)}>저장된 레시피 불러오기</Button>
             )}
             <Button variant="ghost" onClick={() => setNewOpen(true)}>
               새 배합
@@ -301,6 +270,14 @@ export function CalculatorPage({ state, onChange, settings, api, onSendToConvert
         allowOverwrite={!!replaceable}
         loadedName={replaceable?.name}
         onSave={handleSave}
+      />
+
+      <RecipePickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        recipes={api.recipes}
+        precision={precision}
+        onPick={loadRecipe}
       />
 
       <ScaleDialog

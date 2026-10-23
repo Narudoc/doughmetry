@@ -1,19 +1,18 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RecipesApi } from '../../hooks/useRecipes';
 import type { DoughInput } from '../../lib/dough';
-import { computeStats } from '../../lib/dough';
 import type { Precision } from '../../lib/format';
-import { fmtDate, fmtGrams, fmtPct } from '../../lib/format';
+import { fmtDate } from '../../lib/format';
 import { newId } from '../../lib/id';
 import { OCR_FIRST_DOWNLOAD_MB, OcrError, recognizeImage, type OcrPhase } from '../../lib/ocr';
 import { cleanForParsing, parseRecipeText } from '../../lib/recipeParser';
 import { OCR_READY_KEY, backupNudge, exportJson, importJson, loadJson, saveJson } from '../../lib/storage';
-import { doughInputFromRecipe } from '../../state';
 import type { Recipe, Settings } from '../../types';
 import { Button } from '../ui/Button';
 import { ConfirmDialog, Dialog, PromptDialog } from '../ui/Dialog';
 import { TextField } from '../ui/fields';
 import { ImportReviewDialog, type ImportedDraft } from './ImportReviewDialog';
+import { recipeSummaryText } from './RecipePickerDialog';
 
 interface Props {
   api: RecipesApi;
@@ -478,8 +477,7 @@ interface CardProps {
 }
 
 const RecipeCard = memo(function RecipeCard({ recipe, precision, onAction }: CardProps) {
-  const stats = useMemo(() => computeStats(doughInputFromRecipe(recipe)), [recipe]);
-  const levainLabel = recipe.levain.type === 'liquide' ? '리퀴드' : '뒤흐';
+  const summary = useMemo(() => recipeSummaryText(recipe, precision), [recipe, precision]);
 
   return (
     <li className="min-w-0 rounded-lg border border-line bg-white p-4">
@@ -496,10 +494,7 @@ const RecipeCard = memo(function RecipeCard({ recipe, precision, onAction }: Car
           ))}
         </div>
       )}
-      <p className="mt-2 text-sm tabular-nums text-ink/70">
-        수분율 {fmtPct(stats.hydrationPct)} · {fmtGrams(stats.doughWeight, precision)} g · 르방{' '}
-        {levainLabel} {(recipe.levain.hydration * 100).toFixed(0)}%
-      </p>
+      <p className="mt-2 text-sm tabular-nums text-ink/70">{summary}</p>
       {recipe.note && <p className="mt-1 truncate text-xs text-ink/70">{recipe.note}</p>}
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Button small onClick={() => onAction('open', recipe)}>
