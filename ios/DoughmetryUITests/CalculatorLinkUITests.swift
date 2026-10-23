@@ -142,6 +142,32 @@ final class CalculatorLinkUITests: XCTestCase {
         waitForLabel(status, "새 배합 · 저장 안 됨")
     }
 
+    /// 변환기의 계산기 배합 가져오기는 오른쪽 위 더 보기 메뉴에 — 계산기로 보내기·배합표 공유와 함께
+    @MainActor
+    func testConverterMenuImportsCalculatorDough() throws {
+        let app = launch()
+        let status = element(app, "calc.status")
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        replace(app.textFields["calc.name"].firstMatch, with: "Gamma")
+        waitForLabel(status, "새 배합 · 저장 안 됨")
+
+        openTab(app, "변환")
+        let more = element(app, "converter.more")
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        // 예시 안내에는 더 이상 가져오기 버튼이 없다
+        XCTAssertFalse(app.buttons["계산기 배합 가져오기"].exists, "예시 안내에 가져오기 버튼이 남아 있다")
+        more.tap()
+        let importCalc = app.buttons["converter.importCalc"].firstMatch
+        XCTAssertTrue(importCalc.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["converter.sendToCalc"].firstMatch.exists, "계산기로 보내기가 없다")
+        XCTAssertTrue(app.buttons["converter.share"].firstMatch.exists, "배합표 공유가 없다")
+        importCalc.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["계산기 배합을 가져왔습니다"].waitForExistence(timeout: 3), "가져왔다는 알림이 없다")
+        waitForValue(element(app, "converter.name"), "Gamma")
+    }
+
     @MainActor
     func testConverterSendsConvertedDoughToCalculatorUnlinked() throws {
         let app = launch()

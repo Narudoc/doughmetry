@@ -311,6 +311,7 @@ private let en: [String: String] = [
     "원본 배합": "Source recipe",
     "저장된 레시피 불러오기": "Load saved recipe",
     "계산기 배합 가져오기": "Use calculator dough",
+    "계산기 배합을 가져왔습니다": "Loaded the calculator dough",
     "불러오기": "Load",
     "저장된 레시피": "Saved recipes",
     "현재 르방": "Current levain",

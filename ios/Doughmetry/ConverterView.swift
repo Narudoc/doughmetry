@@ -51,7 +51,7 @@ struct ConverterView: View {
     @State private var pendingSend: ConvertSuccess?
     @State private var toastMessage: String?
     @State private var keyboardVisible = false
-    /// 예시 안내에서 계산기 배합을 가져오지 못한 이유 — 탭할 때만 따진다 (본문이 계산기 입력을 구독하지 않도록)
+    /// 더 보기 메뉴에서 계산기 배합을 가져오지 못한 이유 — 누를 때만 따진다 (본문이 계산기 입력을 구독하지 않도록)
     @State private var calcPickError: String?
 
     /// 결과 바를 탭하면 성공 시 목표 수분율 행을 위로 올린다 — List의 scrollTo는 섹션 머리글을 건너뛰어,
@@ -118,8 +118,8 @@ struct ConverterView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    moreMenu(result)
-                        .disabled(!isSuccess(result) || newHydration <= 0)
+                    // 메뉴는 늘 연다 — 변환이 안 될 때도 계산기 배합은 가져올 수 있다
+                    moreMenu(result, canExport: isSuccess(result) && newHydration > 0)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(L("저장")) { showSave = true }
@@ -174,10 +174,7 @@ struct ConverterView: View {
             }
             .sensoryFeedback(.success, trigger: savedFeedback)
             .sensoryFeedback(.impact(weight: .light), trigger: appliedFeedback)
-            .onAppear {
-                calcPickError = nil
-                consumeSource()
-            }
+            .onAppear { consumeSource() }
             .onChange(of: model.converterSource != nil) { consumeSource() }
             // 예시를 고쳐 쓰기 시작하면 더는 예시가 아니다
             .onChange(of: input) { showsExample = false }
@@ -209,21 +206,30 @@ struct ConverterView: View {
             pieces: pieces, doughWeight: r.after.doughWeight, precision: model.precision)
     }
 
-    /// 저장 옆 '더 보기' — 변환 결과를 저장하지 않고 계산기로 보내거나 배합표로 공유한다
-    private func moreMenu(_ result: ConvertResult) -> some View {
+    /// 저장 옆 '더 보기' — 계산기 배합을 가져오고, 변환 결과를 저장하지 않고 계산기로 보내거나 배합표로 공유한다.
+    /// 보내기·공유는 변환에 성공했을 때만 (canExport — 르방 수분율 0 이하는 저장과 같이 막는다)
+    private func moreMenu(_ result: ConvertResult, canExport: Bool) -> some View {
         Menu {
-            if case .success(let r) = result {
-                Button {
-                    // 저장하지 않은 입력이 있는지는 누르는 순간에 묻는다 — 본문이 계산기 입력을 구독하지 않도록
-                    if model.calcIsDirty {
-                        pendingSend = r
-                    } else {
-                        sendToCalculator(r)
-                    }
-                } label: {
-                    Label(L("계산기로 보내기"), systemImage: "scalemass")
+            // 묶음은 Section 대신 Divider로 — iOS 27은 메뉴 Section 안 버튼의 접근성 식별자를 버린다 (UI 테스트가 못 찾는다)
+            Button(action: pickCalcDoughFromMenu) {
+                Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
+            }
+            .accessibilityIdentifier("converter.importCalc")
+            Button {
+                guard canExport, case .success(let r) = result else { return }
+                // 저장하지 않은 입력이 있는지는 누르는 순간에 묻는다 — 본문이 계산기 입력을 구독하지 않도록
+                if model.calcIsDirty {
+                    pendingSend = r
+                } else {
+                    sendToCalculator(r)
                 }
-                .accessibilityIdentifier("converter.sendToCalc")
+            } label: {
+                Label(L("계산기로 보내기"), systemImage: "scalemass")
+            }
+            .disabled(!canExport)
+            .accessibilityIdentifier("converter.sendToCalc")
+            Divider()
+            if canExport, case .success(let r) = result {
                 ShareLink(
                     item: ficheText(
                         name: suggestedSaveName, input: r.output, stats: r.after, pieces: sourcePieces,
@@ -231,6 +237,13 @@ struct ConverterView: View {
                 ) {
                     Label(L("배합표 공유"), systemImage: "square.and.arrow.up")
                 }
+                .accessibilityIdentifier("converter.share")
+            } else {
+                // 공유할 결과가 없어도 자리는 보인다 — 메뉴 항목이 변환 결과에 따라 들고 나지 않게
+                Button {} label: {
+                    Label(L("배합표 공유"), systemImage: "square.and.arrow.up")
+                }
+                .disabled(true)
                 .accessibilityIdentifier("converter.share")
             }
         } label: {
@@ -248,6 +261,13 @@ struct ConverterView: View {
             Button(L("계산기로 보내기"), role: .destructive) { sendToCalculator(r) }
                 .accessibilityIdentifier("converter.confirmSendToCalc")
             Button(L("취소"), role: .cancel) {}
+        }
+        .alert(
+            Text(calcPickError ?? ""),
+            isPresented: Binding(
+                get: { calcPickError != nil }, set: { if !$0 { calcPickError = nil } })
+        ) {
+            Button(L("확인"), role: .cancel) {}
         }
     }
 
@@ -284,9 +304,12 @@ struct ConverterView: View {
         model.sendCalcToConverter()
     }
 
-    private func pickCalcDoughFromFooter() {
+    /// 메뉴는 닫히며 다른 표시가 없다 — 가져왔다는 알림을 띄운다
+    private func pickCalcDoughFromMenu() {
         calcPickError = calcError
-        if calcPickError == nil { pickCalcDough() }
+        guard calcPickError == nil else { return }
+        pickCalcDough()
+        toastMessage = L("계산기 배합을 가져왔습니다")
     }
 
     // MARK: 원본
@@ -299,6 +322,7 @@ struct ConverterView: View {
                 text: Binding(get: { displayName }, set: { name = $0 })
             )
             .accessibilityLabel(L("레시피 이름"))
+            .accessibilityIdentifier("converter.name")
             StackingLabeledContent(L("현재 르방")) {
                 Text(
                     "\(levainShort(input.levain.hydration)) \(clampedInt(input.levain.hydration * 100))% · \(fmtGrams(input.levain.grams, model.precision)) g"
@@ -367,25 +391,11 @@ struct ConverterView: View {
         }
     }
 
-    /// 기본 예시 배합임을 밝히고, 계산기 배합을 한 번에 가져오게 한다
+    /// 기본 예시 배합임을 밝힌다 — 계산기 배합 가져오기는 불러오기 목록 맨 위와 오른쪽 위 더 보기 메뉴에
     private var exampleFooter: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // 접근성 글자 크기에서 말줄임으로 잘리지 않게 세로로 늘린다
-            Text(L("예시 배합입니다 — 내 배합을 변환하려면 불러오세요"))
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: pickCalcDoughFromFooter) {
-                Label(L("계산기 배합 가져오기"), systemImage: "arrow.down.doc")
-                    .fontWeight(.semibold)
-                    .frame(minHeight: 36)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            if let calcPickError {
-                Text(calcPickError)
-                    .foregroundStyle(Color.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        // 접근성 글자 크기에서 말줄임으로 잘리지 않게 세로로 늘린다
+        Text(L("예시 배합입니다 — 내 배합을 변환하려면 불러오세요"))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: 변환 설정
