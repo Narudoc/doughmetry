@@ -230,6 +230,12 @@ fresh_boot() {
   # 시스템 언어·지역도 맞춘다 — 키보드·시스템 시트·iPad 상태 바의 날짜. 다시 부팅해야 적용된다
   xcrun simctl spawn "$udid" defaults write -g AppleLanguages -array "$lang"
   xcrun simctl spawn "$udid" defaults write -g AppleLocale -string "${LOCALE[$lang]}"
+  # iPad는 '전체 화면 앱'으로 — 기본값 '윈도우 앱'은 오른쪽 아래 모서리에 창 크기 조절 손잡이를 그리고 상태 바 날짜 뒤에
+  # 앱 이름을 붙인다. 설정 > 멀티태스킹 및 제스처에서 고를 때 바뀌는 SpringBoard 키 두 개 (iOS 27, 다시 부팅해야 적용)
+  if [[ $kind == ipad ]]; then
+    xcrun simctl spawn "$udid" defaults write com.apple.springboard SBMedusaMultitaskingEnabled -bool NO
+    xcrun simctl spawn "$udid" defaults write com.apple.springboard SBChamoisWindowingEnabled -bool NO
+  fi
   xcrun simctl shutdown "$udid"
   xcrun simctl boot "$udid"
   xcrun simctl bootstatus "$udid" >/dev/null
