@@ -18,9 +18,10 @@
 | Apple 계정 (ASC 로그인·Xcode·TestFlight 초대·심사 연락처) | `juvesoul@icloud.com` — Xcode 관리 프로파일의 팀이 `Kiyoung Ha`("(Personal Team)" 아님)이고 프로파일에 iCloud 컨테이너 엔타이틀먼트가 들어 있으므로(무료 Personal Team은 iCloud 불가) 개발자 프로그램 계정이다. 키체인의 `Apple Development` 인증서도 이 계정으로 발급돼 있다. 빌드 처리 완료·TestFlight 초대·심사 결과 메일이 전부 이 주소로 온다. |
 | 버전 / 빌드 | `1.0` / `1` (MARKETING_VERSION / CURRENT_PROJECT_VERSION) |
 | 최소 iOS · 기기 | iOS 17.0 — iOS 17.5·18.2·27 시뮬레이터(iPhone·iPad) 점검 뒤 **유지하기로 결정**(2026-10, 0-9 5번). 옛 OS에서만 나는 증상은 `#unavailable(iOS 26)`/`#available` 가지로 고쳤고, CI `oldest-ios`가 17.5·18.2에서 코어 테스트를 돈다. iPhone + iPad 네이티브(`TARGETED_DEVICE_FAMILY = "1,2"`): iPhone은 세로만, iPad는 네 방향 모두(`UISupportedInterfaceOrientations~ipad`). Apple Silicon Mac에서는 iPad 앱으로 실행된다(6-3). **iPad 지원은 한 번 출시하면 이후 업데이트에서 뺄 수 없다.** |
-| 스토어 이름 | KR `도우메트리: 사워도우 계산기` (15자) / EN `Doughmetry: Sourdough Calc` (26자) — 2026-09-11 결정. ASC에는 2026-09-10에 `사워도우 브레드 계산기`(번들 ID `com.narudoc.levaincalc`)로 만든 레코드가 있으므로 2장에서 이름·번들 ID를 바꾼다. App Store 검색·웹에 `Doughmetry`/`도우메트리` 앱·제품 없음 확인(2026-09-11). |
+| 스토어 이름 | KR `도우메트리: 사워도우 계산기` (15자) / EN `Doughmetry: Sourdough Calc` (26자) — 2026-09-11 결정. ASC 레코드는 2026-10-28에 이 이름으로 새로 만들었다(2장). App Store 검색·웹에 `Doughmetry`/`도우메트리` 앱·제품 없음 확인(2026-09-11). |
 | 홈 화면 이름 (CFBundleDisplayName) | KR `도우메트리` / EN `Doughmetry` — 브랜드명만. 홈 화면 라벨은 한글 약 8자·영문 약 14자를 넘으면 잘리므로(실측) 설명어는 붙이지 않는다. 스토어 제목과 달라도 된다(비슷하면 됨). |
-| SKU | `levaincalc` |
+| SKU | `doughmetry` (2026-10-28 레코드를 만들 때 — 바꿀 수 없다) |
+| ASC Apple ID | `6827977830` (같은 날 생성 — 출시 뒤 `AppLinks.appStoreID`에 넣는다, 7장) |
 | 기본 언어 | 한국어 — 첫 승인 뒤에만 바꿀 수 있다(Apple 'Change the primary language'). 영어 검색은 영어(미국)·영어(영국)·영어(캐나다) 세 현지화로 해결한다([listing.md](listing.md) 현지화 표). |
 | 카테고리 | 주 `음식 및 음료 (Food & Drink)` / 부 `유틸리티 (Utilities)` |
 | 가격 | 무료 (Tier 0), 전 지역 |
@@ -265,7 +266,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
 
 첫 업로드 전에 앱 레코드를 만들어 두는 것이 안전하다(Xcode 업로드 중에도 만들 수는 있지만 `No suitable application records were found` 오류를 피하려면 먼저).
 
-0. **기존 레코드 수정** — 2026-09-10에 `사워도우 브레드 계산기` / `com.narudoc.levaincalc`로 만든 레코드가 있다. 빌드를 올리기 전이라 이름·번들 ID 모두 바꿀 수 있다: `앱 > 사워도우 브레드 계산기 > 앱 정보 (App Information)` → 현지화 가능한 정보의 `이름`을 `도우메트리: 사워도우 계산기`로 → 일반 정보의 `번들 ID`를 드롭다운에서 `com.narudoc.doughmetry`로 → `저장`. SKU `levaincalc`는 바꿀 수 없지만 어디에도 보이지 않는다. 굳이 바꾸려면 빌드가 없는 지금 앱을 삭제하고 아래 1~5로 새로 만들되, 삭제한 앱의 이름과 SKU는 같은 조직에서 재사용할 수 없으므로(ASC 도움말 "Remove an app") 3번의 SKU를 `doughmetry` 등 새 값으로 넣는다. 영어 이름 `Doughmetry: Sourdough Calc`는 6-1에서 넣을 때 중복 검사를 받는다. **이 단계를 건너뛰면 새 번들 ID의 빌드가 이 레코드에 붙지 못해 업로드가 `No suitable application records were found`로 실패한다(8장). 어떤 레코드든 빌드가 한 번 올라가면 그 레코드의 번들 ID는 영구 고정되므로 업로드 전에 여기서 맞춰 둔다.** 아래 1~5는 새로 만들 때의 절차.
+0. **[완료 2026-10-28] 새로 만들었다** — 2026-09-10에 `사워도우 브레드 계산기` / `com.narudoc.levaincalc`로 만든 옛 레코드가 10-28에는 앱 목록에 없었다(`앱 없음`, 같은 계정·팀). 그래서 아래 1~5대로 새 레코드를 만들었다: 이름 `도우메트리: 사워도우 계산기`(중복 오류 없음), 기본 언어 한국어, 번들 ID `com.narudoc.doughmetry`(드롭다운에 이것 하나뿐), **SKU `doughmetry`**(옛 레코드가 지워진 것이라면 `levaincalc`는 다시 쓸 수 없어서 — 삭제한 앱의 이름·SKU는 같은 조직에서 재사용 불가, ASC 도움말 "Remove an app"), 전체 액세스. ASC **Apple ID `6827977830`**, iOS 1.0 버전이 `제출 준비 중`. 영어 이름 `Doughmetry: Sourdough Calc`는 6-1에서 넣을 때 중복 검사를 받는다. 번들 ID는 첫 빌드를 올리기 전까지만 바꿀 수 있고 그 뒤 영구 고정된다. 아래 1~5는 다시 만들 일이 생길 때를 위한 절차.
 1. `https://appstoreconnect.apple.com` → `앱 (Apps)` 클릭.
 2. 왼쪽 위 `+` → `신규 앱 (New App)`.
 3. 대화상자 입력:
@@ -273,7 +274,7 @@ Apple은 2024-03-21부터 **새 앱을 제출하려면 EU DSA 트레이더 여�
    - `이름 (Name)`: `도우메트리: 사워도우 계산기` 입력. (2~30자, App Store 전체에서 고유. 홈 화면 이름 `CFBundleDisplayName`은 `도우메트리`만 — 고정값 표 참고.)
    - `기본 언어 (Primary Language)`: `한국어 (Korean)`.
    - `번들 ID (Bundle ID)`: 드롭다운에서 `com.narudoc.doughmetry`가 붙은 항목(예 `XC com narudoc doughmetry - com.narudoc.doughmetry`) 선택. **`Xcode: Wildcard AppID - *`는 절대 선택하지 말 것.** 목록에 없으면 1-4-1로 돌아가 App ID가 있는지 확인하고 페이지를 새로고침.
-   - `SKU`: `levaincalc`.
+   - `SKU`: `doughmetry` (2026-10-28에 쓴 값 — 그 레코드를 지우고 다시 만들면 이것도 다시 쓸 수 없으니 새 값으로).
    - `사용자 액세스 권한 (User Access)`: `전체 액세스 (Full Access)`. 팀에 다른 사용자가 없으면 이 항목이 회색으로 잠겨 있거나 아예 안 보인다 — 그대로 둔다.
 4. `생성 (Create)` 클릭. 이름 중복 검사는 이 시점에 일어난다. `The App Name you entered is already being used`가 뜨면 이름만 바꿔 다시 `생성`.
 5. 앱 목록에 `도우메트리: 사워도우 계산기`가 `제출 준비 중 (Prepare for Submission)` 상태로 생기면 성공. SKU는 이 시점부터 바꿀 수 없고, 번들 ID는 첫 빌드를 올리기 전까지만 `앱 정보 (App Information) > 일반 정보`에서 바꿀 수 있다(0번 참고) — 첫 빌드 업로드 후에는 영구 고정된다.
@@ -432,7 +433,7 @@ GUI 대신 쓸 수 있다. 같은 Apple 계정이 Xcode에 로그인돼 있어�
    - `부제목`: `Levain & hydration calculator` (29자 — 30자 한도)
 3. 같은 방법으로 `영어(영국) (English (U.K.))`와 `영어(캐나다) (English (Canada))`를 추가하고 2번과 **같은 이름·부제목**을 넣는다(같은 앱은 현지화마다 같은 이름을 다시 써도 된다). **새 언어를 추가하면 ASC가 기본 언어(한국어)의 이름·부제목·스크린샷을 미리 채워 두므로** 필드마다 영어로 덮어써야 한다 — 그대로 두면 영국·캐나다 등의 스토어에 한국어가 보인다.
 4. `일반 정보 (General Information)`:
-   - `번들 ID`: `com.narudoc.doughmetry` (자동), `SKU`: `levaincalc` (자동), `Apple ID`: 자동 번호.
+   - `번들 ID`: `com.narudoc.doughmetry` (자동), `SKU`: `doughmetry` (자동), `Apple ID`: `6827977830` (자동).
    - `기본 언어 (Primary Language)`: `한국어`. 기본 언어는 첫 승인 뒤에만 바꿀 수 있다(Apple 'Change the primary language') — 영어 검색은 위 세 영어 현지화로 해결한다.
    - `카테고리 (Category)`: `기본 (Primary)` = `음식 및 음료 (Food & Drink)`, `보조 (Secondary)` = `유틸리티 (Utilities)`.
    - `콘텐츠 권한 (Content Rights)`: `콘텐츠 권한 정보 설정 (Set Up Content Rights Information)` → `아니요, 타사 콘텐츠를 포함·표시·접근하지 않습니다 (No, it does not contain, show, or access third-party content)` → `완료 (Done)`. (앱이 배포하는 타사 콘텐츠는 없다. 사용자가 직접 가져오는 레시피는 사용자의 기기와 본인 iCloud에만 있다.)
@@ -493,10 +494,12 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 
 `사이드바 iOS 앱 > 1.0 제출 준비 중 (1.0 Prepare for Submission)`. 언어 드롭다운은 `한국어`로 시작. 파일은 0-13에서 찍은 JPEG다.
 
-1. `미리보기 및 스크린샷 (App Previews and Screenshots)` → 탭 `iPhone 6.9형 디스플레이 (iPhone 6.9" Display)` → Finder에서 `/Users/narudoc/Claude/Doughmetry/ios/AppStore/screenshots/ko/6.9-jpg/`의 `01-convert.jpg` … `06-fiche.jpg`(있으면 `07-scale.jpg`)를 이름 순서대로 드래그 (최대 10장). 순서가 틀리면 썸네일을 드래그해 재배열.
-2. 같은 화면의 탭 `iPad 13형 디스플레이 (13" iPad Display)` → `ko/13-jpg/`의 같은 이름 파일들. **iPad를 지원하므로 이 탭이 비어 있으면 제출할 수 없다.**
-3. 언어 드롭다운 → `영어(미국)` → 두 탭에 `en/6.9-jpg/`와 `en/13-jpg/`. 이어서 `영어(영국)`·`영어(캐나다)`에도 같은 `en/` 파일을 올린다 — 새 언어는 한국어 스크린샷으로 미리 채워져 있으므로 **지우고** 올린다(안 그러면 그 스토어에 한국어 화면이 보인다).
-4. 6.9형·13형만 올리면 작은 iPhone·iPad 크기는 ASC가 줄여 쓴다 — 다른 크기 탭은 비워 둔다.
+2026-10-28 ASC 화면 기준(1.0 때 이대로 올렸다): 버전 페이지 '제품 페이지 정보'의 `헤더 및 검색 결과 >`를 눌러 `앱 미리보기 및 스크린샷`으로 바꾸고 `미디어 관리에서 모든 크기 보기`를 연다(미디어 관리 — 맨 위에서 iPhone/iPad와 언어를 고른다). iPhone은 **필수 칸이 `Dynamic Island 지원 iPhone (중형 디스플레이)`**(6.1·6.3형 — 1206×2622 등만 받는다)이고, 우리 1320×2868은 '선택 사항'의 **`Dynamic Island 지원 iPhone (대형 디스플레이)`**(내부 이름 `APP_IPHONE_67`, 2868×1320·2796×1290 등)에 올린다 — 그러면 필수 칸이 `기존 자산 사용`(대형 세트를 줄여 씀)으로 채워진다. 중형 칸이나 그 아래 `Face ID 지원 iPhone (대형 디스플레이)`(6.5형)에 놓으면 '파일 크기가 유효하지 않습니다'로 거부된다.
+
+1. 미디어 관리 `iPhone` · `한국어` → '선택 사항'의 `Dynamic Island 지원 iPhone (대형 디스플레이)`를 펼쳐(설명에 '1320 × 2868px'이 있는 칸) Finder에서 `/Users/narudoc/Claude/Doughmetry/ios/AppStore/screenshots/ko/6.9-jpg/`의 `01-convert.jpg` … `07-scale.jpg`를 이름 순서대로 드래그 (최대 10장). 순서가 틀리면 썸네일을 드래그해 재배열. 필수(중형) 칸에 `기존 자산 사용`이 보이면 된다.
+2. 미디어 관리 `iPad` → 필수 칸 `iPad 33.0cm 디스플레이`(13형, 2064×2752)에 `ko/13-jpg/`의 같은 이름 파일들. **iPad를 지원하므로 이 칸이 비어 있으면 제출할 수 없다.**
+3. 언어 드롭다운 → `영어(미국)` → iPhone 대형 칸에 `en/6.9-jpg/`, iPad 칸에 `en/13-jpg/`. 이어서 `영어(영국)`·`영어(캐나다)`에도 같은 `en/` 파일을 올린다. 언어마다 Finder 창이 넷이라 헷갈리기 쉽다 — `ko`·`en` 폴더를 바꿔 넣으면 그 스토어에 다른 언어 화면이 보인다(01-convert 썸네일이 '르방 변환'이면 ko, 'Levain conversion'이면 en). 2026-10-28에는 영어 현지화를 스크린샷보다 먼저 만들어 미리 채워진 것이 없었지만, 한국어를 먼저 올린 뒤 언어를 추가하면 한국어 스크린샷이 미리 채워지므로 **지우고** 올린다.
+4. 대형 iPhone·13형 iPad만 올리면 작은 크기는 ASC가 줄여 쓴다 — 다른 크기 칸은 비워 둔다.
 5. 썸네일에 빨간 `!`나 "alpha channel"·크기 오류가 뜨면 다른 폴더의 파일(iPad 탭에 `6.9-jpg/` 등)이나 저장소 밖의 옛 사본을 올린 것이다 — `ios/AppStore/preflight.sh shots`가 통과하는 0-13의 폴더에서 다시 올린다.
 
 ### 6-6. 버전 페이지 — 텍스트
@@ -627,7 +630,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 - [x] 0-13 스크린샷 — 2026-10-28 그때 UI로 다시 찍음 (`{ko,en}/6.9-jpg/`·`{ko,en}/13-jpg/` 각 7장, hasAlpha no, 다른 언어·테스트 이름 없음). 그 뒤 스크린샷에 찍힌 화면을 바꾸면 다시 (0-13 첫 단락)
 - [x] 0-11 커밋 (2026-10-28 ec00018 — 푸시는 3)
 - [ ] 1-1 약관 배너 없음 · 1-2 Xcode 계정에 `Kiyoung Ha (G46DT9WHWV)` · 1-4 Signing & Capabilities 빨간 표시 없음 · 1-5 EU DSA 트레이더 신고 완료
-- [ ] 2 ASC 기존 레코드 수정: 이름 `사워도우 브레드 계산기` → `도우메트리: 사워도우 계산기`, 번들 ID `com.narudoc.levaincalc` → `com.narudoc.doughmetry` (**첫 빌드 업로드 전에 반드시**)
+- [x] 2 ASC 앱 레코드 — 2026-10-28 새로 만듦: `도우메트리: 사워도우 계산기`, 번들 ID `com.narudoc.doughmetry`, SKU `doughmetry`, Apple ID `6827977830`
 - [ ] 3 푸시 → privacy.html·support.html 200 **+ 사이트 루트가 `/doughmetry/assets/…`와 새 `<title>`을 내려주는지** (루트 200만으로는 판단 불가)
 - [ ] 4-1 직전 `ios/AppStore/preflight.sh repo` 통과
 - [ ] 4-1 Archive → 4-2 Validate 통과 → 4-3 Distribute (`TestFlight & App Store`) → 처리 완료 메일

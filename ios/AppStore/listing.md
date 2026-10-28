@@ -24,8 +24,9 @@ App Store Connect(ASC)에 넣는 텍스트의 원본은 이 파일 하나다. [s
 - EN: Levain & hydration calculator (29자)
 
 ## 홍보 문구 (170자, 심사 없이 수정 가능)
-- KR (90자): 총 밀가루 기준 프랑스식 배합 계산기. 르방 리퀴드↔뒤흐로 바꿔도 총 수분율·반죽 무게는 그대로. 구독·광고·계정 없이 무료, 데이터 수집 없음, 완전 오프라인.
-- EN (166자): Total-flour sourdough formulas. Swap liquid ↔ stiff levain and keep the same hydration and dough weight. Free: no subscription, ads or account, and no data collected.
+- KR (94자): 총 밀가루 기준 프랑스식 배합 계산기. 르방 리퀴드와 뒤흐를 서로 바꿔도 총 수분율·반죽 무게는 그대로. 구독·광고·계정 없이 무료, 데이터 수집 없음, 완전 오프라인.
+- EN (170자): Total-flour sourdough formulas. Switch between liquid and stiff levain with the same hydration and dough weight. Free: no subscription, ads or account; no data collected.
+- ASC는 홍보 문구의 `↔`를 거부한다(2026-10-28, `INVALID_CHARACTERS`) — 화살표 같은 기호 대신 말로 쓴다.
 
 ## 설명 (KR)
 ```
