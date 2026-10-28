@@ -518,7 +518,8 @@ private let en: [String: String] = [
     "목표 반죽 온도(DDT)에 맞는 물 온도": "Water temp for your desired dough temperature (DDT)",
     "타임라인": "Timeline",
     "르방 빌드부터 굽기까지 단계별 시각 + 알림": "Times for each stage, from levain build to bake, with alerts",
-    "언어 · % 표기 · 표시 자릿수 · iCloud": "Language · Percent display · Precision · iCloud",
+    // 줄바꿈 없는 공백으로 '·'를 앞 낱말에 붙인다 — 좁은 iPhone에서 둘째 줄이 '· iCloud'로 시작하지 않게
+    "언어 · % 표기 · 표시 자릿수 · iCloud": "Language\u{00A0}· Percent display\u{00A0}· Precision\u{00A0}· iCloud",
     "필요한 르방": "Levain needed",
     "계산기 배합에서 가져오기": "Use levain from calculator",
     "종 입력": "Starter amount",

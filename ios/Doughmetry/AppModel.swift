@@ -539,7 +539,7 @@ final class AppModel {
     enum CalcStatus {
         case example // 손대지 않은 예시 배합
         case new // 레시피와 잇지 않음 — 저장하면 새 레시피
-        case saved // 이어진 레시피와 같다
+        case saved // 이어진 레시피와 같다 (또는 모드 B로 저장한 그대로 — 레시피와 잇지 않는다)
         case edited // 이어진 레시피에서 고쳤다
     }
 
@@ -549,9 +549,10 @@ final class AppModel {
             return calcIsDirty ? .edited : .saved
         }
         if Self.isUntouchedExample(calc) { return .example }
-        // 모드 B 저장은 레시피와 잇지 않는다 — 저장한 그대로면 저장된 것.
-        // 지워진 레시피에 이어졌던 배합(recipeId 남음)과 새로 시작한 그대로인 배합은 새 배합
-        if calc.recipeId == nil, !calcIsDirty, !Self.isUntouchedStart(calc) { return .saved }
+        // 모드 B 저장은 레시피와 잇지 않는다 — 저장한 그대로면 저장된 것. 모드 A 저장은 늘 레시피와 이으므로
+        // 잇지 않은 모드 A가 기준과 같으면 새로 시작한 그대로다 (앱 언어가 바뀌어 예시로 보지 않게 된 예시 포함).
+        // 지워진 레시피에 이어졌던 배합(recipeId 남음)도 새 배합
+        if calc.recipeId == nil, calc.mode == .b, !calcIsDirty { return .saved }
         return .new
     }
 

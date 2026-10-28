@@ -392,9 +392,8 @@ export function calcSaveStatus(state: CalcState, recipes: Recipe[]): CalcSaveSta
   if (linked) return isCalcDirty(state, recipes) ? 'edited' : 'saved';
   const snapshot = calcSnapshot(state);
   if (!state.recipeId && snapshot === calcSnapshot(defaultCalcState())) return 'example';
-  // 모드 B 저장은 레시피와 잇지 않는다 — 저장한 그대로면 저장된 것. 새로 시작한 빈 배합 그대로는 새 배합
-  if (!state.recipeId && snapshot === state.savedSnapshot && snapshot !== calcSnapshot(emptyCalcState())) {
-    return 'saved';
-  }
+  // 모드 B 저장은 레시피와 잇지 않는다 — 저장한 그대로면 저장된 것. 모드 A 저장은 늘 레시피와 이으므로 잇지 않은
+  // 모드 A는 기준과 같아도 새 배합이다 (새로 시작한 빈 배합, 변환기에서 받은 배합을 원래 레시피대로 되돌린 것 포함)
+  if (!state.recipeId && state.mode === 'B' && snapshot === state.savedSnapshot) return 'saved';
   return 'new';
 }

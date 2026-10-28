@@ -384,6 +384,15 @@ describe('calcSaveStatus (계산기 이름 칸 아래 저장 상태 — iOS 계�
     expect(calcSaveStatus(calcStateFromDough({ name: '캉파뉴 (뒤흐 50%)', input: s.input }, s), [])).toBe('new');
   });
 
+  it('변환기에서 받은 배합을 원래 레시피 그대로 되돌려도 잇지 않았으니 새 배합 (iOS와 같다)', () => {
+    const r = recipe();
+    const loaded = calcStateFromRecipe(r);
+    const back = calcStateFromDough({ name: loaded.name, input: loaded.input, pieces: loaded.pieces }, loaded);
+    expect(back.recipeId).toBeUndefined();
+    expect(calcSaveStatus(back, [r])).toBe('new');
+    expect(calcSaveStatus(back, [])).toBe('new');
+  });
+
   it('불러오거나 저장한 레시피 그대로면 저장됨, 고치면 수정됨', () => {
     const r = recipe();
     const loaded = calcStateFromRecipe(r);

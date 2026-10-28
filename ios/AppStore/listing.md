@@ -115,7 +115,7 @@ KR 설명의 물 온도 줄에는 °F를 넣지 않는다 — 한국 사용자�
 ## 개인정보 라벨 (App Privacy)
 - "데이터를 수집하지 않음" — 로그인·분석·광고·추적 없음. iCloud는 사용자 본인 계정 저장.
 
-## 스크린샷 (6장 × 한/영 × iPhone 6.9"·iPad 13")
+## 스크린샷 (한/영 × iPhone 6.9"·iPad 13" — 각 6장(+ 선택 07))
 
 [capture-screenshots.sh](capture-screenshots.sh)로 시뮬레이터에서 원본 해상도 JPEG(알파 없음)로 찍는다 — 업스케일·변환 단계 없음. 파일은 `screenshots/{ko,en}/6.9-jpg/`(1320×2868)와 `screenshots/{ko,en}/13-jpg/`(2064×2752)에 같은 이름으로 들어가고, ASC에서는 파일 이름 순서대로 끌어다 놓는다. 영어 세 현지화는 같은 `en/` 세트를 쓴다.
 

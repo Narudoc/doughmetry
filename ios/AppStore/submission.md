@@ -32,7 +32,7 @@
 | 공개 문의 이메일 (privacy.html · support.html · 지원 연락처) | 실제로 확인하는 주소 **하나**로 통일. 기본값은 `juvesoul@icloud.com`. 다른 주소(예: `juvesoul@gmail.com`)로 하려면 `cd /Users/narudoc/Claude/Doughmetry && grep -rln 'juvesoul@icloud.com' public ios/AppStore/privacy-policy.md ios/Doughmetry` 로 쓰는 곳을 확인한 뒤 그 파일들만 `sed -i '' 's/juvesoul@icloud.com/새주소/g' <파일들>`로 바꾼다. `submission.md`는 `sed`에 넣지 말 것 — 고정값 표·1장·4~6장의 `juvesoul@icloud.com`은 Apple 계정이라 바뀌면 안 된다. |
 | 심사 연락처 (App Review Information) | 이름(First) `Kiyoung` / 성(Last) `Ha` / 전화 `+82 10-____-____` ← **지금 채워 둘 것.** 국제 형식 필수 — `+`와 국가번호 없이 숫자만 넣으면 저장 거부. 이메일은 위 Apple 계정. |
 | 저작권 (Copyright) | `2026 Kiyoung Ha` — ASC는 권리 보유자 이름을 요구하므로 개발 팀 이름과 맞춘다. 필명도 쓰려면 `2026 Kiyoung Ha (Narudoc)`. © 기호는 자동. |
-| 스크린샷 | iPhone 6.9형 `ios/AppStore/screenshots/{ko,en}/6.9-jpg/01-convert.jpg … 06-fiche.jpg` (1320×2868) + iPad 13형 `ios/AppStore/screenshots/{ko,en}/13-jpg/` 같은 이름 (2064×2752). 0-13의 `capture-screenshots.sh`가 시뮬레이터에서 원본 해상도 JPEG(알파 없음)로 바로 찍는다 — 변환·업스케일 없음. 순서와 화면은 [listing.md](listing.md) 스크린샷 표 |
+| 스크린샷 | iPhone 6.9형 `ios/AppStore/screenshots/{ko,en}/6.9-jpg/01-convert.jpg … 06-fiche.jpg` + 선택 `07-scale.jpg`(있으면 네 폴더 모두에 — 6-5에서 함께 올린다) (1320×2868) + iPad 13형 `ios/AppStore/screenshots/{ko,en}/13-jpg/` 같은 이름 (2064×2752). 0-13의 `capture-screenshots.sh`가 시뮬레이터에서 원본 해상도 JPEG(알파 없음)로 바로 찍는다 — 변환·업스케일 없음. 순서와 화면은 [listing.md](listing.md) 스크린샷 표 |
 
 ## 전체 흐름과 예상 소요 시간
 
@@ -53,7 +53,7 @@
 
 ## 0. 아카이브 전 확인
 
-0-1~0-3과 0-8은 코드에 이미 들어가 있으므로 확인만 한다(아래 "한 번에 확인"). 0-9(iOS 17/18·iPad 실행)와 0-13(스크린샷)은 출시마다 직접 한다. 감사에서 반박(불필요로 판정)된 항목(앱 아이콘 알파 채널·iCloud App ID/컨테이너 등록·권한 문구/푸시 엔타이틀먼트)은 0-12에 "조치 불필요"로 적어 두었다.
+0-1~0-3과 0-8은 코드에 이미 들어가 있으므로 확인만 한다(아래 "한 번에 확인"). 0-9(iOS 17/18·iPad 실행)와 0-13(스크린샷 — 찍힌 화면이 바뀌었으면 다시 찍기)은 출시마다 직접 한다. 감사에서 반박(불필요로 판정)된 항목(앱 아이콘 알파 채널·iCloud App ID/컨테이너 등록·권한 문구/푸시 엔타이틀먼트)은 0-12에 "조치 불필요"로 적어 두었다.
 
 먼저 저장소 상태를 본다 — 이 문서는 커밋·푸시 상태를 적어 두지 않으므로 이 명령이 기준이다.
 
@@ -134,7 +134,7 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
    xcrun simctl create "iPad Air iOS18" com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M2 com.apple.CoreSimulator.SimRuntime.iOS-18-2
    ```
 
-3. UI 스모크 테스트(다섯 개: 두 언어로 네 탭 / 계산기 입력 → 요약 바 / 저장 → 목록 → 불러오기 / 계산기 불러오기 목록에서 검색해 고르기 / 텍스트 가져오기는 확인 시트를 거침)를 기기마다 돌린다. 실행마다 빈 임시 저장 폴더(`-uiTestDataDir`)로 시작하고 iCloud와 합치지 않는다.
+3. UI 테스트 타깃 전체(2026-10-28 기준 15개)를 기기마다 돌린다 — `DoughmetryUITests` 5(두 언어로 네 탭 / 계산기 입력 → 요약 바 / 저장 → 목록 → 불러오기 / 계산기 불러오기 목록에서 검색해 고르기 / 텍스트 가져오기는 확인 시트를 거침), `CalculatorLinkUITests` 5(계산기 상태 줄과 덮어쓰기·새 레시피 저장 / 모드 B 저장 / 앱 언어를 바꿔도 예시는 저장되지 않은 새 배합 / 변환기 더 보기 메뉴의 계산기 배합 가져오기 / 변환기 → 계산기로 보내기), `ConverterSaveUITests` 1(변환 결과 저장 시 분할·태그 유지), `NumberFieldKeyboardUITests` 4(하드웨어 키보드 숫자·소수점, 칸 위쪽 탭, 쌓인 칸 포커스). 실행마다 빈 임시 저장 폴더(`-uiTestDataDir`)로 시작하고 iCloud와 합치지 않는다.
 
    ```bash
    cd /Users/narudoc/Claude/Doughmetry
@@ -146,6 +146,12 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
    ```
 
    `-collect-test-diagnostics never`를 빼면 실패한 실행이 끝난 뒤 진단 수집에서 10분쯤 멈춘다.
+
+   실패 메시지가 `com.narudoc.doughmetry crashed`나 `Lost connection to the application`이면 앱이 아니라 XCTest가 앱 프로세스 안에서 죽은 것일 수 있다 — UI 테스트의 접근성 조회 로그가 너무 많아 logd가 프로세스를 막고(`QUARANTINED DUE TO HIGH LOGGING VOLUME`), 그때 XCTest(`XCTAutomationSupport`)가 스스로 죽는다. 2026-10-28 점검에서 iOS 17.5·18.2의 42번 실행(그때 14개 × 3기기) 중 6번이 이랬고 다시 돌리면 모두 통과했다(iOS 27에선 없음). 아래 명령은 최근 2시간의 크래시 리포트마다 `파일:숫자`를 찍는다 — 파일 이름의 시각(`Doughmetry-2026-10-28-201343.ips` = 20:13:43)으로 실패한 때의 리포트를 찾아, 숫자가 **1 이상**이면 이 경우다: 그 테스트만 `-only-testing:DoughmetryUITests/<클래스>/<테스트>`로 다시 돌린다. 이것을 iOS 17 호환 문제로 보고 5번(최소 버전 올리기)으로 가지 말 것. 숫자가 **0**이면 진짜 앱 크래시다. 실패한 때의 리포트가 없으면 이 경우라고 볼 근거가 없다 — 다시 돌려 또 실패하면 앱 문제로 본다.
+
+   ```bash
+   find ~/Library/Logs/DiagnosticReports -name 'Doughmetry-*.ips' -mmin -120 -exec grep -Hc 'QUARANTINED_DUE_TO_HIGH_LOGGING_VOLUME' {} +
+   ```
 
    끝에 찍히는 `.xcresult`를 `open`해 첨부 스크린샷(`ko-tab0` …)에서 탭 바·하단 요약 바가 겹치거나 잘리지 않는지 본다.
 4. 손으로 확인 — `iPhone SE iOS17`에서는 전부, `iPhone 15 iOS18`에서는 빠르게: 사진 선택기가 열리고 사진 가져오기가 규칙 파서로 동작해 확인 시트가 뜸 / 숫자 입력 중 키보드 `완료`로 닫힘 / 도구 → 타임라인 알림 권한 요청·예약 / 설정 맨 아래 개인정보 처리방침·지원 링크가 Safari로 열림 / 설정에서 언어 전환.
@@ -168,20 +174,27 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
 ### 0-11. 커밋
 
-1. 0-13(스크린샷)을 끝내고 여기로 온다. `cd /Users/narudoc/Claude/Doughmetry && git status --short`에 0-13에서 만든 `ios/AppStore/screenshots/{ko,en}/{6.9-jpg,13-jpg}/`(`??`)와 지운 옛 PNG(`D`)가 보여야 한다.
+1. 0-13(스크린샷)을 끝내고 여기로 온다. 다시 찍었으면 `cd /Users/narudoc/Claude/Doughmetry && git status --short`에 다시 찍은 `ios/AppStore/screenshots/{ko,en}/{6.9-jpg,13-jpg}/*.jpg`가 ` M`으로 보여야 한다 — 화면이 그대로라 바이트까지 같게 찍힌 장은 나오지 않는다. `??`가 보이면 목록에 없는 파일이다 — `ios/AppStore/preflight.sh shots`로 확인한다.
 2. `git add -A` → `git status --short | grep '^??'`(빠뜨린 새 파일)와 `git diff --name-only`(스테이지 안 된 수정)가 둘 다 아무것도 출력하지 않아야 한다. `.gitignore`가 `node_modules/`·`dist/`·`ios/build/`·`xcuserdata`를 막는다.
 3. `git commit -m "스토어 스크린샷 다시 찍기 — iPhone 6.9형·iPad 13형, 한/영"`. 푸시는 3-2에서 한다.
 
 ### 0-12. 조치 불필요로 확인된 항목 (참고)
 
-- **앱 아이콘 알파 채널**: 소스 PNG는 RGBA지만 픽셀 전부 불투명이고, 실제 업로드되는 `Assets.car`는 RGB로 변환해 컴파일해도 바이트 단위로 동일함이 확인됐다. `ITMS-90717`은 발생하지 않는다. 손대지 말 것. (4-2의 Validate App이 최종 확인.)
+- **앱 아이콘 알파 채널**: 소스 PNG는 2026-10-22 아이콘 교체(397b51f) 뒤로 RGB(알파 채널 없음)이고, 컴파일된 `Assets.car`의 AppIcon도 불투명(Opaque)이다(2026-10-28 서명 아카이브로 확인). `ITMS-90717`은 발생하지 않는다. 손대지 말 것. (4-2의 Validate App이 최종 확인.)
 - **iCloud App ID/컨테이너 등록 (2026-09-11 재확인)**: 2026-09-06 16:05 프로파일은 옛 번들 ID `com.narudoc.levaincalc`(컨테이너 `iCloud.com.narudoc.levaincalc`) 것이라 개명 후에는 근거가 되지 않는다. 개명 뒤 Xcode가 **2026-09-11 08:28에 새 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`(UUID `963f121d-931f-4fc1-be5b-24d48474e678`)를 발급**했고, 그 엔타이틀먼트의 `icloud-container-identifiers`·`ubiquity-container-identifiers`·`icloud-container-development-container-identifiers` 3종이 모두 `iCloud.com.narudoc.doughmetry`다. 포털에 없는 컨테이너는 프로파일에 담기지 못하므로 이것이 등록 증거다 → **새 App ID·새 컨테이너 모두 포털 등록 완료**, 1-4는 확인만 하면 된다. `Doughmetry.entitlements`는 이미 새 컨테이너로 고쳐져 있으니 값만 확인하고 `icloud-container-environment`나 `aps-environment`를 **추가하지 말 것**.
 - **권한 문구(NSPhotoLibrary/NSCamera)·푸시 엔타이틀먼트**: PhotosPicker(out-of-process)와 로컬 알림만 써서 불필요. 추가하면 오히려 심사 질문거리.
 - **스크린샷 알파 채널**: 0-13의 스크립트가 처음부터 JPEG(알파 없음)로 찍으므로 따로 변환하지 않는다.
 
-### 0-13. [필수] 스토어 스크린샷 다시 찍기 (capture-screenshots.sh)
+### 0-13. [필수] 스토어 스크린샷 확인·다시 찍기 (capture-screenshots.sh)
 
-저장소의 옛 스크린샷(`screenshots/{ko,en}/*.png` = iPhone 6.3형, `{ko,en}/6.9/*.png` = 그것을 sips로 키운 것)은 2026-09-06 UI이고, 영어 세트에 한국어 화면·이름이 섞여 있으며, iPad 것이 없다. 그대로 올리면 2.3(앱과 다른 스크린샷)에 걸리므로 **UI를 바꾸는 작업이 모두 끝난 출시 후보 빌드에서** 다시 찍는다.
+스토어 스크린샷은 `screenshots/{ko,en}/6.9-jpg/`·`{ko,en}/13-jpg/`뿐이다(옛 PNG 세트는 2026-10-05에 지웠고, 지금 세트는 2026-10-28 ec00018에서 그때 UI로 다시 찍었다). 앱 화면이 스크린샷보다 새로우면 2.3(앱과 다른 스크린샷)에 걸린다 — 아래 명령이 보여 주는 커밋과 아직 커밋하지 않은 변경 가운데 **스크린샷에 찍힌 화면**(장면은 [listing.md](listing.md) 스크린샷 표)을 바꾼 것이 있으면, **UI를 바꾸는 작업이 모두 끝난 출시 후보 빌드에서** 다시 찍는다. 찍히지 않는 화면(설정·도구 목록 등)이나 찍힌 장면이 그대로인 수정만 있으면 그대로 둔다.
+
+```bash
+cd /Users/narudoc/Claude/Doughmetry
+shot=$(git log -1 --format=%h -- ios/AppStore/screenshots); git log -1 --format='%h %ad  마지막으로 찍은 커밋' --date=short $shot
+git log --oneline $shot..HEAD -- ios/Doughmetry ios/DoughmetryCore/Sources ios/AppStore/capture-screenshots.sh  # 그 뒤 커밋
+git status --short -- ios/Doughmetry ios/DoughmetryCore ios/AppStore/capture-screenshots.sh                    # 커밋하지 않은 변경
+```
 
 - 규격: iPhone 6.9형 1320×2868(iPhone 17 Pro Max 시뮬레이터 원본 해상도 — 업스케일 없음)과 iPad 13형 2064×2752(iPad Pro 13-inch (M5)). iPad를 지원하므로 **13형 iPad 스크린샷도 필수**다. 한/영 각 6장(+ 선택 07), JPEG·알파 없음. 6.9형·13형만 있으면 작은 크기는 ASC가 줄여 쓴다.
 - 언어는 실행 인자(`-appLanguage`·`-AppleLanguages`·`-AppleLocale`)와 시뮬레이터 시스템 언어로 맞추고, 예시 데이터(레시피 3개·베이킹 로그 4개, 언어별)는 DEBUG 전용 `-uiTestDataDir` 훅으로 넣는다 — 이 훅은 iCloud 동기화도 끈다. 상태 바는 9:41(ko iPad는 기기 시계 — simctl이 '오전 9:41'을 못 넣는다)·충전 표시 없는 배터리 가득·신호 최대. iPad는 멀티태스킹을 '전체 화면 앱'으로 바꿔 찍는다 — 기본값 '윈도우 앱'은 오른쪽 아래 모서리에 창 크기 조절 손잡이가, 상태 바에 앱 이름이 함께 찍힌다.
@@ -195,13 +208,12 @@ iOS에서는 카테고리를 ASC에서 고르므로 필수 아님. 넣고 싶으
 
    스크립트가 전용 시뮬레이터(`Doughmetry Shots iPhone 6.9`·`Doughmetry Shots iPad 13`)를 만들어 언어마다 지우고 시작한 뒤, 장면마다 무엇을 맞출지 안내한다 — 시뮬레이터 화면을 맞추고 Enter. 찍을 때마다 크기·알파를 검사하고 어긋나면 다시 찍게 한다. 장면 순서·캡션은 [listing.md](listing.md) 스크린샷 표. 다른 도구(UI 테스트 등)로 화면을 움직일 때는 `prepare iphone en` → 화면 맞추기 → `shot iphone en 01-convert`로 한 장씩 찍는다.
 2. 한 장씩 열어 본다: 다른 언어 글자(영어 세트에 `편집`·`오전/오후`, 한국어 세트에 영어 메모), `Test` 같은 이름, 키보드·알림 배너, `03-import` 확인 시트 맨 위의 'AI 결과가 규칙 분석과 달라… / The AI result didn't match…' 경고가 없어야 한다. `06-fiche`만 다크 모드다.
-3. 옛 파일을 지운다 — 올리는 것은 `6.9-jpg/`·`13-jpg/`뿐이다:
+3. 폴더에 다른 파일이 섞이지 않았는지 본다 — 올리는 것은 `6.9-jpg/`·`13-jpg/`뿐이다:
 
    ```bash
    cd /Users/narudoc/Claude/Doughmetry/ios/AppStore/screenshots
-   git rm -q ko/*.png en/*.png && git rm -rq ko/6.9 en/6.9
    ls ko/6.9-jpg ko/13-jpg en/6.9-jpg en/13-jpg   # 각 6장(+07)
-   ../capture-screenshots.sh --check-shots         # 빠진 장·픽셀 크기·알파 → 스크린샷 24장(07까지 28장) 규격 확인
+   ../preflight.sh shots                           # 빠진 장·픽셀 크기·알파·목록에 없는 파일 → preflight shots: 통과
    ```
 
 4. 0-11로 돌아가 커밋한다.
@@ -354,7 +366,16 @@ GUI 대신 쓸 수 있다. 같은 Apple 계정이 Xcode에 로그인돼 있어�
 1. `cd /Users/narudoc/Claude/Doughmetry/ios && ./AppStore/archive.sh` — 먼저 `preflight.sh repo`로 저장소·배포 상태를 보고(어긋나면 아카이브하지 않는다), 아카이브 뒤 업로드 전에 `preflight.sh archive`로 아카이브 내용을 본다. 빌드 번호를 `date +%Y%m%d%H%M`(예 `202609061830`)으로 넣고 `xcodebuild archive` → `-exportArchive`(`AppStore/ExportOptions.plist`: `method=app-store-connect`, `destination=upload`, `signingStyle=automatic`, `teamID=G46DT9WHWV`, `uploadSymbols=true`, `manageAppVersionAndBuildNumber=true`)까지 실행한다. 빌드 번호를 지정하려면 `./AppStore/archive.sh 2`.
 2. 종료 코드 0이면 ASC가 패키지를 받은 것. 이후 처리 과정은 GUI와 같다.
 3. 참고: `-allowProvisioningUpdates`는 자동 서명 타깃의 프로파일·App ID·인증서를 만들고 갱신한다(Apple 문서). 다만 iCloud 컨테이너까지 만들어 주는지는 확인하지 않았으므로, 1-4처럼 Xcode GUI 서명이 한 번 해결된 상태(지금이 그 상태)에서 쓰는 것이 안전하다.
-4. .ipa만 만들고 Transporter 앱으로 올리려면 `ExportOptions.plist`의 `destination`을 `export`로 바꿔 실행 → `ios/build/export/Doughmetry.ipa` → Mac App Store의 `Transporter`(Apple, 무료) → 같은 Apple 계정 로그인 → `+`로 .ipa 추가 → 초록 체크 → `Deliver`.
+4. .ipa만 만들어 Transporter 앱으로 올리려면(업로드가 실패했을 때 등) `AppStore/ExportOptions.plist`는 **고치지 말 것** — 작업 트리가 바뀌면 archive.sh의 `preflight.sh repo`가 멈추고, 커밋하면 이후 실행이 모두 업로드 대신 내보내기가 된다. 이미 있는 아카이브(archive.sh가 남긴 `ios/build/Doughmetry.xcarchive`)를 git 밖 사본 설정으로 내보낸다(`ios/build/`는 `.gitignore`):
+
+   ```bash
+   cd /Users/narudoc/Claude/Doughmetry/ios
+   plutil -replace destination -string export -o build/ExportOptions-export.plist AppStore/ExportOptions.plist
+   xcodebuild -exportArchive -archivePath build/Doughmetry.xcarchive \
+     -exportOptionsPlist build/ExportOptions-export.plist -exportPath build/export -allowProvisioningUpdates
+   ```
+
+   Xcode Organizer의 아카이브라면 `Distribute App` → `Custom` → `App Store Connect` → `Export`로 같은 .ipa를 얻는다. CLI는 `ios/build/export/Doughmetry.ipa`, Organizer는 저장 창에서 고른 폴더(안의 `Doughmetry <날짜 시각>` 폴더)에 .ipa를 만든다. 그 .ipa를 Mac App Store의 `Transporter`(Apple, 무료) → 같은 Apple 계정 로그인 → `+`로 .ipa 추가 → 초록 체크 → `Deliver`.
 
 ### 4-4. 수출 규정 (Export Compliance) 답변
 
@@ -476,7 +497,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 2. 같은 화면의 탭 `iPad 13형 디스플레이 (13" iPad Display)` → `ko/13-jpg/`의 같은 이름 파일들. **iPad를 지원하므로 이 탭이 비어 있으면 제출할 수 없다.**
 3. 언어 드롭다운 → `영어(미국)` → 두 탭에 `en/6.9-jpg/`와 `en/13-jpg/`. 이어서 `영어(영국)`·`영어(캐나다)`에도 같은 `en/` 파일을 올린다 — 새 언어는 한국어 스크린샷으로 미리 채워져 있으므로 **지우고** 올린다(안 그러면 그 스토어에 한국어 화면이 보인다).
 4. 6.9형·13형만 올리면 작은 iPhone·iPad 크기는 ASC가 줄여 쓴다 — 다른 크기 탭은 비워 둔다.
-5. 썸네일에 빨간 `!`나 "alpha channel"·크기 오류가 뜨면 옛 PNG를 올린 것이다 — 0-13의 JPEG로 다시 올린다.
+5. 썸네일에 빨간 `!`나 "alpha channel"·크기 오류가 뜨면 다른 폴더의 파일(iPad 탭에 `6.9-jpg/` 등)이나 저장소 밖의 옛 사본을 올린 것이다 — `ios/AppStore/preflight.sh shots`가 통과하는 0-13의 폴더에서 다시 올린다.
 
 ### 6-6. 버전 페이지 — 텍스트
 
@@ -571,8 +592,8 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 |---|---|
 | 업로드 후 메일 `ITMS-91053: Missing API declaration … NSPrivacyAccessedAPICategoryUserDefaults` | PrivacyInfo.xcprivacy 없음. 경고 메일로 그치고 빌드가 처리되는 경우가 많지만 Apple 정책상 거부될 수도 있으므로 0-2를 적용해 재아카이브·재업로드한다. 아카이브 후 `.xcarchive/Products/Applications/Doughmetry.app/PrivacyInfo.xcprivacy`가 있는지 확인. |
 | TestFlight 빌드 `규정 준수 누락 (Missing Compliance)` / 빌드 추가 시 수출 규정 창 | `ITSAppUsesNonExemptEncryption` 키 없음. 4-4대로 `예 → 위 알고리즘 해당 없음`으로 답하면 즉시 해제. 근본 해결은 0-3. 키를 넣었는데도 뜨면 값이 Boolean `NO`가 아니라 문자열이거나 다른 타깃에 들어간 것 — `plutil -p … \| grep ITSApp`으로 `=> false` 확인. |
-| `ITMS-90717 Invalid App Store Icon … can't be transparent nor contain an alpha channel` | 이 프로젝트에선 **발생하지 않음이 검증됨**(컴파일된 Assets.car가 RGB 소스와 바이트 동일, Opaque=true). 그래도 뜨면: `Preview`로 `ios/Doughmetry/Assets.xcassets/AppIcon.appiconset/AppIcon.png` 열기 → `File > Export…` → `Format: PNG`, `Alpha` 체크 해제 → 같은 경로에 덮어쓰기 → `sips -g hasAlpha AppIcon.png`가 `no` → `Product > Clean Build Folder (⇧⌘K)` → 재아카이브. (ImageMagick은 이 Mac에 없음.) |
-| 스크린샷 업로드 거부 (빨간 `!`, `IMAGE_TOOL_FAILURE`, "alpha channel", 크기 오류) | 옛 PNG(알파 채널 있음, 6.3형·업스케일)를 올린 것이다. 0-13의 JPEG(`{ko,en}/6.9-jpg/` 1320×2868, `{ko,en}/13-jpg/` 2064×2752, 알파 없음)를 올린다. 가로로 찍힌 사진은 크기가 뒤바뀌어 거부된다 — 스크립트가 찍을 때 검사한다. |
+| `ITMS-90717 Invalid App Store Icon … can't be transparent nor contain an alpha channel` | 이 프로젝트에선 **발생하지 않음이 검증됨**(소스 PNG가 397b51f부터 RGB·알파 없음, 2026-10-28 서명 아카이브의 AppIcon Opaque=true — 0-12). 그래도 뜨면: `Preview`로 `ios/Doughmetry/Assets.xcassets/AppIcon.appiconset/AppIcon.png` 열기 → `File > Export…` → `Format: PNG`, `Alpha` 체크 해제 → 같은 경로에 덮어쓰기 → `sips -g hasAlpha AppIcon.png`가 `no` → `Product > Clean Build Folder (⇧⌘K)` → 재아카이브. (ImageMagick은 이 Mac에 없음.) |
+| 스크린샷 업로드 거부 (빨간 `!`, `IMAGE_TOOL_FAILURE`, "alpha channel", 크기 오류) | 다른 폴더의 파일이나 저장소 밖의 옛 사본(PNG·알파 채널·6.3형)을 올린 것이다. 0-13의 JPEG(`{ko,en}/6.9-jpg/` 1320×2868, `{ko,en}/13-jpg/` 2064×2752, 알파 없음)를 올린다. 가로로 찍힌 사진은 크기가 뒤바뀌어 거부된다 — 스크립트가 찍을 때 검사한다. |
 | 제출 시 `iPad 13형 디스플레이 스크린샷이 필요합니다` (13-inch iPad screenshots required) | iPad 지원 앱은 13형 iPad 스크린샷이 필수다. 0-13의 `{ko,en}/13-jpg/`를 네 현지화의 iPad 탭에 올린다(6-5 2·3번). |
 | Xcode 업로드 오류 `No suitable application records were found. Verify your bundle identifier "com.narudoc.doughmetry"…` | 2장 앱 레코드가 없거나 번들 ID가 다르거나 Xcode 계정이 그 앱에 접근권이 없음. 2장을 먼저 끝낸다. 계속되면 `Xcode > Settings > Accounts`에서 로그아웃/로그인(캐시). |
 | 서명 오류 `Provisioning profile … doesn't include the com.apple.developer.icloud-container-identifiers entitlement` / `ITMS-90164/90165 Invalid Code Signing Entitlements` | 개명 후 2026-09-11 08:28 발급된 프로파일 `iOS Team Provisioning Profile: com.narudoc.doughmetry`에 `iCloud.com.narudoc.doughmetry` 3종이 들어 있음을 확인했으므로 보통 안 뜬다. 뜨면 ① `Signing & Capabilities > iCloud > Containers`에서 컨테이너가 빨간색인지 본다 → 이 팀(G46DT9WHWV)에는 `iCloud.com.narudoc.doughmetry`가 2026-09-11 08:28 자동 서명 때 이미 포털에 등록돼 있으므로(포털 ID `F5PQF9M9GU`) 빨간색은 목록을 못 읽어 온 상태다 — 먼저 원형 화살표(새로고침)로 다시 읽는다. ② 그래도 빨간색이면 `Automatically manage signing`을 껐다 켜서 자동 서명을 다시 돌린다(09-11에 이 자동 서명이 컨테이너 생성·App ID 연결·프로파일 발급을 스스로 했다). `+`는 새 컨테이너 ID를 등록하는 버튼이라 이 팀에서는 쓸 일이 없다(다른 팀에서는 이 App ID·컨테이너 ID 자체를 쓸 수 없다 — 1-4 상자 참고). ③ 그래도 안 되면 `developer.apple.com/account > Identifiers > com.narudoc.doughmetry > iCloud ✓ > Edit`에서 `iCloud.com.narudoc.doughmetry` 체크 후 `Save`(목록에 컨테이너가 없으면 `Identifiers > + > iCloud Containers`로 `iCloud.com.narudoc.doughmetry`를 등록한 뒤 다시 체크) → Xcode로 돌아가 `Automatically manage signing`을 껐다 켜서 관리 프로파일을 다시 받는다(`Download Manual Profiles`는 수동 관리 프로파일용이라 자동 서명인 이 프로젝트에는 효과가 없다). |
@@ -590,7 +611,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 | Issue 내비게이터 노란 `Update to recommended settings` | IDE 전용 경고, 배포와 무관. 0-7. |
 | 심사 `5.1.1` 개인정보 처리방침 | URL 404 또는 앱 내 링크 없음. 3장 URL 200 확인 + 0-1 앱 내 링크. 심사 메모(listing.md 심사 노트)에 데이터 미수집·온디바이스 처리·사용자 본인 iCloud만 사용이 들어 있다. |
 | 심사 `2.1` 크래시/미완성 | 리뷰어 기기가 iOS 18이거나 iPad(가로·Split View)일 수 있음 → 0-9의 3·4·6번(iOS 17/18·iPad) + TestFlight 실기기 확인. 크래시 로그는 Organizer > Crashes(심볼 업로드 켰으므로 읽을 수 있음). |
-| 심사 `2.3` 메타데이터 부정확 | 설명이 앱에 없는 기능을 암시하거나("찍거나", 확인할 수 없는 비교·AI 표현 — 0-10에서 정정), 스크린샷이 지금 앱과 다른 경우(옛 UI·다른 언어 화면). 6-6에 listing.md 현재 값이 그대로 들어갔는지, 스크린샷이 0-13에서 출시 후보 빌드로 찍은 것인지 확인. |
+| 심사 `2.3` 메타데이터 부정확 | 설명이 앱에 없는 기능을 암시하거나("찍거나", 확인할 수 없는 비교·AI 표현 — 0-10에서 정정), 스크린샷이 지금 앱과 다른 경우(옛 UI·다른 언어 화면). 6-6에 listing.md 현재 값이 그대로 들어갔는지, 스크린샷에 찍힌 화면이 지금 빌드와 같은지(0-13 첫 단락) 확인. |
 | iOS 17/18 기기에서 `Symbol not found … FoundationModels` | 검증상 발생하지 않음(전부 weak-import). 만약 발생하면 프로젝트 `Frameworks, Libraries` 목록에 FoundationModels가 `Required`로 수동 추가된 것 — 제거(자동 링크만 유지). |
 
 ---
@@ -600,11 +621,11 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 - [ ] 고정값 표: 심사 연락처 전화번호를 `+82 10-____-____` 자리에 국제 형식으로 채우기 (6-7에서 그대로 옮겨 적는다) · 공개 문의 이메일 결정 — 기본 `juvesoul@icloud.com`, 바꾸려면 표의 `grep`·`sed`
 - [ ] 0장 도입부: 작업 트리 깨끗함 · origin과 같음 · Vitest·tsc·DoughmetryCore 테스트 통과
 - [ ] 0장 "한 번에 확인": 0-1 앱 안 개인정보·지원 링크 · 0-2 PrivacyInfo.xcprivacy · 0-3 암호화 키 · UIDeviceFamily `[1,2]` · iPad 네 방향 · 경고 0건
-- [ ] 0-9 iOS 17/18 UI 스모크 테스트 통과 (iPhone SE iOS17 · iPhone 15 iOS18 · iPad Air iOS18) + 손 확인 — 통과 못 하면 최소 버전 18.0으로 (0-9 5번)
+- [ ] 0-9 iOS 17/18 UI 테스트(타깃 전체) 통과 (iPhone SE iOS17 · iPhone 15 iOS18 · iPad Air iOS18) + 손 확인 — 통과 못 하면 최소 버전 18.0으로 (0-9 5번)
 - [ ] 0-9 6번 iPad 시뮬레이터 세로·가로·최소 창·Split View 확인
 - [x] 0-10 listing.md 문구 — 2026-10-02 정정 완료 (6장에서 listing.md를 그대로 붙여 넣기만)
-- [ ] 0-13 스크린샷 다시 찍기 (`{ko,en}/6.9-jpg/`·`{ko,en}/13-jpg/` 각 6장, hasAlpha no, 다른 언어·테스트 이름 없음) + 옛 PNG 삭제
-- [ ] 0-11 커밋
+- [x] 0-13 스크린샷 — 2026-10-28 그때 UI로 다시 찍음 (`{ko,en}/6.9-jpg/`·`{ko,en}/13-jpg/` 각 7장, hasAlpha no, 다른 언어·테스트 이름 없음). 그 뒤 스크린샷에 찍힌 화면을 바꾸면 다시 (0-13 첫 단락)
+- [x] 0-11 커밋 (2026-10-28 ec00018 — 푸시는 3)
 - [ ] 1-1 약관 배너 없음 · 1-2 Xcode 계정에 `Kiyoung Ha (G46DT9WHWV)` · 1-4 Signing & Capabilities 빨간 표시 없음 · 1-5 EU DSA 트레이더 신고 완료
 - [ ] 2 ASC 기존 레코드 수정: 이름 `사워도우 브레드 계산기` → `도우메트리: 사워도우 계산기`, 번들 ID `com.narudoc.levaincalc` → `com.narudoc.doughmetry` (**첫 빌드 업로드 전에 반드시**)
 - [ ] 3 푸시 → privacy.html·support.html 200 **+ 사이트 루트가 `/doughmetry/assets/…`와 새 `<title>`을 내려주는지** (루트 200만으로는 판단 불가)
@@ -624,7 +645,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 - `ios/Doughmetry/`는 폴더 동기화 그룹 — `PrivacyInfo.xcprivacy`를 두기만 하면 .app 루트에 복사된다.
 - 0-13 스크립트(2026-10-02, `prepare`·`shot`으로): iPhone 17 Pro Max(en)는 1320×2868, iPad Pro 13-inch (M5)(ko)는 2064×2752로, 둘 다 RGB·hasAlpha no로 찍히고 상태 바 9:41·앱 언어·시스템 언어가 적용됨을 확인. 한글 가져오기 예시도 시뮬레이터 클립보드에 그대로 들어간다. 예시 library.json(ko·en)은 DoughmetryCore `LibraryStore`로 버려지는 항목 없이 읽힌다(레시피 3·로그 4).
 - Xcode 관리 프로파일 2종 확인(2026-09-11): 2026-09-06 16:05 = `com.narudoc.levaincalc`(개명으로 무효), 2026-09-11 08:28 = `com.narudoc.doughmetry` + `iCloud.com.narudoc.doughmetry` 엔타이틀먼트 3종 → 새 App ID·새 컨테이너 포털 등록 완료.
-- 앱 아이콘: RGBA 소스와 RGB 소스로 각각 컴파일한 `Assets.car`가 SHA-256까지 동일 → 알파 문제 없음.
+- 앱 아이콘: (옛 아이콘) RGBA 소스와 RGB 소스로 각각 컴파일한 `Assets.car`가 SHA-256까지 동일 → 알파 문제 없음. 2026-10-22 교체(397b51f) 뒤 소스는 RGB(알파 없음), 컴파일된 AppIcon은 Opaque(2026-10-28 확인).
 - 키체인에 Apple Distribution 인증서 없음 → 자동 서명이 클라우드 인증서를 만들도록 둔다.
 - 스토어 현지화: 한국 스토어는 한국어 + 영어(영국), 미국·일본만 영어(미국), 캐나다는 영어(캐나다) + 프랑스어(캐나다)를 색인한다 (Apple, App Store localizations 표).
 - node는 `~/.local/node/bin`(PATH 미등록) — `export PATH="$HOME/.local/node/bin:$PATH"`.

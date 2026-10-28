@@ -142,6 +142,35 @@ final class CalculatorLinkUITests: XCTestCase {
         waitForLabel(status, "새 배합 · 저장 안 됨")
     }
 
+    /// 앱 언어를 바꾸면 손대지 않은 예시도 이름('캉파뉴' ≠ 'Campagne') 때문에 예시로 보지 않는다 —
+    /// 저장한 적이 없으니 저장됨이 아니라 새 배합. 설정에 쓴 언어는 다음 실행의 격리 훅이 버린다
+    @MainActor
+    func testLanguageSwitchLeavesExampleUnsaved() throws {
+        let app = launch()
+        let status = element(app, "calc.status")
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        XCTAssertEqual(status.label, "예시 배합")
+
+        openTab(app, "도구")
+        let settings = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "설정")).firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        // 메뉴 Picker — 버튼 라벨은 '언어, 한국어'
+        let language = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "언어")).firstMatch
+        XCTAssertTrue(language.waitForExistence(timeout: 5))
+        language.tap()
+        let english = app.buttons["English"].firstMatch
+        if !english.waitForExistence(timeout: 3) {
+            // iOS 17.5는 요소 탭이 메뉴를 열지 못할 때가 있다 — 라벨 자리를 다시 누른다
+            language.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(english.waitForExistence(timeout: 3), "언어 메뉴가 열리지 않았다")
+        english.tap()
+
+        openTab(app, "Calculator")
+        waitForLabel(status, "New dough · not saved")
+    }
+
     /// 변환기의 계산기 배합 가져오기는 오른쪽 위 더 보기 메뉴에 — 계산기로 보내기·배합표 공유와 함께
     @MainActor
     func testConverterMenuImportsCalculatorDough() throws {
