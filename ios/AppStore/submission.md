@@ -528,7 +528,7 @@ Apple 도움말 기준 진행 표시줄은 `1 앱 내 제어 및 기능` → 콘
 3. `앱 심사 정보 (App Review Information)`:
    - `로그인 필요 (Sign-in required)`: **체크 해제** (계정 없음).
    - `연락처 정보 (Contact Information)`: 고정값 표의 이름·성·전화(`+82 10-…` 국제 형식)·이메일(`juvesoul@icloud.com`)을 그대로 입력.
-   - `메모 (Notes)` (4000바이트, 선택이지만 꼭 쓸 것): [listing.md](listing.md) `심사 노트`의 코드 블록을 한/영 그대로 붙여 넣는다(약 2.6 KB). 계정 불필요·오프라인·iPad 지원·가져오기 방식(Apple Intelligence가 없으면 규칙 파서)·본인 iCloud만 사용·로컬 알림·테스트용 레시피가 들어 있다.
+   - `메모 (Notes)` (4000바이트, 선택이지만 꼭 쓸 것): [listing.md](listing.md) `심사 노트`의 코드 블록을 한/영 그대로 붙여 넣는다(약 3.3 KB — ASC 글자 수로는 약 2,400자). 계정 불필요·오프라인·iPad 지원·가져오기 방식(Apple Intelligence가 없으면 규칙 파서)과 붙여 넣어 볼 예시 텍스트(iPad의 ✦ 버튼 안내 포함)·본인 iCloud만 사용·로컬 알림·테스트용 레시피가 들어 있다.
    - `첨부 파일 (Attachment)`: 불필요.
 4. `App Store 버전 출시 (App Store Version Release)`: 첫 출시는 **`이 버전을 수동으로 출시 (Manually release this version)`** 선택 — 승인 후 스토어 페이지를 확인하고 내가 원하는 시각에 공개. (자동 출시는 `앱 심사가 끝나면 자동으로 이 버전을 출시`.)
 5. 오른쪽 위 `저장`.

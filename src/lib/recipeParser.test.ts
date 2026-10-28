@@ -785,6 +785,22 @@ describe('가져오기 오인식 회귀', () => {
     // 숫자 뒤 VS16이 숫자를 끊지 않는다 — 양쪽 모두 코드포인트 단위로 토큰화
     expect(parseRecipeText('강력분 500\u{FE0F}g\n물 350g').input.flours[0].grams).toBe(500);
   });
+
+  it("줄 앞 소수 수량('1.5 kg', '10.5g')은 목록 번호로 떼지 않는다", () => {
+    const r = parseRecipeText(
+      cleanForParsing('Loaf\n1.5 kg bread flour\n1050g water\n300g levain\n10.5g salt\n2.5g instant yeast'),
+    );
+    expect(r.input.flours.map((f) => [f.name, f.grams])).toEqual([['bread flour', 1500]]);
+    expect(r.input.water).toBe(1050);
+    expect(r.input.levain.grams).toBe(300);
+    expect(r.input.salt).toBe(10.5);
+    expect(r.input.yeast.grams).toBe(2.5);
+    // 숫자가 바로 붙지 않은 진짜 목록 번호는 여전히 뗀다
+    const listed = parseRecipeText('Loaf\n1. 500g bread flour\n2) 350g water\n3.소금 10g');
+    expect(listed.input.flours.map((f) => f.grams)).toEqual([500]);
+    expect(listed.input.water).toBe(350);
+    expect(listed.input.salt).toBe(10);
+  });
 });
 
 /** iOS RecipeTextParserTests.swift의 'SNS 캡션·앱 배합표 가져오기'와 케이스·기대값을 동일하게 유지할 것 */

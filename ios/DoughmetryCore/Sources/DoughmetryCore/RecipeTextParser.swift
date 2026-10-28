@@ -394,10 +394,11 @@ public enum RecipeTextParser {
         return stripLeadingSymbols(ns.substring(with: m.range)).trimmingCharacters(in: nameTrim)
     }
 
-    /// 제목 후보에서 "G." "1)" 같은 머리 기호와 앱 배합표 제목 줄의 꾸밈("〔캉파뉴〕 fiche technique") 제거
+    /// 제목 후보에서 "G." "1)" 같은 머리 기호와 앱 배합표 제목 줄의 꾸밈("〔캉파뉴〕 fiche technique") 제거.
+    /// 마침표 바로 뒤에 숫자가 오면 머리 기호가 아니라 소수다 — "7.5g salt"의 "7."을 떼면 소금 5g이 된다
     static func cleanTitle(_ line: String) -> String {
         var s = line.trimmingCharacters(in: .whitespaces)
-        s = s.replacingOccurrences(of: #"^[A-Za-z0-9]{1,3}[.)][ \t]*"#, with: "", options: rx)
+        s = s.replacingOccurrences(of: #"^[A-Za-z0-9]{1,3}(?:\.(?![0-9])|\))[ \t]*"#, with: "", options: rx)
         s = s.replacingOccurrences(of: #"[〔〕【】「」]"#, with: "", options: rx)
         s = s.replacingOccurrences(of: #"(?i)[ \t]*fiche[ \t]+technique[ \t]*$"#, with: "", options: rx)
         return s.trimmingCharacters(in: .whitespaces)

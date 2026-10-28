@@ -844,6 +844,24 @@ struct RecipeTextParserImportRegressionTests {
         // 숫자 뒤 VS16이 숫자를 끊지 않는다 — 양쪽 모두 코드포인트 단위로 토큰화
         #expect(RecipeTextParser.parse("강력분 500\u{FE0F}g\n물 350g").input.flours.first?.grams == 500)
     }
+
+    @Test("줄 앞 소수 수량('1.5 kg', '10.5g')은 목록 번호로 떼지 않는다")
+    func leadingDecimalAmounts() {
+        let r = RecipeTextParser.parse(
+            RecipeTextParser.cleanForParsing(
+                "Loaf\n1.5 kg bread flour\n1050g water\n300g levain\n10.5g salt\n2.5g instant yeast"))
+        #expect(r.input.flours.map(\.name) == ["bread flour"])
+        #expect(r.input.flours.map(\.grams) == [1500])
+        #expect(r.input.water == 1050)
+        #expect(r.input.levain.grams == 300)
+        #expect(r.input.salt == 10.5)
+        #expect(r.input.yeast.grams == 2.5)
+        // 숫자가 바로 붙지 않은 진짜 목록 번호는 여전히 뗀다
+        let listed = RecipeTextParser.parse("Loaf\n1. 500g bread flour\n2) 350g water\n3.소금 10g")
+        #expect(listed.input.flours.map(\.grams) == [500])
+        #expect(listed.input.water == 350)
+        #expect(listed.input.salt == 10)
+    }
 }
 
 /// 웹 recipeParser.test.ts의 'SNS 캡션·앱 배합표 가져오기'와 케이스·기대값을 동일하게 유지할 것

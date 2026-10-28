@@ -141,6 +141,13 @@ ASC `앱 심사 정보 > 메모 (Notes)`(4000바이트)에 아래 블록을 그�
 - 계정·로그인 불필요. 모든 기능이 오프라인으로 동작합니다 (앱은 네트워크 요청을 하지 않고, 설정의 링크만 Safari로 엽니다).
 - iPhone·iPad 모두 지원합니다 (iPad는 네 방향과 Split View).
 - 레시피 탭의 "사진·텍스트에서 가져오기": 사진은 기기 안 Apple Vision으로 글자를 읽고, 사진·붙여넣은 텍스트 모두 규칙 기반 파서로 재료를 채웁니다. Apple Intelligence를 쓸 수 있는 기기(iOS·iPadOS 26 이상, 지원 하드웨어·설정)에서는 온디바이스 모델로 더 정확하게 분석합니다. 기능은 같고 정확도만 다르며, 어느 경우든 저장 전에 확인 시트를 거칩니다.
+- 가져오기 시험용 텍스트: 아래 여섯 줄을 복사해 "텍스트 붙여넣기"에 붙여 넣으세요. 분량은 무게여야 합니다(g — kg·oz·lb는 g으로 바꿉니다). iPad에서는 레시피 목록 막대의 ✦ 아이콘 버튼이 가져오기입니다.
+통밀 캉파뉴
+T65 밀가루 400g
+통밀가루 100g
+물 350g
+르방 리퀴드 100g
+소금 10g
 - iCloud는 사용자 본인의 iCloud Documents 컨테이너(iCloud.com.narudoc.doughmetry)만 사용하며 개발자 서버는 없습니다. iCloud에 로그인하지 않아도 앱은 정상 동작합니다.
 - 알림은 도구 탭 타임라인의 로컬 알림(UNUserNotificationCenter)만 사용합니다.
 - 레시피 탭이 비어 있으면 "예시 레시피 추가" 버튼으로 예시 레시피 4개가 들어가 변환기·계산기를 바로 써 볼 수 있습니다 (레시피 상세에서 베이킹 로그를 새로 기록할 수 있습니다).
@@ -149,6 +156,13 @@ ASC `앱 심사 정보 > 메모 (Notes)`(4000바이트)에 아래 블록을 그�
 - No account or sign-in. Everything works offline (the app makes no network requests; only the links in Settings open Safari).
 - Supports iPhone and iPad (iPad in all orientations and Split View).
 - "Import from photo or text" in the Recipes tab: photos are read with on-device Apple Vision text recognition, and a rule-based parser fills in the ingredients from photos or pasted text. On devices with Apple Intelligence (iOS/iPadOS 26 or later, supported hardware and settings) an on-device model improves accuracy. The feature is the same either way, and every import goes through a review sheet before saving.
+- Sample text for Import: copy the six lines below and use "Paste text". Amounts must be weights (g; kg, oz and lb are converted). On iPad, Import is the ✦ (sparkles) icon button in the Recipes list bar.
+Country sourdough (2 loaves)
+800g Bread flour
+200g Whole wheat flour
+700g water
+200g levain
+20g salt
 - iCloud uses only the user's own iCloud Documents container (iCloud.com.narudoc.doughmetry); there is no developer server. The app works without an iCloud sign-in.
 - Notifications are local only (timeline stages in the Tools tab).
 - If the Recipes tab is empty, "Add sample recipes" adds four recipes so you can try the converter and calculator right away (open one to add a bake-log entry).
